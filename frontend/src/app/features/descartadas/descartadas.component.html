@@ -1,0 +1,63 @@
+<div class="vc-panel info-panel">
+  <div class="descartadas-header">
+    <div>
+      <h2>Vagas Descartadas</h2>
+      <p class="panel-desc">
+        Vagas descartadas manualmente ou pela triagem automática (nota abaixo de 40). Se quiser recuperar alguma vaga, clique em <strong>Restaurar</strong>.
+      </p>
+    </div>
+    <div class="filter-box">
+      <input type="text"
+        class="vc-input"
+        placeholder="Filtrar por cargo ou empresa…"
+        [(ngModel)]="filterText"
+        (ngModelChange)="onFilterChange()">
+    </div>
+  </div>
+</div>
+
+@if (loading()) {
+  <div class="loading-state">Carregando vagas descartadas…</div>
+} @else if (filteredJobs().length === 0) {
+  <div class="vc-panel empty-state">
+    <i class="bi bi-trash3 empty-icon"></i>
+    <p>Nenhuma vaga descartada encontrada.</p>
+  </div>
+} @else {
+  <div class="cards-grid">
+    @for (job of filteredJobs(); track job.url) {
+      <article class="job-card">
+        <div class="job-card__header">
+          <div>
+            <h3 class="job-card__title">{{ job.title }}</h3>
+            <p class="job-card__company">{{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}</p>
+          </div>
+          @if (job.screening?.score) {
+            <span class="vc-badge-fit vc-badge-fit--low">
+              {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict }}
+            </span>
+          }
+        </div>
+
+        <div class="job-card__chips">
+          @if (job.location) {
+            <span class="chip"><i class="bi bi-geo-alt"></i> {{ job.location }}</span>
+          }
+          @if (job.date) {
+            <span class="chip"><i class="bi bi-calendar3"></i> {{ job.date }}</span>
+          }
+        </div>
+
+        <div class="job-card__footer">
+          <button type="button" class="btn-restore" (click)="restoreJob(job)">
+            <i class="bi bi-arrow-counterclockwise"></i> Restaurar
+          </button>
+          <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="link-external">
+            Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
+          </a>
+        </div>
+      </article>
+    }
+  </div>
+}
+

@@ -1,0 +1,27 @@
+<aside class="vc-sidebar" aria-label="Menu principal">
+  <!-- Cabeçalho da Sidebar (Logo + Botão de Colapso) -->
+  <div class="vc-brand brand-sidebar-header">
+    <button class="desktop-toggle" (click)="toggleCollapse.emit()" aria-label="Alternar largura do menu">
+      <i class="bi bi-list"></i>
+    </button>
+    <a routerLink="/buscar-vagas" class="brand-logo-link" title="Vagamundo - Assistente de Carreira">
+      <span class="brand-icon"><i class="bi bi-compass"></i></span>
+      <span class="brand-title-text">Vagamundo</span>
+      <span class="brand-badge">Beta</span>
+    </a>
+  </div>
+
+  <!-- Navegação Principal por Rotas -->
+  <nav class="vc-nav">
+    @for (item of navItems; track item.route) {
+      <a class="vc-nav__item" [routerLink]="item.route" routerLinkActive="is-active" [title]="item.label">
+        <span class="vc-nav__icon"><i [class]="'bi ' + item.icon"></i></span>
+        <span class="vc-nav__label">{{ item.label }}</span>
+        @if (item.count !== undefined && item.count > 0) {
+          <span class="vc-nav__count" [class]="item.badgeClass">{{ item.count }}</span>
+        }
+      </a>
+    }
+  </nav>
+</aside>
+

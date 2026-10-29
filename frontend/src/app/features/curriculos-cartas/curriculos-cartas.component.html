@@ -1,0 +1,41 @@
+<div class="vc-panel main-panel">
+  <div class="header-row">
+    <div>
+      <h2>Currículos, Cartas e Dossiês Gerados</h2>
+      <p class="panel-desc">
+        Todos os PDFs gerados para as suas vagas ficam salvos nas pastas <code>cv/</code>, <code>cover_letters/</code> e <code>documents/interview/</code>.
+      </p>
+    </div>
+    <div class="filter-box">
+      <select class="vc-select" [(ngModel)]="kindFilter">
+        <option value="">Todos os documentos</option>
+        <option value="cv">Apenas Currículos</option>
+        <option value="carta">Apenas Cartas de Apresentação</option>
+        <option value="entrevista">Apenas Dossiês de Entrevista</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div class="docs-grid">
+  @for (doc of filteredDocs(); track doc.path) {
+    <article class="doc-card">
+      <div class="doc-icon-col">
+        <i class="bi bi-file-earmark-pdf-fill doc-icon"></i>
+      </div>
+      <div class="doc-details">
+        <h3 class="doc-title">{{ doc.name }}</h3>
+        <p class="doc-meta">
+          <span class="doc-kind-badge" [class]="doc.kind">{{ getKindLabel(doc.kind) }}</span>
+          <span class="doc-date">{{ doc.date }}</span>
+        </p>
+      </div>
+      <div class="doc-actions">
+        <a [href]="'/api/file?path=' + encodePath(doc.path)" target="_blank" rel="noopener noreferrer" class="btn-pdf-view">
+          <i class="bi bi-box-arrow-up-right"></i> Abrir PDF
+        </a>
+      </div>
+    </article>
+  }
+</div>
+

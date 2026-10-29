@@ -1,0 +1,7 @@
+.brand-icon {
+  color: var(--vc-blue);
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+}
+

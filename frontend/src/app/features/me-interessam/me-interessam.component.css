@@ -1,0 +1,233 @@
+.info-panel {
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.info-panel h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+}
+
+.panel-desc {
+  margin: 0;
+  color: var(--vc-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.action-status-msg {
+  margin: 1rem 0 0 0;
+  color: var(--vc-blue);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.loading-state {
+  padding: 2rem;
+  text-align: center;
+  color: var(--vc-muted);
+}
+
+.empty-state {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--vc-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.empty-icon {
+  font-size: 2.2rem;
+  color: var(--vc-muted);
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.25rem;
+}
+
+.job-card {
+  background: var(--vc-bg-surface);
+  border: 1px solid var(--vc-border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.job-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--vc-blue);
+}
+
+.job-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.job-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--vc-text);
+}
+
+.job-card__company {
+  margin: 4px 0 0 0;
+  color: var(--vc-muted);
+  font-size: 0.85rem;
+}
+
+.screening-summary-text {
+  font-size: 0.84rem;
+  color: var(--vc-text);
+  margin: 0;
+  background: rgba(15, 23, 42, 0.4);
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--vc-blue);
+}
+
+.job-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  background: var(--vc-bg-2);
+  border: 1px solid var(--vc-border);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--vc-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-actions-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-ai-action {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--vc-blue);
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.btn-ai-action:hover {
+  background: rgba(56, 189, 248, 0.2);
+}
+
+.generated-docs-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.doc-link-btn {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--vc-green);
+  text-decoration: none;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.doc-link-btn:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.job-card__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--vc-border);
+}
+
+.footer-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-primary-small {
+  background: var(--vc-blue);
+  color: white;
+  border: none;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-secondary-small {
+  background: var(--vc-bg-2);
+  border: 1px solid var(--vc-border);
+  color: var(--vc-text);
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.link-external {
+  color: var(--vc-blue);
+  text-decoration: none;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.link-external:hover {
+  text-decoration: underline;
+}
+
+.vc-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(56, 189, 248, 0.3);
+  border-top-color: var(--vc-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+

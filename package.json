@@ -1,0 +1,17 @@
+{
+  "name": "vagamundo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vagamundo - Assistente Inteligente de Vagas e Carreira",
+  "scripts": {
+    "dev": "node dev.js",
+    "start": "node dev.js",
+    "backend": "python backend/tools/painel.py --no-browser",
+    "frontend": "npm --prefix frontend start",
+    "build": "npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "@types/node": "^26.6.6"
+  }
+}

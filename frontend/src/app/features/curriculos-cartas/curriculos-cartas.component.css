@@ -1,0 +1,148 @@
+.main-panel {
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.header-row h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+}
+
+.panel-desc {
+  margin: 0;
+  color: var(--vc-muted);
+  font-size: 0.9rem;
+}
+
+.panel-desc code {
+  background: var(--vc-bg-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.filter-box {
+  min-width: 240px;
+}
+
+.vc-select {
+  width: 100%;
+  background: var(--vc-bg-2);
+  border: 1px solid var(--vc-border);
+  color: var(--vc-text);
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.doc-card {
+  background: var(--vc-bg-surface);
+  border: 1px solid var(--vc-border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.doc-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--vc-blue);
+}
+
+.doc-icon-col {
+  flex-shrink: 0;
+}
+
+.doc-icon {
+  font-size: 2.2rem;
+  color: #ef4444;
+}
+
+.doc-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-title {
+  margin: 0 0 4px 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--vc-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-meta {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--vc-muted);
+}
+
+.doc-kind-badge {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.doc-kind-badge.cv {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--vc-blue);
+}
+
+.doc-kind-badge.carta {
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--vc-purple);
+}
+
+.doc-kind-badge.entrevista {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--vc-green);
+}
+
+.doc-actions {
+  flex-shrink: 0;
+}
+
+.btn-pdf-view {
+  background: var(--vc-bg-2);
+  border: 1px solid var(--vc-border);
+  color: var(--vc-blue);
+  text-decoration: none;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s;
+}
+
+.btn-pdf-view:hover {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: var(--vc-blue);
+}
+

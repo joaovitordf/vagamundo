@@ -1,11 +1,9 @@
 @echo off
-rem Abre o painel da busca de vagas (tools\painel.py) no navegador.
-rem Duplo clique neste arquivo; feche a janela preta para encerrar o painel.
+rem Inicia o ecossistema Vagamundo completo (Backend Python + Frontend Angular).
+rem Duplo clique neste arquivo; feche a janela ou pressione Ctrl+C para encerrar.
 cd /d "%~dp0"
-python --version >nul 2>&1
-if %errorlevel%==0 (
-  python tools\painel.py
-) else (
-  py tools\painel.py
+npm run dev
+if %errorlevel% neq 0 (
+  node dev.js
 )
 pause

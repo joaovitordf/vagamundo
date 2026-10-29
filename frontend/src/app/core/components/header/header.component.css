@@ -1,0 +1,17 @@
+.motor-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--vc-blue);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.motor-badge i {
+  font-size: 0.95rem;
+}
+

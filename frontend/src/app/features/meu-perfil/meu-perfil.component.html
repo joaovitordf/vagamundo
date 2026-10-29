@@ -1,0 +1,197 @@
+<div class="perfil-container">
+  <!-- Aviso de Privacidade do Repositório -->
+  @if (privacyInfo; as priv) {
+    @if (priv.type === 'warn') {
+      <div class="warn">{{ priv.message }}</div>
+    } @else {
+      <p class="muted">{{ priv.message }}</p>
+    }
+  }
+
+  <!-- 1. Seus Documentos -->
+  <div class="panel">
+    <h2>1. Seus documentos</h2>
+    <p class="muted">
+      O currículo e, se tiver, o perfil do LinkedIn salvo em PDF (no LinkedIn: seu perfil &gt; Mais &gt; Salvar como PDF).
+      Ficam só no seu computador, na pasta <code>documents</code>. Currículo em Word? Abra no Word e use Arquivo &gt; Salvar como &gt; PDF.
+    </p>
+
+    <div class="row">
+      <button type="button" class="btn secondary" (click)="triggerUpload('cv')">
+        Enviar currículo (PDF)
+      </button>
+      <button type="button" class="btn secondary" (click)="triggerUpload('linkedin')">
+        Enviar LinkedIn (PDF)
+      </button>
+      <input type="file" id="upload-input" (change)="onFileSelected($event)" accept=".pdf,application/pdf" hidden>
+    </div>
+
+    @if (uploadStatus()) {
+      <p class="upload-status" aria-live="polite">{{ uploadStatus() }}</p>
+    }
+
+    <div class="files-container">
+      @if (allUploadedFiles().length > 0) {
+        <ul class="files">
+          @for (file of allUploadedFiles(); track file.name + file.kind) {
+            <li>
+              {{ file.kindLabel }}: {{ file.name }} ({{ formatKb(file.size) }} KB)
+              <button type="button" class="btn small secondary" (click)="removeFile(file.kind, file.name)">Remover</button>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted" style="margin-top: 10px;">Nenhum documento ainda. Comece pelo currículo.</p>
+      }
+    </div>
+  </div>
+
+  <!-- 2. O que o currículo não diz -->
+  <div class="panel">
+    <h2>2. O que o currículo não diz</h2>
+    <p class="muted">
+      Tudo é opcional, mas cada resposta deixa a busca e a avaliação das vagas mais certeiras.
+    </p>
+
+    <form class="perfil" (submit)="$event.preventDefault()">
+      @for (sec of schema(); track sec.title) {
+        <fieldset>
+          <legend>{{ sec.title }}</legend>
+
+          @for (field of sec.fields; track field.key) {
+            @if (field.type === 'text') {
+              <label class="field" [for]="'pf-' + field.key">
+                <span>{{ field.label }}</span>
+                <input type="text"
+                  [id]="'pf-' + field.key"
+                  [name]="field.key"
+                  [(ngModel)]="formValues[field.key]"
+                  [placeholder]="field.placeholder || ''">
+                @if (field.help) {
+                  <div class="help">{{ field.help }}</div>
+                }
+              </label>
+            }
+
+            @if (field.type === 'textarea' || field.type === 'lines') {
+              <label class="field" [for]="'pf-' + field.key">
+                <span>{{ field.label }}</span>
+                <textarea
+                  [id]="'pf-' + field.key"
+                  [name]="field.key"
+                  [(ngModel)]="formValues[field.key]"
+                  [placeholder]="field.placeholder || ''"
+                  rows="3"></textarea>
+                @if (field.help) {
+                  <div class="help">{{ field.help }}</div>
+                }
+              </label>
+            }
+
+            @if (field.type === 'choice') {
+              <div class="field">
+                <span>{{ field.label }}</span>
+                <div class="opts" role="radiogroup" [attr.aria-label]="field.label">
+                  @for (opt of field.options; track opt) {
+                    <label>
+                      <input type="radio"
+                        [name]="field.key"
+                        [value]="opt"
+                        [(ngModel)]="formValues[field.key]">
+                      {{ getOptionName(opt) }}
+                    </label>
+                  }
+                </div>
+                @if (field.help) {
+                  <div class="help">{{ field.help }}</div>
+                }
+              </div>
+            }
+
+            @if (field.type === 'multi') {
+              <div class="field">
+                <span>{{ field.label }}</span>
+                <div class="opts" role="group" [attr.aria-label]="field.label">
+                  @for (opt of field.options; track opt) {
+                    <label>
+                      <input type="checkbox"
+                        [name]="field.key"
+                        [value]="opt"
+                        [checked]="isMultiChecked(field.key, opt)"
+                        (change)="onMultiChange(field.key, opt, $event)">
+                      {{ getOptionName(opt) }}
+                    </label>
+                  }
+                </div>
+                @if (field.help) {
+                  <div class="help">{{ field.help }}</div>
+                }
+              </div>
+            }
+          }
+        </fieldset>
+      }
+
+      <div class="row">
+        <button type="button" class="btn" (click)="saveAnswers()" [disabled]="saving()">
+          Salvar respostas
+        </button>
+        @if (saveStatus()) {
+          <span class="save-status" aria-live="polite">{{ saveStatus() }}</span>
+        }
+      </div>
+    </form>
+  </div>
+
+  <!-- 3. Montar o perfil -->
+  <div class="panel">
+    <h2>3. Montar o perfil</h2>
+    <p class="muted">
+      O assistente de IA lê os seus documentos e as respostas e monta o perfil que a busca, a avaliação e o currículo usam.
+      Leva alguns instantes. Se você já tem um perfil, ele acrescenta o que é novo, mantém o que já existe e lista as diferenças para você revisar.
+    </p>
+
+    @if (showConfirmBox()) {
+      <div style="margin-bottom: 14px;">
+        <label class="confirm-box">
+          <input type="checkbox" [(ngModel)]="confirmedPrivacy" (change)="updateButtonState()">
+          Entendi o aviso de privacidade e quero continuar
+        </label>
+      </div>
+    }
+
+    <p>
+      <button type="button" class="btn" (click)="generateProfileWithAi()" [disabled]="isAiDisabled()">
+        {{ isProfileReady() ? 'Atualizar meu perfil com a IA' : 'Montar meu perfil com a IA' }}
+      </button>
+    </p>
+
+    @if (aiStatus()) {
+      <p class="claude-status" aria-live="polite">
+        @if (isAiRunning()) {
+          <span class="spinner" aria-hidden="true"></span>
+        }
+        {{ aiStatus() }}
+      </p>
+    }
+  </div>
+
+  <!-- 4. Relatórios e Perfil Gerados -->
+  @if (profileReport()) {
+    <div class="panel">
+      <details class="answer" open>
+        <summary>O que a IA fez na última montagem</summary>
+        <pre class="summary">{{ profileReport() }}</pre>
+      </details>
+    </div>
+  }
+
+  @if (profileText()) {
+    <div class="panel">
+      <details class="answer">
+        <summary>Seu perfil como está agora</summary>
+        <pre class="summary">{{ cleanProfileText(profileText()) }}</pre>
+      </details>
+    </div>
+  }
+</div>

@@ -1,0 +1,28 @@
+<header class="vc-header">
+  <div class="vc-header__left">
+    <button class="vc-icon-btn mobile-toggle" (click)="toggleMobile.emit()" aria-label="Alternar menu">
+      <i class="bi bi-list"></i>
+    </button>
+
+    <span class="vc-page-title">
+      <i [class]="'bi ' + pageIcon"></i>
+      {{ pageTitle }}
+    </span>
+  </div>
+
+  <div class="vc-header__actions">
+    <!-- Alternador de Tema Dark / Light -->
+    <button class="vc-icon-btn vc-theme-toggle" (click)="theme.toggle()"
+      [title]="theme.theme() === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'"
+      [attr.aria-label]="theme.theme() === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'">
+      <i [class]="theme.theme() === 'dark' ? 'bi bi-sun' : 'bi bi-moon'"></i>
+    </button>
+
+    <!-- Indicador de Status do Motor de IA -->
+    <div class="motor-badge" title="Motor ativo do assistente de IA">
+      <i class="bi bi-cpu"></i>
+      <span>{{ engineLabel }}</span>
+    </div>
+  </div>
+</header>
+

@@ -1,0 +1,570 @@
+<div class="search-view-container">
+  <!-- PAINEL UNIFICADO DE FILTROS E BUSCA -->
+  <section class="vc-panel filter-console">
+    <div class="filter-header">
+      <h2>Filtros e Busca de Oportunidades</h2>
+    </div>
+
+    <div class="filter-grid">
+      <!-- Campo 1: Cargo / Tecnologia com Randomizador do CV -->
+      <div class="filter-field wide">
+        <div class="filter-label-row">
+          <label for="f-text">Cargo, Tecnologia ou Empresa</label>
+          @if (cvAreaBadge()) {
+            <span class="cv-area-badge">{{ cvAreaBadge() }}</span>
+          }
+        </div>
+        <div class="input-with-action">
+          <input type="text"
+            id="f-text"
+            class="vc-input"
+            placeholder="Filtrar por cargo, tecnologia ou empresa (separe por vírgula)..."
+            [(ngModel)]="filterText"
+            (ngModelChange)="onFilterChange()">
+
+          @if (filterText) {
+            <button type="button" class="btn-clear-input" (click)="clearTextFilter()" title="Limpar palavras-chave">×</button>
+          }
+
+          <button type="button" class="btn-random-cv" (click)="pickRandomCvArea()" title="Sortear área do seu currículo">
+            <i class="bi bi-dice-5"></i>
+            <span>Sortear área CV</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Campo 2: Fontes da Busca -->
+      <div class="filter-field">
+        <label for="search-focus">Fontes da Busca (Portais)</label>
+        <select id="search-focus" class="vc-select" [(ngModel)]="filterFocus" (ngModelChange)="onFilterChange()">
+          <option value="all">Todas as fontes (Brasil, Global & Europa EURES)</option>
+          <optgroup label="Portais Brasil">
+            <option value="gupy-search">Gupy (portal.gupy.io)</option>
+            <option value="solides-search">Sólides Vagas</option>
+            <option value="vagas-search">VAGAS.com</option>
+            <option value="infojobs-search">InfoJobs Brasil</option>
+            <option value="empregos-search">Empregos.com.br</option>
+            <option value="trampos-search">Trampos</option>
+            <option value="digai-search">DigAÍ</option>
+            <option value="pcd-search">PCD Online</option>
+          </optgroup>
+          <optgroup label="Tecnologia & Inovação">
+            <option value="geekhunter-search">GeekHunter</option>
+            <option value="programathor-search">Programathor</option>
+            <option value="remotar-search">Remotar (100% Remoto)</option>
+            <option value="greenhouse-search">Greenhouse (Tech ATS)</option>
+            <option value="google">Google Careers</option>
+          </optgroup>
+          <optgroup label="Global & Internacional">
+            <option value="linkedin-search">LinkedIn</option>
+            <option value="freehire-search">FreeHire (Tech Global)</option>
+            <option value="hh-search">HeadHunter (hh.ru - Rússia)</option>
+            <option value="habrcareer-search">Habr Career (Rússia Tech)</option>
+            <option value="europa">Europa (Portal Oficial EURES)</option>
+          </optgroup>
+          <optgroup label="Executivo & Especialistas">
+            <option value="michaelpage-search">Michael Page</option>
+            <option value="roberthalf-search">Robert Half</option>
+          </optgroup>
+          <optgroup label="Agronegócio">
+            <option value="agrobase-search">Agrobase</option>
+            <option value="agrosearch-search">AGROSearch</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <!-- Campo 3: Modelo de Trabalho -->
+      <div class="filter-field">
+        <label for="f-model">Modelo de Trabalho</label>
+        <select id="f-model" class="vc-select" [(ngModel)]="filterModel" (ngModelChange)="onFilterChange()">
+          <option value="">Qualquer modelo</option>
+          <option value="remote">Remoto</option>
+          <option value="hybrid">Híbrido</option>
+          <option value="on-site">Presencial</option>
+          <option value="none">Não informado</option>
+        </select>
+      </div>
+
+      <!-- Campo 4: Região / Polo -->
+      <div class="filter-field">
+        <label for="f-region">Região / Polo</label>
+        <select id="f-region" class="vc-select" [(ngModel)]="filterRegion" (ngModelChange)="onFilterChange()">
+          <option value="">Todas as regiões</option>
+          <option value="brasil">Brasil (Todas UFs e Remoto BR)</option>
+          <option value="europa">Europa (EURES e Países Europeus)</option>
+          <option value="global">Américas, Ásia e Global</option>
+          <option value="remote">Apenas Vagas Remotas</option>
+        </select>
+      </div>
+
+      <!-- Campo 5: Data de Publicação -->
+      <div class="filter-field">
+        <label for="jobage">Data de Publicação</label>
+        <select id="jobage" class="vc-select" [(ngModel)]="filterJobAge" (ngModelChange)="onFilterChange()">
+          <option value="">Todas as datas (Mostrar tudo)</option>
+          <option value="1">Últimas 24 horas</option>
+          <option value="2">Últimos 2 dias</option>
+          <option value="3">Últimos 3 dias</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="14">Últimos 14 dias (Recomendado)</option>
+          <option value="30">Últimos 30 dias</option>
+        </select>
+      </div>
+
+      <!-- Campo 6: Nota de Aderência (Fit IA) -->
+      @if (hasTriagedJobs()) {
+        <div class="filter-field">
+          <label for="f-score">Nota de Aderência ({{ triagedCount() }} triadas)</label>
+          <select id="f-score" class="vc-select" [(ngModel)]="filterScore" (ngModelChange)="onFilterChange()">
+            <option value="">Todas as notas</option>
+            <option value="high">Maiores notas (80+)</option>
+            <option value="med">Notas médias ou maiores (60+)</option>
+            <option value="low">Menores notas (40 a 59)</option>
+            <option value="triadas">Apenas vagas com nota</option>
+          </select>
+        </div>
+
+        <!-- Campo 7: Ordenação -->
+        <div class="filter-field">
+          <label for="f-sort">Ordenação (Pós-Triagem)</label>
+          <select id="f-sort" class="vc-select" [(ngModel)]="filterSort" (ngModelChange)="onFilterChange()">
+            <option value="date">Mais recentes primeiro</option>
+            <option value="score-desc">Maior nota primeiro</option>
+            <option value="score-asc">Menor nota primeiro</option>
+          </select>
+        </div>
+      }
+    </div>
+
+    <!-- Barra de Ações: Botão Buscar, Checkboxes e Status -->
+    <div class="search-actions-bar">
+      <div class="search-actions-left">
+        <button type="button" class="btn-search-trigger" (click)="triggerPortalSearch()" [disabled]="searching()">
+          @if (searching()) {
+            <span class="vc-spinner"></span> Buscando…
+          } @else {
+            <i class="bi bi-search"></i> Buscar vagas
+          }
+        </button>
+
+        <label class="filter-checkbox-label">
+          <input type="checkbox" [(ngModel)]="filterNoWarn" (ngModelChange)="onFilterChange()">
+          <span>Só vagas sem avisos</span>
+        </label>
+
+        <label class="filter-checkbox-label">
+          <input type="checkbox" [(ngModel)]="filterVisa" (ngModelChange)="onFilterChange()">
+          <span>Só com VISA</span>
+        </label>
+      </div>
+
+      <div class="search-actions-right">
+        @if (searchStatus()) {
+          <span class="search-status-text">{{ searchStatus() }}</span>
+        }
+      </div>
+    </div>
+
+    @if (searchError()) {
+      <div class="search-error-banner">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>{{ searchError() }}</span>
+      </div>
+    }
+
+    @if (searchSummary()) {
+      <pre class="search-summary-box">{{ searchSummary() }}</pre>
+    }
+  </section>
+
+  @if (allVagas().length > 0 && filteredVagas().length < allVagas().length) {
+    <div class="active-filters-banner">
+      <div class="active-filters-banner__text">
+        <i class="bi bi-funnel-fill"></i>
+        <span>Filtros ativos: exibindo <strong>{{ filteredVagas().length }}</strong> de <strong>{{ allVagas().length }}</strong> vagas encontradas.</span>
+      </div>
+      <button type="button" class="btn-clear-all-filters" (click)="resetAllFilters()">
+        <i class="bi bi-arrow-counterclockwise"></i> Mostrar todas as {{ allVagas().length }} vagas
+      </button>
+    </div>
+  }
+
+  <!-- BARRA DE SUBABAS (MAPA MUNDIAL VS LISTA COMPLETA) -->
+  <div class="subtabs-bar" role="tablist">
+    <button type="button"
+      class="subtab-btn"
+      [class.active]="activeSubtab() === 'mapa'"
+      (click)="switchSubtab('mapa')">
+      <i class="bi bi-globe-americas"></i> Mapa Mundial & Estatísticas da Busca
+    </button>
+    <button type="button"
+      class="subtab-btn"
+      [class.active]="activeSubtab() === 'lista'"
+      (click)="switchSubtab('lista')">
+      <i class="bi bi-list-task"></i> Lista de Vagas ({{ filteredVagas().length }}{{ allVagas().length > 0 && filteredVagas().length < allVagas().length ? " de " + allVagas().length : "" }})
+    </button>
+  </div>
+
+  <!-- SUBABA 1: MAPA MUNDIAL E DETALHE BRASIL -->
+  @if (activeSubtab() === 'mapa') {
+    <div class="subtab-mapa-view">
+      <!-- Barra de Triagem Rápida Acima do Mapa -->
+      <div class="vc-panel triage-toolbar">
+        <div class="triage-toolbar-left">
+          <label class="select-all-label">
+            <input type="checkbox" [checked]="isAllSelected()" (change)="toggleSelectAll($event)">
+            Selecionar tudo
+          </label>
+
+          <select class="vc-select-small" [(ngModel)]="batchScope">
+            <option value="5">Top 5 da lista filtrada</option>
+            <option value="10">Top 10 da lista filtrada</option>
+            <option value="50">Top 50 da lista filtrada</option>
+            <option value="all-visible">Todas as vagas filtradas</option>
+            <option value="selected">Vagas selecionadas</option>
+          </select>
+
+          <button type="button" class="btn-batch-action" (click)="triggerBatchScreen()" [disabled]="batchRunning()">
+            <i class="bi bi-stars"></i> Triar vagas com a IA
+          </button>
+
+          <button type="button" class="btn-clear-pending" (click)="clearPendingJobs()" title="Descarta vagas pendentes">
+            Limpar vagas pendentes
+          </button>
+
+          @if (batchStatus()) {
+            <span class="batch-status-text">
+              @if (batchRunning()) { <span class="vc-spinner"></span> }
+              {{ batchStatus() }}
+            </span>
+          }
+        </div>
+      </div>
+
+      <!-- MAPA MUNDIAL & BRASIL INTERATIVO SVG -->
+      <div class="vc-panel map-card">
+        <div class="map-card-header">
+          <h3 class="map-heading">
+            {{ currentMapMode === 'brasil' ? 'Mapa do Brasil' : 'Mapa Mundial' }}
+          </h3>
+          <div class="map-toggle-buttons">
+            <button type="button"
+              class="btn-map-toggle"
+              [class.active]="currentMapMode === 'world'"
+              (click)="switchMapMode('world')">
+              Mapa Mundial
+            </button>
+            <button type="button"
+              class="btn-map-toggle"
+              [class.active]="currentMapMode === 'brasil'"
+              (click)="switchMapMode('brasil')">
+              Mapa do Brasil
+            </button>
+          </div>
+        </div>
+
+        <!-- Palco SVG do Mapa -->
+        <div class="map-stage">
+          <div #mapWorldContainer [style.display]="currentMapMode === 'world' ? 'block' : 'none'" class="svg-map-wrapper"></div>
+          <div #mapBrasilContainer [style.display]="currentMapMode === 'brasil' ? 'block' : 'none'" class="svg-map-wrapper"></div>
+
+          <!-- Chips de Trabalho Remoto -->
+          <div class="remote-chips-bar">
+            <button type="button"
+              class="remote-chip"
+              [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'REMOTO_BR'"
+              (click)="selectRemoteChip('REMOTO_BR', 'Remoto Brasil')">
+              Remoto Brasil: {{ remoteCounts['REMOTO_BR'] || 0 }} vaga(s)
+            </button>
+            <button type="button"
+              class="remote-chip"
+              [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'EU_REMOTE'"
+              (click)="selectRemoteChip('EU_REMOTE', 'Remoto Europa')">
+              Remoto Europa: {{ remoteCounts['EU_REMOTE'] || 0 }} vaga(s)
+            </button>
+            <button type="button"
+              class="remote-chip"
+              [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'GLOBAL_REMOTE'"
+              (click)="selectRemoteChip('GLOBAL_REMOTE', 'Remoto Global / EUA')">
+              Remoto Global / EUA: {{ remoteCounts['GLOBAL_REMOTE'] || 0 }} vaga(s)
+            </button>
+          </div>
+        </div>
+
+        <!-- Legenda e Indicador de Filtro Ativo -->
+        <div class="map-legend-bar">
+          <div class="map-legend-items">
+            <span class="legend-title">{{ isTriageMode ? 'Legenda (Notas da Triagem):' : 'Legenda (Volume de Vagas):' }}</span>
+            @if (isTriageMode) {
+              <span class="legend-chip"><span class="swatch" style="background: #131b2b; border: 1px solid #23324a;"></span> 0 vagas</span>
+              <span class="legend-chip"><span class="swatch" style="background: #64748b;"></span> Nota &lt; 60</span>
+              <span class="legend-chip"><span class="swatch" style="background: #0ea5e9;"></span> Nota 60 a 74</span>
+              <span class="legend-chip"><span class="swatch" style="background: #10b981; border: 1px solid #34d399;"></span> Nota 75+ (Alta afinidade)</span>
+            } @else {
+              <span class="legend-chip"><span class="swatch" style="background: #131b2b; border: 1px solid #23324a;"></span> 0 vagas</span>
+              <span class="legend-chip"><span class="swatch" style="background: #0369a1;"></span> 1 a 4 vagas</span>
+              <span class="legend-chip"><span class="swatch" style="background: #0284c7;"></span> 5 a 9 vagas</span>
+              <span class="legend-chip"><span class="swatch" style="background: #f59e0b;"></span> 10+ vagas (Alto volume)</span>
+            }
+          </div>
+
+          <div class="map-legend-actions">
+            @if (hasTriagedJobs()) {
+              <button type="button" class="btn-text-action" (click)="toggleTriageMode()">
+                {{ isTriageMode ? 'Ver volume de vagas' : 'Ver notas da triagem' }}
+              </button>
+            }
+            <span class="map-filter-label">{{ mapIndicatorText() }}</span>
+            @if (activeGeoFilter) {
+              <button type="button" class="btn-clear-selection" (click)="clearGeoFilter()">
+                Limpar seleção do mapa
+              </button>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- VAGAS NA LOCALIDADE SELECIONADA NO MAPA -->
+      @if (activeGeoFilter) {
+        <div class="vc-panel local-jobs-panel">
+          <div class="local-jobs-header">
+            <h3>Vagas em {{ activeGeoFilter.name }} ({{ localVagas().length }} encontrada(s))</h3>
+            <button type="button" class="btn-secondary" (click)="switchSubtab('lista')">
+              Abrir na aba de Lista Completa
+            </button>
+          </div>
+
+          <div class="cards-grid">
+            @for (vaga of localVagas(); track vaga.url) {
+              <article class="job-card">
+                <div class="job-card__header">
+                  <div>
+                    <h4 class="job-card__title">{{ vaga.title }}</h4>
+                    <p class="job-card__company">{{ vaga.company || 'Empresa não informada' }}</p>
+                  </div>
+                  @if (vaga.screening?.score) {
+                    <span class="vc-badge-fit"
+                      [class.vc-badge-fit--high]="vaga.screening!.score! >= 75"
+                      [class.vc-badge-fit--med]="vaga.screening!.score! >= 50 && vaga.screening!.score! < 75"
+                      [class.vc-badge-fit--low]="vaga.screening!.score! < 50">
+                      {{ vaga.screening!.score }}/100 &bull; {{ vaga.screening!.verdict }}
+                    </span>
+                  }
+                </div>
+
+                <div class="job-card__chips">
+                  <span class="chip"><i class="bi bi-geo-alt"></i> {{ vaga.location || 'Localidade não informada' }}</span>
+                  <span class="chip"><i class="bi bi-briefcase"></i> {{ getModelLabel(vaga.workplace_type) }}</span>
+                  <span class="chip"><i class="bi bi-globe"></i> {{ getPortalName(vaga.portal) }}</span>
+                </div>
+
+                <div class="job-card__actions">
+                  <button type="button" class="btn-card-action primary" (click)="markInteresse(vaga)">Me interessa</button>
+                  <button type="button" class="btn-card-action secondary" (click)="markDescartar(vaga)">Descartar</button>
+                  <a [href]="vaga.url" target="_blank" rel="noopener noreferrer" class="link-external">
+                    Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
+                  </a>
+                </div>
+              </article>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- POLOS COM MAIOR AFINIDADE COM SEU CURRÍCULO -->
+      @if (affinityHubs().length > 0) {
+        <div class="vc-panel affinity-panel">
+          <h3 class="panel-inner-heading">Polos com Maior Afinidade com seu Currículo</h3>
+          <div class="affinity-grid">
+            @for (hub of affinityHubs(); track hub.key) {
+              <div class="affinity-card" (click)="onAffinityClick(hub)">
+                <div class="affinity-title">{{ hub.label }}</div>
+                <div class="affinity-desc">
+                  Destaques: {{ hub.companiesSample }}. Cargos como {{ hub.sampleTitles }}.
+                </div>
+                <span class="affinity-tag">{{ hub.count }} vaga(s) · {{ hub.scoreText }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- ESTATÍSTICAS E GRÁFICOS DAS VAGAS ENCONTRADAS -->
+      <div class="vc-panel stats-panel">
+        <h3 class="panel-inner-heading">Estatísticas e Gráficos das Vagas Encontradas</h3>
+
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-lbl">Vagas Encontradas</div>
+            <div class="stat-val">{{ filteredVagas().length }}</div>
+            <div class="stat-sub">Total na lista atual</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-lbl">Países e Estados Mapeados</div>
+            <div class="stat-val">{{ mappedLocationsCount() }}</div>
+            <div class="stat-sub">Polos com vagas ativas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-lbl">Principal Polo na Busca</div>
+            <div class="stat-val" style="font-size: 1.3rem;">{{ leaderPoleName() }}</div>
+            <div class="stat-sub">Maior concentração</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-lbl">{{ isTriageMode ? 'Alta Afinidade (Nota 75+)' : 'Vagas na Seleção' }}</div>
+            <div class="stat-val">{{ isTriageMode ? highFitCount() : filteredVagas().length }}</div>
+            <div class="stat-sub">{{ isTriageMode ? 'Alinhadas ao seu currículo' : 'Total mapeado na busca' }}</div>
+          </div>
+        </div>
+
+        <!-- Gráficos de Barras -->
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h4>Top Localidades (Países e Estados)</h4>
+            <div class="bars-container">
+              @for (bar of locationBars(); track bar.label) {
+                <div class="chart-bar-row">
+                  <span class="chart-bar-label" [title]="bar.label">{{ bar.label }}</span>
+                  <div class="chart-bar-track">
+                    <div class="chart-bar-fill" [style.width.%]="bar.pct"></div>
+                  </div>
+                  <span class="chart-bar-val">{{ bar.count }} ({{ bar.pct }}%)</span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <div class="chart-card">
+            <h4>Modelo de Trabalho</h4>
+            <div class="bars-container">
+              @for (bar of workplaceBars(); track bar.label) {
+                <div class="chart-bar-row">
+                  <span class="chart-bar-label">{{ bar.label }}</span>
+                  <div class="chart-bar-track">
+                    <div class="chart-bar-fill" [style.width.%]="bar.pct"></div>
+                  </div>
+                  <span class="chart-bar-val">{{ bar.count }} ({{ bar.pct }}%)</span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <div class="chart-card wide">
+            <h4>Vagas por Portal / Fonte de Busca</h4>
+            <div class="bars-container portals-grid-bars">
+              @for (bar of portalBars(); track bar.label) {
+                <div class="chart-bar-row">
+                  <span class="chart-bar-label">{{ bar.label }}</span>
+                  <div class="chart-bar-track">
+                    <div class="chart-bar-fill" [style.width.%]="bar.pct"></div>
+                  </div>
+                  <span class="chart-bar-val">{{ bar.count }} ({{ bar.pct }}%)</span>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- SUBABA 2: LISTA COMPLETA DE VAGAS -->
+  @if (activeSubtab() === 'lista') {
+    <div class="subtab-lista-view">
+      <div class="vc-panel triage-toolbar">
+        <div class="triage-toolbar-left">
+          <label class="select-all-label">
+            <input type="checkbox" [checked]="isAllSelected()" (change)="toggleSelectAll($event)">
+            Selecionar tudo
+          </label>
+
+          <select class="vc-select-small" [(ngModel)]="batchScope">
+            <option value="5">Top 5 da lista filtrada</option>
+            <option value="10">Top 10 da lista filtrada</option>
+            <option value="50">Top 50 da lista filtrada</option>
+            <option value="all-visible">Todas as vagas filtradas</option>
+            <option value="selected">Vagas selecionadas</option>
+          </select>
+
+          <button type="button" class="btn-batch-action" (click)="triggerBatchScreen()" [disabled]="batchRunning()">
+            <i class="bi bi-stars"></i> Triar vagas com a IA
+          </button>
+
+          <button type="button" class="btn-clear-pending" (click)="clearPendingJobs()">
+            Limpar vagas pendentes
+          </button>
+
+          @if (batchStatus()) {
+            <span class="batch-status-text">{{ batchStatus() }}</span>
+          }
+        </div>
+      </div>
+
+      <p class="vagas-info-text">
+        {{ filteredVagas().length }} de {{ allVagas().length }} vagas exibidas.
+      </p>
+
+      <div class="cards-grid">
+        @for (vaga of filteredVagas(); track vaga.url) {
+          <article class="job-card">
+            <div class="job-card__header">
+              <div style="display: flex; gap: 8px; align-items: flex-start;">
+                <input type="checkbox"
+                  [checked]="selectedUrls.has(vaga.url)"
+                  (change)="toggleVagaSelection(vaga.url, $event)"
+                  style="margin-top: 4px; accent-color: var(--vc-blue); cursor: pointer;">
+                <div>
+                  <h3 class="job-card__title">{{ vaga.title }}</h3>
+                  <p class="job-card__company">{{ vaga.company || 'Empresa não informada' }}</p>
+                </div>
+              </div>
+
+              @if (vaga.screening?.score) {
+                <span class="vc-badge-fit"
+                  [class.vc-badge-fit--high]="vaga.screening!.score! >= 75"
+                  [class.vc-badge-fit--med]="vaga.screening!.score! >= 50 && vaga.screening!.score! < 75"
+                  [class.vc-badge-fit--low]="vaga.screening!.score! < 50">
+                  {{ vaga.screening!.score }}/100 &bull; {{ vaga.screening!.verdict }}
+                </span>
+              }
+            </div>
+
+            @if (vaga.screening?.summary) {
+              <p class="screening-summary-text">{{ vaga.screening?.summary }}</p>
+            }
+
+            <div class="job-card__chips">
+              @if (vaga.location) {
+                <span class="chip"><i class="bi bi-geo-alt"></i> {{ vaga.location }}</span>
+              }
+              <span class="chip"><i class="bi bi-briefcase"></i> {{ getModelLabel(vaga.workplace_type) }}</span>
+              @if (vaga.portal) {
+                <span class="chip"><i class="bi bi-globe"></i> {{ getPortalName(vaga.portal) }}</span>
+              }
+              @if (vaga.date) {
+                <span class="chip"><i class="bi bi-calendar3"></i> {{ vaga.date }}</span>
+              }
+              @if (hasVisa(vaga)) {
+                <span class="chip chip-visa" title="Sponsorship de visto explicitamente informado">VISA</span>
+              }
+            </div>
+
+            @if (getWarning(vaga)) {
+              <div class="warning-banner">
+                <i class="bi bi-exclamation-triangle"></i> [Aviso] {{ getWarning(vaga) }}
+              </div>
+            }
+
+            <div class="job-card__actions">
+              <button type="button" class="btn-card-action primary" (click)="markInteresse(vaga)">Me interessa</button>
+              <button type="button" class="btn-card-action secondary" (click)="markDescartar(vaga)">Descartar</button>
+              <a [href]="vaga.url" target="_blank" rel="noopener noreferrer" class="link-external">
+                Ver no portal <i class="bi bi-box-arrow-up-right"></i>
+              </a>
+            </div>
+          </article>
+        }
+      </div>
+    </div>
+  }
+</div>
+

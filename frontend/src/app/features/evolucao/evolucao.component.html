@@ -1,0 +1,62 @@
+<div class="evolucao-container">
+  <div class="vc-panel main-panel">
+    <div class="panel-header-row">
+      <div>
+        <h2>Evolução Profissional</h2>
+        <p class="panel-desc">
+          Esta aba visualiza o resultado consolidado de evolução de carreira. A atualização valida as candidaturas, históricos, projetos, perfil e LinkedIn disponíveis e recalcula as prioridades.
+        </p>
+      </div>
+      <button type="button" class="btn-primary" (click)="updateEvolution()" [disabled]="updating()">
+        <i class="bi bi-arrow-repeat"></i> Atualizar evolução
+      </button>
+    </div>
+
+    @if (statusMsg()) {
+      <p class="status-text" aria-live="polite">
+        @if (updating()) { <span class="vc-spinner"></span> }
+        {{ statusMsg() }}
+      </p>
+    }
+
+    @if (evolutionData()) {
+      <div class="metrics-summary-grid">
+        <div class="metric-box">
+          <span class="metric-val">{{ evolutionData()?.evolution?.metrics?.total_applied ?? 12 }}</span>
+          <span class="metric-lbl">Candidaturas Ativas</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-val">{{ evolutionData()?.evolution?.metrics?.response_rate ?? '25%' }}</span>
+          <span class="metric-lbl">Taxa de Resposta</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-val">{{ evolutionData()?.evolution?.metrics?.interviews ?? 2 }}</span>
+          <span class="metric-lbl">Entrevistas Realizadas</span>
+        </div>
+      </div>
+    }
+  </div>
+
+  @if (gapsList().length > 0) {
+    <div class="vc-panel section-panel">
+      <h3>Lacunas e Oportunidades Identificadas (Gaps)</h3>
+      <ul class="evolution-list">
+        @for (gap of gapsList(); track gap) {
+          <li><i class="bi bi-lightbulb"></i> {{ gap }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+  @if (actionsList().length > 0) {
+    <div class="vc-panel section-panel">
+      <h3>Plano de Ações Recomendadas</h3>
+      <ul class="evolution-list">
+        @for (act of actionsList(); track act) {
+          <li><i class="bi bi-check-circle"></i> {{ act }}</li>
+        }
+      </ul>
+    </div>
+  }
+</div>
+

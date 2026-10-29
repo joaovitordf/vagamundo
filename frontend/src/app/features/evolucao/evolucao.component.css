@@ -1,0 +1,136 @@
+.evolucao-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.main-panel, .section-panel {
+  padding: 1.5rem;
+}
+
+.panel-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.panel-header-row h2 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.25rem;
+}
+
+.panel-desc {
+  margin: 0;
+  color: var(--vc-muted);
+  font-size: 0.9rem;
+  max-width: 650px;
+  line-height: 1.5;
+}
+
+.btn-primary {
+  background: var(--vc-blue);
+  color: white;
+  border: none;
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status-text {
+  margin: 1rem 0 0 0;
+  color: var(--vc-blue);
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.metrics-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.metric-box {
+  background: var(--vc-bg-2);
+  border: 1px solid var(--vc-border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metric-val {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--vc-blue);
+}
+
+.metric-lbl {
+  font-size: 0.8rem;
+  color: var(--vc-muted);
+  font-weight: 600;
+}
+
+.section-panel h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  color: var(--vc-text);
+}
+
+.evolution-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.evolution-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.9rem;
+  color: var(--vc-text);
+  line-height: 1.4;
+}
+
+.evolution-list li i {
+  color: var(--vc-blue);
+  margin-top: 2px;
+}
+
+.vc-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(56, 189, 248, 0.3);
+  border-top-color: var(--vc-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+

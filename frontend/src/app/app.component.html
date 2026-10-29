@@ -1,0 +1,27 @@
+<div class="vc-shell" [class.is-collapsed]="isCollapsed" [class.is-mobile-open]="mobileOpen">
+  <!-- Sidebar Retrátil -->
+  <app-sidebar [isCollapsed]="isCollapsed" (toggleCollapse)="toggleSidebar()"></app-sidebar>
+
+  <!-- Backdrop Mobile -->
+  @if (mobileOpen) {
+    <button class="vc-backdrop" (click)="closeMobile()" aria-label="Fechar menu"></button>
+  }
+
+  <div class="vc-main">
+    <!-- Topbar / Header -->
+    <app-header
+      [pageTitle]="pageTitle"
+      [pageIcon]="pageIcon"
+      (toggleMobile)="toggleMobile()">
+    </app-header>
+
+    <!-- Conteúdo Principal da Feature Ativa -->
+    <main class="vc-content">
+      <router-outlet></router-outlet>
+    </main>
+
+    <!-- Footer -->
+    <app-footer></app-footer>
+  </div>
+</div>
+

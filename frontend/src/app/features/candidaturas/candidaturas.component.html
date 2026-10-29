@@ -1,0 +1,87 @@
+<div class="vc-panel">
+  <div class="candidaturas-header">
+    <div>
+      <h2>Minhas Candidaturas ({{ applications().length }} Ativas)</h2>
+      <p class="candidaturas-desc">
+        Acompanhamento direto do arquivo job_search_tracker.csv e histórico sincronizado.
+      </p>
+    </div>
+    <button type="button" class="btn-refresh" (click)="loadApplications()">
+      <i class="bi bi-arrow-repeat"></i> Atualizar
+    </button>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-state">
+      Carregando candidaturas…
+    </div>
+  } @else if (applications().length === 0) {
+    <div class="empty-state">
+      <i class="bi bi-folder2-open empty-icon"></i>
+      <p>Nenhuma candidatura registrada ainda. Marque "Já me candidatei" nas vagas de Me interessam para acompanhar aqui.</p>
+    </div>
+  } @else {
+    <div class="table-responsive">
+      <table class="vc-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Empresa</th>
+            <th>Cargo</th>
+            <th>Canal</th>
+            <th>Status</th>
+            <th>Materiais</th>
+            <th class="text-right">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (app of applications(); track app.url || app.source || app.company + app.date) {
+            <tr>
+              <td class="cell-date">{{ formatDate(app.date) }}</td>
+              <td class="cell-company">
+                <strong>{{ app.company }}</strong>
+                @if (app.notes) {
+                  <div class="cell-notes">{{ app.notes }}</div>
+                }
+              </td>
+              <td class="cell-role">{{ app.role || app.title || '-' }}</td>
+              <td>
+                <span class="portal-badge">{{ app.channel || app.portal || 'portal' }}</span>
+              </td>
+              <td>
+                <span class="status-badge" [class]="app.status || 'applied'">
+                  {{ getStatusLabel(app.status) }}
+                </span>
+              </td>
+              <td>
+                <div class="materials-group">
+                  @if (app.cv_file) {
+                    <span class="doc-pill cv" title="Currículo associado: {{ app.cv_file }}">
+                      <i class="bi bi-file-earmark-text"></i> CV
+                    </span>
+                  }
+                  @if (app.cover_letter_file) {
+                    <span class="doc-pill carta" title="Carta associada: {{ app.cover_letter_file }}">
+                      <i class="bi bi-envelope"></i> Carta
+                    </span>
+                  }
+                  @if (!app.cv_file && !app.cover_letter_file) {
+                    <span class="no-materials">-</span>
+                  }
+                </div>
+              </td>
+              <td class="text-right">
+                @if (app.source || app.url) {
+                  <a [href]="app.source || app.url" target="_blank" rel="noopener noreferrer" class="link-external" title="Ver vaga no portal">
+                    Ver vaga <i class="bi bi-box-arrow-up-right"></i>
+                  </a>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
+

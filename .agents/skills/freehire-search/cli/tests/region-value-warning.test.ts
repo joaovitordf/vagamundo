@@ -168,7 +168,7 @@ describe("--region outside the closed vocabulary", () => {
     expect(warning).toContain("--country US")
   })
 
-  test("no region filter means no warning and one request", async () => {
+  test("omitting region filter emits zero warnings and one request", async () => {
     const stub = stubSearch(0)
     capture("stdout")
     const stderr = capture("stderr")

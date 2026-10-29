@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["bun", "node"],
+    "skipLibCheck": true,
+    "strict": false
+  },
+  "exclude": [
+    "frontend",
+    "node_modules"
+  ]
+}
+

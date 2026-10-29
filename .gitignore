@@ -1,6 +1,9 @@
 # Dependencies
 node_modules
 bun.lock
+.angular/
+dist/
+tools/painel/dist/
 
 # Python
 __pycache__/
@@ -91,6 +94,10 @@ cv/*.txt
 cover_letters/cover_*.*
 cover_letters/Cover_*.*
 !cover_letters/cover_example.tex
+backend/cv/main_*.*
+backend/cv/*.txt
+backend/cover_letters/cover_*.*
+backend/cover_letters/Cover_*.*
 
 # documents/ subfolder contents are personal — only README and folder structure are tracked
 # Loose files dropped straight into documents/ (e.g. a CNPJ proof, an ID scan).
@@ -115,22 +122,39 @@ documents/linkedin/**
 documents/diplomas/**
 documents/references/**
 documents/projects/**
-# Also where /interview saves its prep packs (interview_prep_<stage>.md): these
-# name the employers applied to, quote what was submitted, and set out the
-# candidate's weak points.
 documents/applications/**
 documents/postings/**
-# The panel's "Meu perfil" form (tools/painel_perfil.py): city, salary
-# expectation, deal-breakers.
 documents/perfil/**
-# Belt-and-braces, not the primary guard: nothing writes here. Prep packs land
-# in documents/applications/<company>_<role>/, covered above. Kept because
-# tools/security_guards.py pins it in REQUIRED_IGNORE_RULES.
 documents/interview/**
 !documents/**/.gitkeep
 
+backend/documents/*.pdf
+backend/documents/*.png
+backend/documents/*.jpg
+backend/documents/*.jpeg
+backend/documents/*.doc
+backend/documents/*.docx
+backend/documents/*.odt
+backend/documents/*.rtf
+backend/documents/*.txt
+backend/documents/*.json
+backend/documents/*.csv
+backend/documents/*.xlsx
+backend/documents/*.zip
+backend/documents/comprovante*
+backend/documents/cv/**
+backend/documents/linkedin/**
+backend/documents/diplomas/**
+backend/documents/references/**
+backend/documents/projects/**
+backend/documents/applications/**
+backend/documents/postings/**
+backend/documents/perfil/**
+backend/documents/interview/**
+
 # Personal job search tracking
 job_search_tracker.csv
+backend/job_search_tracker.csv
 
 # Gmail sync state (message IDs, subjects - personal data)
 gmail_sync/
@@ -145,6 +169,7 @@ reports/
 # the skill directory shares the `upskill` name, so it would also ignore the
 # skill's own SKILL.md - hence the report-file prefix is pinned instead.
 upskill/*.md
+backend/upskill/*.md
 **/upskill/report-*.md
 
 # Company research cache (/apply Step 3, /interview Step 2 - personal search
@@ -152,6 +177,7 @@ upskill/*.md
 # repo root normally - a plain rooted pattern is correct here, unlike the
 # **/-prefixed job_scraper/upskill rules above.
 company_research/*.json
+backend/company_research/*.json
 
 # Agent skills: track the source, ignore only deps and logs.
 # (A blanket `.agents/` ignore silently drops the job-search CLI skills from the repo.)
@@ -164,6 +190,7 @@ company_research/*.json
 
 # Local specification and planning notes
 spec/
+backend/spec/
 
 # Temporary scratch files and debugging scripts
 scratch/

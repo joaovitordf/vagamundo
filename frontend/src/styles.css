@@ -1,0 +1,470 @@
+/* ==========================================================================
+   Vagamundo Design System & Shell Styles (Tokens vc-*)
+   Design tokens e classes de layout do ecossistema Vagamundo
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] {
+  --vc-bg: #0b1020;
+  --vc-bg-2: #0f172a;
+  --vc-panel: #111a33;
+  --vc-panel-2: #16213f;
+  --vc-border: rgba(148, 163, 184, 0.12);
+  --vc-text: #e2e8f0;
+  --vc-muted: #94a3b8;
+  --vc-blue: #38bdf8;
+  --vc-purple: #a855f7;
+  --vc-neon: #22d3ee;
+  --vc-green: #22c55e;
+  --vc-yellow: #eab308;
+  --vc-red: #ef4444;
+
+  --vc-shell-grad-1: rgba(56, 189, 248, 0.08);
+  --vc-shell-grad-2: rgba(168, 85, 247, 0.09);
+  --vc-sidebar-grad-1: #0f172a;
+  --vc-sidebar-grad-2: #0f172a;
+  --vc-card-grad-1: rgba(22, 33, 63, 0.7);
+  --vc-card-grad-2: rgba(17, 26, 51, 0.7);
+  --vc-header-bg: #0f172a;
+  --vc-hover-bg: rgba(148, 163, 184, 0.08);
+  --vc-hover-bg-strong: rgba(56, 189, 248, 0.15);
+  --vc-surface: #0f172a;
+  --vc-surface-2: #17202e;
+  --vc-title: #cbd5e1;
+}
+
+[data-theme="light"] {
+  --vc-bg: #f4f7fb;
+  --vc-bg-2: #ffffff;
+  --vc-panel: #ffffff;
+  --vc-panel-2: #f8fafc;
+  --vc-border: rgba(15, 23, 42, 0.09);
+  --vc-text: #0f172a;
+  --vc-muted: #64748b;
+  --vc-blue: #0284c7;
+  --vc-purple: #7c3aed;
+  --vc-neon: #0891b2;
+  --vc-green: #16a34a;
+  --vc-yellow: #ca8a04;
+  --vc-red: #dc2626;
+
+  --vc-shell-grad-1: rgba(56, 189, 248, 0.05);
+  --vc-shell-grad-2: rgba(168, 85, 247, 0.05);
+  --vc-sidebar-grad-1: #ffffff;
+  --vc-sidebar-grad-2: #ffffff;
+  --vc-card-grad-1: #ffffff;
+  --vc-card-grad-2: #ffffff;
+  --vc-header-bg: #ffffff;
+  --vc-hover-bg: rgba(15, 23, 42, 0.04);
+  --vc-hover-bg-strong: rgba(2, 132, 199, 0.12);
+  --vc-surface: #ffffff;
+  --vc-surface-2: #f1f5f9;
+  --vc-title: #334155;
+}
+
+/* ---------- Global Resets & Base ---------- */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: var(--vc-bg);
+  color: var(--vc-text);
+  overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vc-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vc-muted);
+}
+
+/* ---------- App Shell Layout (vc-shell) ---------- */
+.vc-shell {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+  background:
+    radial-gradient(ellipse at top left, var(--vc-shell-grad-1), transparent 50%),
+    radial-gradient(ellipse at bottom right, var(--vc-shell-grad-2), transparent 50%),
+    var(--vc-bg);
+  position: relative;
+}
+
+/* ---------- Sidebar (vc-sidebar) ---------- */
+.vc-sidebar {
+  width: 260px;
+  background: var(--vc-sidebar-grad-1);
+  border-right: 1px solid var(--vc-border);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.vc-shell.is-collapsed .vc-sidebar {
+  width: 72px;
+}
+
+.brand-sidebar-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--vc-border);
+  flex-shrink: 0;
+}
+
+.desktop-toggle {
+  background: transparent;
+  border: none;
+  color: var(--vc-text);
+  font-size: 1.25rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.sidebar-collapse-btn:hover {
+  background: var(--vc-hover-bg);
+  color: var(--vc-blue);
+}
+
+.brand-logo-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+  color: var(--vc-text);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.brand-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--vc-blue);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.vc-shell.is-collapsed .brand-title-text,
+.vc-shell.is-collapsed .brand-badge {
+  display: none;
+}
+
+/* Navigation List */
+.vc-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.75rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.vc-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  color: var(--vc-muted);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 500;
+  position: relative;
+  transition: background-color 0.2s, color 0.2s;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.vc-nav__link:hover {
+  background: var(--vc-hover-bg);
+  color: var(--vc-text);
+}
+
+.vc-nav__link.is-active {
+  background: var(--vc-hover-bg-strong);
+  color: var(--vc-blue);
+  font-weight: 600;
+}
+
+.vc-nav__link.is-active .vc-nav__icon {
+  color: var(--vc-blue);
+}
+
+.vc-nav__icon {
+  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.vc-nav__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vc-shell.is-collapsed .vc-nav__label,
+.vc-shell.is-collapsed .vc-nav__count {
+  display: none;
+}
+
+.vc-nav__count {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--vc-text);
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* Sidebar Footer (Mini User Profile) */
+.vc-sidebar__footer {
+  padding: 0.75rem 0.85rem;
+  border-top: 1px solid var(--vc-border);
+  flex-shrink: 0;
+}
+
+.vc-mini-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  overflow: hidden;
+}
+
+.vc-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--vc-blue), var(--vc-purple));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.88rem;
+  flex-shrink: 0;
+}
+
+.vc-avatar--lg {
+  width: 38px;
+  height: 38px;
+}
+
+.vc-mini-user__text {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  white-space: nowrap;
+
+  strong {
+    font-size: 0.88rem;
+    color: var(--vc-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  span {
+    font-size: 0.76rem;
+    color: var(--vc-muted);
+  }
+}
+
+.vc-shell.is-collapsed .vc-mini-user__text {
+  display: none;
+}
+
+/* ---------- Main Container & Header (vc-header) ---------- */
+.vc-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vc-header {
+  height: 60px;
+  background: var(--vc-header-bg);
+  border-bottom: 1px solid var(--vc-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 90;
+}
+
+.vc-header__left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.vc-page-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--vc-text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  i {
+    color: var(--vc-blue);
+    font-size: 1.25rem;
+  }
+}
+
+.vc-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.vc-icon-btn {
+  background: transparent;
+  border: 1px solid var(--vc-border);
+  color: var(--vc-text);
+  font-size: 1rem;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-theme-toggle:hover {
+  background: var(--vc-hover-bg);
+  color: var(--vc-blue);
+  border-color: var(--vc-blue);
+}
+
+.mobile-toggle {
+  display: none;
+}
+
+/* ---------- Content Body (vc-content) ---------- */
+.vc-content {
+  flex: 1;
+  padding: 1.75rem 2rem;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ---------- Footer (vc-footer) ---------- */
+.vc-footer {
+  padding: 1.25rem 2rem;
+  border-top: 1px solid var(--vc-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--vc-muted);
+  font-size: 0.82rem;
+}
+
+/* ---------- Responsive Shell ---------- */
+@media (max-width: 900px) {
+  .mobile-toggle {
+    display: flex;
+  }
+
+  .vc-sidebar {
+    position: fixed;
+    left: -260px;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+  }
+
+  .vc-shell.is-mobile-open .vc-sidebar {
+    transform: translateX(260px);
+  }
+
+  .vc-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    border: none;
+  }
+
+  .vc-content {
+    padding: 1rem 1.25rem;
+  }
+}
+
+/* ---------- Reusable Panel / Card Tokens ---------- */
+.vc-panel {
+  background: var(--vc-panel);
+  border: 1px solid var(--vc-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.vc-badge-fit {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vc-badge-fit--high {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--vc-green);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.vc-badge-fit--med {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--vc-blue);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.vc-badge-fit--low {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--vc-muted);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}

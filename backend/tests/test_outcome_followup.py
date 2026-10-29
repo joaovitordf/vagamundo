@@ -1,0 +1,93 @@
+"""Guards for /outcome's follow-up branch (Step 2b).
+
+The branch is part of the /outcome markdown spec (the spec IS the
+implementation), so these tests pin the invariants that would break
+silently: the draft-only rule (the branch must never send anything on the
+user's behalf), the no-new-claims rule that keeps follow-ups inside the
+framework's never-fabricate boundary, the two-follow-up cap that terminates
+into /outcome's own no_response flow, and the deliberate contrast with
+/gmail-sync's alerta de 30 dias de abandono.
+"""
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+try:
+    import yaml  # noqa: F401 - only probing availability for the lint integration test
+    _HAVE_YAML = True
+except ImportError:
+    _HAVE_YAML = False
+
+import sys
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _repo import REPO, REPO_ROOT
+COMMAND = REPO / ".claude" / "commands" / "outcome.md"
+
+
+class OutcomeFollowupBranchSpec(unittest.TestCase):
+    def test_followup_branch_exists(self):
+        text = COMMAND.read_text(encoding="utf-8")
+        self.assertIn(
+            "## Passo 2b: Ramo de follow-up",
+            text,
+            "outcome.md lost its follow-up branch section",
+        )
+
+    def test_followup_argument_documented(self):
+        text = COMMAND.read_text(encoding="utf-8")
+        self.assertIn(
+            "`followup <N>`",
+            text,
+            "spec lost the /outcome followup argument forms",
+        )
+
+    def test_draft_only_rule_present(self):
+        text = COMMAND.read_text(encoding="utf-8")
+        self.assertIn(
+            "só rascunho, nunca envia",
+            text,
+            "spec lost the rule that the follow-up branch never sends anything on the user's behalf",
+        )
+
+    def test_no_new_claims_rule_present(self):
+        text = COMMAND.read_text(encoding="utf-8")
+        self.assertIn(
+            "nenhuma afirmação nova",
+            text,
+            "spec lost the rule that follow-ups only reuse claims from the archived submitted materials",
+        )
+
+    def test_two_followup_cap_present(self):
+        text = COMMAND.read_text(encoding="utf-8")
+        self.assertIn(
+            "No máximo dois follow-ups por candidatura",
+            text,
+            "spec lost the cap that stops the follow-up branch from nagging indefinitely",
+        )
+
+    def test_threshold_contrast_with_gmail_sync_documented(self):
+        text = COMMAND.read_text(encoding="utf-8")
+        self.assertIn(
+            "alerta de 30 dias de abandono",
+            text,
+            "spec lost the rationale for the 10-day nudge vs /gmail-sync's 30-day alarm",
+        )
+
+    @unittest.skipUnless(
+        _HAVE_YAML,
+        "PyYAML not installed (the CI Python-test job omits it; the lint job runs lint_skills.py directly)",
+    )
+    def test_lint_skills_passes(self):
+        result = subprocess.run(
+            [sys.executable, str(REPO / "tools" / "lint_skills.py")],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, f"lint_skills.py failed:\n{result.stdout}{result.stderr}")
+
+
+if __name__ == "__main__":
+    unittest.main()

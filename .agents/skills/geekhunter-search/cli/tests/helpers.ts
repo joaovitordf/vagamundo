@@ -12,7 +12,7 @@ export async function runCLI(args: string[], env: Record<string, string> = {}): 
   const proc = Bun.spawn(["bun", "run", CLI_PATH, ...args], {
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, ...env },
+    env,
   });
 
   const [stdout, stderr, exitCode] = await Promise.all([

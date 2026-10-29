@@ -1,0 +1,105 @@
+<div class="vc-panel info-panel">
+  <h2>Vagas que Me Interessam</h2>
+  <p class="panel-desc">
+    <strong>Avaliar</strong> analisa a vaga completa em relação ao seu currículo (em português para vagas no Brasil e em inglês para vagas internacionais).
+    Você pode gerar separadamente <strong>Gerar Currículo</strong> ou <strong>Gerar Carta</strong> compilados em PDF.
+    Quando enviar sua candidatura, clique em <strong>Já me candidatei</strong> para acompanhá-la em <em>Candidaturas</em>.
+  </p>
+
+  @if (actionStatus()) {
+    <p class="action-status-msg" aria-live="polite">
+      <span class="vc-spinner"></span> {{ actionStatus() }}
+    </p>
+  }
+</div>
+
+@if (loading()) {
+  <div class="loading-state">Carregando vagas salvas…</div>
+} @else if (savedJobs().length === 0) {
+  <div class="vc-panel empty-state">
+    <i class="bi bi-star empty-icon"></i>
+    <p>Nenhuma vaga marcada ainda. Na aba <strong>Buscar e Vagas</strong>, clique em "Me interessa" para salvá-las aqui.</p>
+  </div>
+} @else {
+  <div class="cards-grid">
+    @for (job of savedJobs(); track job.url) {
+      <article class="job-card">
+        <div class="job-card__header">
+          <div>
+            <h3 class="job-card__title">{{ job.title }}</h3>
+            <p class="job-card__company">
+              {{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}
+            </p>
+          </div>
+          @if (job.screening?.score) {
+            <span class="vc-badge-fit"
+              [class.vc-badge-fit--high]="job.screening!.score! >= 75"
+              [class.vc-badge-fit--med]="job.screening!.score! >= 50 && job.screening!.score! < 75"
+              [class.vc-badge-fit--low]="job.screening!.score! < 50">
+              {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict }}
+            </span>
+          }
+        </div>
+
+        @if (job.screening?.summary) {
+          <p class="screening-summary-text">{{ job.screening?.summary }}</p>
+        }
+
+        <div class="job-card__chips">
+          @if (job.location) {
+            <span class="chip"><i class="bi bi-geo-alt"></i> {{ job.location }}</span>
+          }
+          @if (job.workplace_type) {
+            <span class="chip"><i class="bi bi-briefcase"></i> {{ job.workplace_type }}</span>
+          }
+          @if (job.date) {
+            <span class="chip"><i class="bi bi-calendar3"></i> {{ job.date }}</span>
+          }
+        </div>
+
+        <div class="ai-actions-row">
+          <button type="button" class="btn-ai-action" (click)="runAi(job, 'avaliar')">
+            <i class="bi bi-search"></i> {{ job.claude?.avaliar ? 'Avaliar de novo' : 'Avaliar com IA' }}
+          </button>
+          <button type="button" class="btn-ai-action" (click)="runAi(job, 'curriculo')">
+            <i class="bi bi-file-earmark-person"></i> {{ (job.claude?.curriculo || job.pdf_cv) ? 'Refazer Currículo' : 'Gerar Currículo' }}
+          </button>
+          <button type="button" class="btn-ai-action" (click)="runAi(job, 'carta')">
+            <i class="bi bi-envelope"></i> {{ (job.claude?.carta || job.pdf_carta) ? 'Refazer Carta' : 'Gerar Carta' }}
+          </button>
+        </div>
+
+        <!-- Links para Documentos Gerados -->
+        @if (job.pdf_cv || job.pdf_carta || job.pdf_entrevista) {
+          <div class="generated-docs-row">
+            @if (job.pdf_cv) {
+              <a [href]="'/api/file?path=' + encodePath(job.pdf_cv)" target="_blank" class="doc-link-btn">
+                <i class="bi bi-file-earmark-pdf"></i> Currículo (PDF)
+              </a>
+            }
+            @if (job.pdf_carta) {
+              <a [href]="'/api/file?path=' + encodePath(job.pdf_carta)" target="_blank" class="doc-link-btn">
+                <i class="bi bi-file-earmark-pdf"></i> Carta (PDF)
+              </a>
+            }
+          </div>
+        }
+
+        <div class="job-card__footer">
+          <div class="footer-buttons">
+            <button type="button" class="btn-primary-small" (click)="markApplied(job)">
+              <i class="bi bi-send-check"></i> Já me candidatei
+            </button>
+            <button type="button" class="btn-secondary-small" (click)="discardJob(job)">
+              Descartar
+            </button>
+          </div>
+          <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="link-external">
+            Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
+          </a>
+        </div>
+      </article>
+    }
+  </div>
+}
+

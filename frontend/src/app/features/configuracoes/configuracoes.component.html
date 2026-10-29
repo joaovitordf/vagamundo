@@ -1,0 +1,117 @@
+<div class="vc-panel settings-panel">
+  <h2>Assistente de IA</h2>
+  <p class="settings-desc">
+    Escolha qual IA avalia as vagas, escreve o currículo e prepara a entrevista: Gemini, ChatGPT (OpenAI) ou Claude,
+    por chave de API ou pela ferramenta de linha de comando que você já instalou e em que já entrou. O que você salva aqui vai para o
+    arquivo <code>.env</code> deste computador, que o git não envia, e a chave nunca volta para esta página.
+  </p>
+
+  @if (settingsData()) {
+    <div class="active-provider-summary">
+      <i class="bi bi-cpu-fill summary-icon"></i>
+      <div>
+        <strong>Motor em uso:</strong>
+        <span class="active-provider-name">{{ activeProviderLabel() }}</span>
+        @if (settingsData()?.model) {
+          <span class="active-model-tag">({{ settingsData()?.model }})</span>
+        }
+      </div>
+    </div>
+
+    <form class="settings-form" (submit)="$event.preventDefault()">
+      <div class="setting-field">
+        <label for="cfg-provider"><strong>Usar Provedor</strong></label>
+        <select id="cfg-provider" class="vc-select" [(ngModel)]="chosenProvider" name="provider">
+          <option value="auto">Automático (o primeiro que estiver configurado)</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="openai">OpenAI (ChatGPT)</option>
+          <option value="claude">Anthropic Claude</option>
+        </select>
+      </div>
+
+      <!-- Credenciais por Provedor -->
+      <div class="providers-credentials-grid">
+        <!-- Gemini Card -->
+        <div class="provider-card" [class.highlight]="chosenProvider === 'gemini' || chosenProvider === 'auto'">
+          <div class="provider-header">
+            <span class="provider-title">
+              <i class="bi bi-stars"></i> Google Gemini
+            </span>
+            @if (hasProviderKey('gemini')) {
+              <span class="badge-configured">Configurado no .env</span>
+            } @else {
+              <span class="badge-missing">Não configurado</span>
+            }
+          </div>
+          <p class="provider-help">Chave de API do Google AI Studio (GEMINI_API_KEY).</p>
+          <input type="password"
+            class="vc-input"
+            placeholder="Nova chave (ou deixe em branco para manter a atual)"
+            [(ngModel)]="keys.gemini"
+            name="geminiKey">
+        </div>
+
+        <!-- OpenAI Card -->
+        <div class="provider-card" [class.highlight]="chosenProvider === 'openai'">
+          <div class="provider-header">
+            <span class="provider-title">
+              <i class="bi bi-robot"></i> OpenAI (ChatGPT)
+            </span>
+            @if (hasProviderKey('openai')) {
+              <span class="badge-configured">Configurado no .env</span>
+            } @else {
+              <span class="badge-missing">Não configurado</span>
+            }
+          </div>
+          <p class="provider-help">Chave de API da OpenAI (OPENAI_API_KEY).</p>
+          <input type="password"
+            class="vc-input"
+            placeholder="Nova chave (ou deixe em branco para manter a atual)"
+            [(ngModel)]="keys.openai"
+            name="openaiKey">
+        </div>
+
+        <!-- Claude Card -->
+        <div class="provider-card" [class.highlight]="chosenProvider === 'claude'">
+          <div class="provider-header">
+            <span class="provider-title">
+              <i class="bi bi-chat-square-text"></i> Anthropic Claude
+            </span>
+            @if (hasProviderKey('claude')) {
+              <span class="badge-configured">Configurado</span>
+            } @else {
+              <span class="badge-missing">Não configurado</span>
+            }
+          </div>
+          <p class="provider-help">Chave de API Anthropic (ANTHROPIC_API_KEY) ou CLI local do Claude.</p>
+          <input type="password"
+            class="vc-input"
+            placeholder="Nova chave (ou deixe em branco para manter a atual)"
+            [(ngModel)]="keys.claude"
+            name="claudeKey">
+        </div>
+      </div>
+
+      <!-- Aviso de Consentimento de Terceiros -->
+      <div class="consent-box">
+        <label class="consent-label">
+          <input type="checkbox" [(ngModel)]="consentGiven" name="consent">
+          <span>
+            Entendo que o texto das vagas e o meu perfil (sem CPF, RG, CNPJ nem endereço) serão enviados
+            ao provedor escolhido, que é um terceiro e pode guardá-los conforme a política dele.
+          </span>
+        </label>
+      </div>
+
+      <div class="settings-actions">
+        <button type="button" class="btn-primary" (click)="saveSettings()" [disabled]="saving()">
+          <i class="bi bi-check2"></i> Salvar configurações
+        </button>
+        @if (statusMsg()) {
+          <span class="status-msg" aria-live="polite">{{ statusMsg() }}</span>
+        }
+      </div>
+    </form>
+  }
+</div>
+

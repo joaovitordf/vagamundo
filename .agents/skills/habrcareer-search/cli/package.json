@@ -1,0 +1,21 @@
+{
+  "name": "habrcareer-search-cli",
+  "version": "1.0.0",
+  "description": "CLI para buscar vagas de tecnologia no Habr Career (career.habr.ru)",
+  "type": "module",
+  "main": "src/cli.ts",
+  "bin": {
+    "habrcareer-search": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "test": "bun test --timeout 30000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "1.3.14"
+  }
+}
+

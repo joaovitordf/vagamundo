@@ -1,0 +1,15 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Vai abrir a issue a partir de um fork personalizado? Leia antes
+    url: https://github.com/rosanapegasgodoy/vagamundo/blob/master/SETUP.md#2-fork-e-clone
+    about: >-
+      O gh CLI num clone de fork aponta para ESTE repositório público por padrão.
+      Acompanhamento pessoal de candidaturas, avaliações e registros de incidentes
+      pertencem ao seu próprio fork ou repositório privado — rode
+      `gh repo set-default <voce>/vagamundo` lá para manter a sua automação
+      apontada para casa.
+  - name: Defeito no núcleo do fluxo (vale para qualquer país)
+    url: https://github.com/MadsLorentzen/ai-job-search/issues
+    about: >-
+      Problemas que não são da adaptação para o Brasil rendem mais no projeto
+      original — de lá, a correção volta para cá.

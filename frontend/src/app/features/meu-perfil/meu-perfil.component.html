@@ -2,7 +2,10 @@
   <!-- Aviso de Privacidade do Repositório -->
   @if (privacyInfo; as priv) {
     @if (priv.type === 'warn') {
-      <div class="warn">{{ priv.message }}</div>
+      <div class="warn">
+        <span>{{ priv.message }}</span>
+        <button type="button" class="btn-close-warn" (click)="dismissWarning()" title="Fechar aviso">&times;</button>
+      </div>
     } @else {
       <p class="muted">{{ priv.message }}</p>
     }

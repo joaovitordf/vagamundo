@@ -15,9 +15,28 @@ export class ApiService {
   // Estado de busca da sessão atual: inicia vazio e só popula quando o usuário clica em "Buscar vagas"
   readonly hasSearchedInSession = signal<boolean>(false);
   readonly sessionVagas = signal<Vaga[]>([]);
+  readonly savedCount = signal<number>(0);
+  readonly applicationsCount = signal<number>(0);
+  readonly discardedCount = signal<number>(0);
 
   constructor() {
     this.initToken();
+    this.refreshCounts();
+  }
+
+  refreshCounts(): void {
+    this.getSaved().subscribe({
+      next: (jobs) => this.savedCount.set(jobs.length),
+      error: () => {}
+    });
+    this.getApplications().subscribe({
+      next: (apps) => this.applicationsCount.set(apps.length),
+      error: () => {}
+    });
+    this.getDiscarded().subscribe({
+      next: (disc) => this.discardedCount.set(disc.length),
+      error: () => {}
+    });
   }
 
   private initToken(): void {
@@ -120,6 +139,12 @@ export class ApiService {
     return this.http.get<{ areas: any[] }>(`${this.baseUrl}/cv-areas`);
   }
 
+  getDocuments(): Observable<any[]> {
+    return this.http.get<any>(`${this.baseUrl}/documents`).pipe(
+      map(res => (res && Array.isArray(res.documents) ? res.documents : []))
+    );
+  }
+
   getGeo(): Observable<any> {
     return this.http.get<any>(`${this.baseUrl}/geo`).pipe(
       catchError(() => this.http.get<any>('assets/geo_data.json'))
@@ -155,18 +180,44 @@ export class ApiService {
   }
 
   markDecision(urls: string[], decision: 'interesse' | 'descartar', jobData?: any): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/mark`, { urls, decision, job_data: jobData });
+    return this.postWithToken(`${this.baseUrl}/mark`, { urls, decision, job_data: jobData }).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  markApplied(payload: { url: string; company?: string; role?: string; portal?: string }): Observable<any> {
+    return this.postWithToken(`${this.baseUrl}/applied`, payload).pipe(
+      tap(() => this.refreshCounts())
+    );
   }
 
   discardJob(url: string): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/discard`, { url });
+    return this.postWithToken(`${this.baseUrl}/discard`, { url }).pipe(
+      tap(() => this.refreshCounts())
+    );
   }
 
   restoreJob(url: string): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/restore`, { url });
+    return this.postWithToken(`${this.baseUrl}/restore`, { url }).pipe(
+      tap(() => this.refreshCounts())
+    );
   }
 
-  startSearch(payload: { priority?: number[]; jobage?: number; all?: boolean; focus?: string }): Observable<any> {
+  clearDiscarded(): Observable<{ ok: boolean; deleted_db?: number; cleared_seen?: number }> {
+    return this.postWithToken<{ ok: boolean; deleted_db?: number; cleared_seen?: number }>(`${this.baseUrl}/discarded/clear`, {}).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  deleteDocument(path: string): Observable<any> {
+    return this.postWithToken(`${this.baseUrl}/documents/delete?path=${encodeURIComponent(path)}`, {});
+  }
+
+  clearDocuments(keepCv = true): Observable<any> {
+    return this.postWithToken(`${this.baseUrl}/documents/clear?keep_cv=${keepCv}`, {});
+  }
+
+  startSearch(payload: { priority?: number[]; jobage?: number; all?: boolean; focus?: string; portals?: string[]; region?: string; query?: string }): Observable<any> {
     this.hasSearchedInSession.set(true);
     return this.postWithToken(`${this.baseUrl}/search`, payload);
   }

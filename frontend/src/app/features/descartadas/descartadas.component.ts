@@ -88,4 +88,21 @@ export class DescartadasComponent implements OnInit {
       error: (err) => alert('Erro ao restaurar vaga: ' + err.message)
     });
   }
+
+  clearDiscarded(): void {
+    if (!this.allDiscarded().length) return;
+    const ok = confirm(`Tem certeza que deseja limpar permanentemente ${this.allDiscarded().length} vagas descartadas da memória do sistema?`);
+    if (!ok) return;
+
+    this.loading.set(true);
+    this.api.clearDiscarded().subscribe({
+      next: () => {
+        this.loadDiscarded();
+      },
+      error: (err) => {
+        this.loading.set(false);
+        alert('Erro ao limpar vagas descartadas: ' + (err.error?.detail || err.message));
+      }
+    });
+  }
 }

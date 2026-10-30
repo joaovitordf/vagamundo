@@ -38,6 +38,7 @@ export class MeuPerfilComponent implements OnInit {
 
   aiStatus = signal<string>('');
   isAiRunning = signal<boolean>(false);
+  dismissedWarning = signal<boolean>(false);
 
   // Armazena diretamente os valores dos campos com suporte a two-way data-binding limpo
   formValues: Record<string, any> = {};
@@ -76,6 +77,7 @@ export class MeuPerfilComponent implements OnInit {
   }
 
   get privacyInfo(): { type: 'ok' | 'warn'; message: string } | null {
+    if (this.dismissedWarning()) return null;
     const p = this.profileData()?.privacy;
     if (!p) return null;
     const repo = p.repo ? ` (${p.repo})` : '';
@@ -92,12 +94,16 @@ export class MeuPerfilComponent implements OnInit {
     if (status === 'publico') {
       return { type: 'warn', message: `[Aviso] Atenção: seu repositório${repo} é PÚBLICO. O perfil (nome, contatos, histórico, pretensão) vai para arquivos que o git publica. Não faça push dele, ou passe a usar um repositório privado (seção 8 do SETUP.md).` };
     }
-    return { type: 'warn', message: `[Aviso] Não consegui conferir se o seu repositório${repo} é privado. Se ele for público, o perfil (nome, contatos, histórico) fica visível para qualquer pessoa depois de um push.` };
+    return null;
+  }
+
+  dismissWarning(): void {
+    this.dismissedWarning.set(true);
   }
 
   showConfirmBox(): boolean {
     const status = this.profileData()?.privacy?.status;
-    return status === 'publico' || status === 'desconhecido';
+    return status === 'publico';
   }
 
   allUploadedFiles(): Array<{ kind: 'cv' | 'linkedin'; kindLabel: string; name: string; size: number }> {

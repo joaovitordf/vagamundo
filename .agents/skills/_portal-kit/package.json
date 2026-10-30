@@ -1,0 +1,15 @@
+{
+  "name": "@vagamundo/portal-kit",
+  "version": "1.0.0",
+  "description": "Shared toolkit for Vagamundo portal search CLIs",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "^5.4.0"
+  }
+}
+

@@ -68,53 +68,43 @@ export class MeInteressamComponent implements OnInit {
   }
 
   runAi(job: any, step: string): void {
-    this.actionStatus.set(`A IA está processando (${step}) para ${job.title}…`);
+    const label = step === 'avaliar' ? 'Avaliação rápida' : (step === 'curriculo' ? 'Currículo em PDF' : 'Carta de Apresentação');
+    this.actionStatus.set(`A IA está gerando ${label} para "${job.title || 'a vaga'}"… Aguarde.`);
     this.api.triggerClaude({ url: job.url, step }).subscribe({
       next: () => {
-        this.pollAiStatus();
+        this.actionStatus.set('');
+        this.loadSaved();
       },
       error: (err) => {
         this.actionStatus.set('');
-        alert('Erro ao acionar IA: ' + err.message);
+        alert('Erro ao processar com IA: ' + (err.error?.detail || err.message));
       }
     });
   }
 
-  private pollAiStatus(): void {
-    const interval = setInterval(() => {
-      this.api.getSearchStatus().subscribe({
-        next: (st) => {
-          const agent = st.agent || st.claude;
-          if (agent && agent.running) {
-            this.actionStatus.set(`Processando desde ${agent.started?.slice(11, 16) || ''}…`);
-          } else {
-            clearInterval(interval);
-            this.actionStatus.set('');
-            this.loadSaved();
-          }
-        },
-        error: () => {
-          clearInterval(interval);
-          this.actionStatus.set('');
-        }
-      });
-    }, 2500);
-  }
-
   markApplied(job: any): void {
-    this.api.markDecision([job.url], 'interesse', { ...job, applied: true }).subscribe({
+    this.actionStatus.set(`Registrando candidatura para "${job.title || 'vaga'}"…`);
+    this.api.markApplied({
+      url: job.url,
+      company: job.company,
+      role: job.title || job.role,
+      portal: job.portal,
+    }).subscribe({
       next: () => {
-        alert('Vaga registrada! Acesse a aba Candidaturas para detalhes.');
+        this.actionStatus.set('');
         this.loadSaved();
       },
-      error: (err) => alert('Erro: ' + err.message)
+      error: (err) => {
+        this.actionStatus.set('');
+        alert('Erro ao registrar candidatura: ' + (err.error?.detail || err.message));
+      }
     });
   }
 
   discardJob(job: any): void {
     this.api.discardJob(job.url).subscribe({
       next: () => this.loadSaved(),
-      error: (err) => alert('Erro ao descartar: ' + err.message)
+      error: (err) => alert('Erro ao descartar: ' + (err.error?.detail || err.message))
     });
   }
 }

@@ -65,7 +65,7 @@ O projeto incorpora boas práticas de orientação de carreira: critérios de av
 ### 1. Fork e clone
 
 ```bash
-gh repo fork rosanapegasgodoy/vagamundo --clone
+gh repo fork joaovitordf/vagamundo --clone
 cd vagamundo
 ```
 

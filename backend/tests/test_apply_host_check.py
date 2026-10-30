@@ -223,7 +223,8 @@ class ApplyHostVerificationSpecTests(unittest.TestCase):
         ]
         for url in urls:
             tier, host = classify_posting_host(url)
-            self.assertEqual(tier, "official_ats", f"{url} should classify as official_ats, got {tier}")
+            expected = "installed_portal" if resolve_portal_skill(url) else "official_ats"
+            self.assertEqual(tier, expected, f"{url} should classify as {expected}, got {tier}")
 
     def test_classifier_identifies_installed_portal_hosts(self):
         # A regional subdomain and the bare apex must both pass for every portal;

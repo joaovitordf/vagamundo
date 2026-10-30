@@ -1,17 +1,25 @@
 <div class="vc-panel info-panel">
   <div class="descartadas-header">
     <div>
-      <h2>Vagas Descartadas</h2>
+      <div class="title-with-badge">
+        <h2>Vagas Descartadas</h2>
+        <span class="badge-total">{{ allDiscarded().length }} {{ allDiscarded().length === 1 ? 'vaga' : 'vagas' }}</span>
+      </div>
       <p class="panel-desc">
         Vagas descartadas manualmente ou pela triagem automática (nota abaixo de 40). Se quiser recuperar alguma vaga, clique em <strong>Restaurar</strong>.
       </p>
     </div>
-    <div class="filter-box">
-      <input type="text"
-        class="vc-input"
-        placeholder="Filtrar por cargo ou empresa…"
-        [(ngModel)]="filterText"
-        (ngModelChange)="onFilterChange()">
+    <div class="header-actions">
+      <div class="filter-box">
+        <input type="text"
+          class="vc-input"
+          placeholder="Filtrar por cargo ou empresa…"
+          [(ngModel)]="filterText"
+          (ngModelChange)="onFilterChange()">
+      </div>
+      <button type="button" class="btn-clear-all" (click)="clearDiscarded()" [disabled]="allDiscarded().length === 0" title="Apagar permanentemente todas as vagas descartadas da lista">
+        <i class="bi bi-trash3"></i> Limpar lista
+      </button>
     </div>
   </div>
 </div>
@@ -32,7 +40,7 @@
             <h3 class="job-card__title">{{ job.title }}</h3>
             <p class="job-card__company">{{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}</p>
           </div>
-          @if (job.screening?.score) {
+          @if (job.screening?.score !== undefined && job.screening?.score !== null) {
             <span class="vc-badge-fit vc-badge-fit--low">
               {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict }}
             </span>
@@ -60,4 +68,3 @@
     }
   </div>
 }
-

@@ -249,8 +249,109 @@ def extract_cv_areas(
 
     areas: list[dict] = []
     seen_labels: set[str] = set()
+    seen_kw_tuples: set[tuple] = set()
 
-    # 1. Extrai tópicos explícitos de competências: "- **Categoria**: item1, item2, item3"
+    def add_area(area_id: str, label: str, kws: list):
+        clean_kws = []
+        for k in kws:
+            ck = re.sub(r"[\(\)\[\]]", "", str(k)).strip(" ,.;:")
+            if ck and len(ck) >= 2 and ck.lower() not in [x.lower() for x in clean_kws]:
+                clean_kws.append(ck)
+        # Regra de ouro: no máximo 3 palavras-chave por área
+        clean_kws = clean_kws[:3]
+        if not clean_kws:
+            return
+        kw_key = tuple(x.lower() for x in clean_kws)
+        if kw_key in seen_kw_tuples or label.lower() in seen_labels:
+            return
+        seen_kw_tuples.add(kw_key)
+        seen_labels.add(label.lower())
+        areas.append({
+            "id": area_id,
+            "label": label,
+            "keywords": clean_kws,
+        })
+
+    # 1. Injeta a grade completa de eixos especializados quando o perfil abrange tecnologias de engenharia/software
+    has_tech_profile = any(tok in raw_md.lower() for tok in ("angular", "python", "java", "visao computacional", "opencv", "flutter", "frontend", "backend"))
+    if has_tech_profile:
+        joao_curated = [
+            # Front-end & Angular
+            ("fe-angular", "Desenvolvedor Front-end Angular", ["Angular", "TypeScript", "Frontend"]),
+            ("fe-angular-ts", "Angular & TypeScript", ["Angular", "TypeScript"]),
+            ("fe-angular-rxjs", "Angular & RxJS", ["Angular", "RxJS", "Web"]),
+            ("fe-dev", "Desenvolvedor Front-end", ["Frontend", "TypeScript", "HTML"]),
+            ("fe-angular-pleno", "Angular Pleno", ["Angular", "Pleno"]),
+            ("fe-angular-junior", "Angular Júnior", ["Angular", "Júnior"]),
+            ("fe-ui-comp", "UI & Componentes Reutilizáveis", ["Angular", "Bootstrap", "CSS"]),
+            ("fe-realtime", "Interfaces em Tempo Real", ["Angular", "WebSockets"]),
+            ("fe-web", "Desenvolvimento Web Front-end", ["Angular", "JavaScript", "HTML5"]),
+
+            # Java & Spring Boot
+            ("be-java-spring", "Desenvolvedor Java / Spring Boot", ["Java", "Spring Boot"]),
+            ("be-java-backend", "Backend Java", ["Java", "Spring Boot", "Backend"]),
+            ("be-java-api", "Java & APIs REST", ["Java", "REST API", "Spring Boot"]),
+            ("be-java-corp", "Java Corporativo (Hibernate / JPA)", ["Java", "Hibernate", "JPA"]),
+            ("be-java-oracle", "Java & Oracle Database", ["Java", "Oracle", "SQL"]),
+            ("be-java-jsf", "Java & PrimeFaces / JSF", ["Java", "JSF", "Spring"]),
+            ("be-java-dev", "Java Developer", ["Java Developer", "Spring Boot"]),
+            ("be-java-geral", "Desenvolvedor Java", ["Desenvolvedor Java"]),
+
+            # Python & FastAPI
+            ("be-python-fastapi", "Desenvolvedor Python / FastAPI", ["Python", "FastAPI"]),
+            ("be-python-backend", "Backend Python", ["Python", "FastAPI", "Backend"]),
+            ("be-python-api", "Python & APIs REST", ["Python", "REST API", "Docker"]),
+            ("be-python-postgres", "Python & PostgreSQL", ["Python", "PostgreSQL"]),
+            ("be-python-scraping", "Web Scraping & Automação", ["Python", "Web Scraping", "Automação"]),
+            ("be-python-dev", "Python Developer", ["Python Developer", "FastAPI"]),
+            ("be-python-geral", "Desenvolvedor Python", ["Desenvolvedor Python"]),
+
+            # Visão Computacional, OCR & IA
+            ("ai-cv", "Visão Computacional", ["Visão Computacional", "OpenCV"]),
+            ("ai-cv-en", "Computer Vision", ["Computer Vision", "Python"]),
+            ("ai-yolo", "YOLOv8 & Detecção de Objetos", ["YOLO", "Python", "Visão Computacional"]),
+            ("ai-ocr", "OCR & Extração de Documentos", ["OCR", "Python", "OpenCV"]),
+            ("ai-applied", "Inteligência Artificial Aplicada", ["Inteligência Artificial", "Python"]),
+            ("ai-cv-eng", "Computer Vision Engineer", ["Computer Vision Engineer"]),
+            ("ai-mediapipe", "Estimativa de Pose & Rastreamento", ["MediaPipe", "OpenCV", "Python"]),
+            ("ai-img-proc", "Processamento de Imagens", ["Processamento de Imagens", "Python"]),
+            ("ai-deep-learning", "Deep Learning & Percepção", ["Deep Learning", "Python", "IA"]),
+
+            # Full Stack
+            ("fs-angular-java", "Full Stack (Angular & Java)", ["Full Stack", "Angular", "Java"]),
+            ("fs-angular-python", "Full Stack (Angular & Python)", ["Full Stack", "Angular", "Python"]),
+            ("fs-dev", "Desenvolvedor Full Stack", ["Fullstack", "TypeScript", "Java"]),
+            ("fs-dev-en", "Full Stack Developer", ["Full Stack Developer", "Angular"]),
+            ("fs-spring", "Full Stack (Angular & Spring Boot)", ["Full Stack", "Angular", "Spring Boot"]),
+
+            # Mobile & Flutter
+            ("mob-flutter", "Desenvolvedor Flutter", ["Flutter", "Dart"]),
+            ("mob-dev", "Desenvolvedor Mobile", ["Mobile", "Flutter", "Dart"]),
+            ("mob-dev-en", "Mobile Developer", ["Mobile Developer", "Flutter"]),
+
+            # PHP & Laravel
+            ("php-laravel", "Desenvolvedor PHP & Laravel", ["PHP", "Laravel"]),
+            ("laravel-mysql", "Laravel & MySQL", ["Laravel", "MySQL"]),
+
+            # Bancos de Dados & DevOps
+            ("db-sql", "Bancos de Dados & SQL", ["PostgreSQL", "SQL"]),
+            ("db-oracle", "Oracle Database & SQL", ["Oracle", "SQL", "Database"]),
+            ("devops-docker", "DevOps & Docker", ["Docker", "DevOps"]),
+            ("devops-telemetry", "DevOps & Monitoramento", ["Docker", "Grafana"]),
+
+            # Engenharia de Software & Sistemas Corporativos
+            ("se-frontend", "Software Engineer Frontend", ["Software Engineer", "Frontend"]),
+            ("se-backend", "Software Engineer Backend", ["Software Engineer", "Java"]),
+            ("se-geral", "Engenheiro de Software", ["Engenheiro de Software", "Angular"]),
+            ("corp-erp", "Sistemas ERP Corporativos", ["ERP", "Java", "SQL"]),
+            ("corp-gestao", "Sistemas de Gestão Empresarial", ["ERP", "Full Stack"]),
+            ("corp-fintech", "FinTech & Automação de Crédito", ["Fintech", "Java", "Python"]),
+            ("corp-iot", "Monitoramento Industrial & IoT", ["IoT", "Monitoramento", "Frontend"]),
+        ]
+        for aid, lbl, kws in joao_curated:
+            add_area(aid, lbl, kws)
+
+    # 2. Extrai tópicos explícitos de competências: "- **Categoria**: item1, item2, item3"
     current_section = ""
     for line in raw_md.splitlines():
         if line.startswith("#"):
@@ -289,60 +390,8 @@ def extract_cv_areas(
                 kws.append(t_clean)
 
         if kws and cat_label not in seen_labels:
-            seen_labels.add(cat_label)
             slug = re.sub(r"[^a-z0-9]+", "-", cat_low).strip("-") or f"area-{len(areas)+1}"
-            areas.append({
-                "id": slug,
-                "label": cat_label,
-                "keywords": kws[:6],
-            })
-
-    # 2. Extrai das experiências profissionais: "### Cargo - Empresa"
-    current_section = ""
-    for line in raw_md.splitlines():
-        if line.startswith("#"):
-            current_section = line.strip("# ").strip().lower()
-            continue
-        if "experi" not in current_section:
-            continue
-        m = re.match(r"^\s*###\s+([^-—(]+?)\s*[-—]\s*([^(]+?)(?:\s*\(.*\))?$", line)
-        if not m:
-            continue
-        role_label = m.group(1).strip()
-        role_low = role_label.lower()
-        if len(role_label) >= 3 and role_label not in seen_labels and not any(skip in role_low for skip in ("identidade", "formação", "projetos", "certificações", "publicações", "prêmios")):
-            seen_labels.add(role_label)
-            slug = re.sub(r"[^a-z0-9]+", "-", role_low).strip("-") or f"area-{len(areas)+1}"
-            terms = [w for w in re.split(r"[\s/]+", role_label) if len(w) >= 3 and w.lower() not in ("desenvolvedor", "estagiário", "estagiario", "analista", "engenheiro", "junior", "pleno", "senior")]
-            keywords = [role_label] + terms
-            areas.append({
-                "id": slug,
-                "label": role_label,
-                "keywords": keywords[:5],
-            })
-
-    # 3. Lê respostas.json para cargos e competências de busca declaradas pelo usuário
-    ans = load_answers(answers_path)
-    if ans:
-        cargos = ans.get("cargos") or []
-        comp = ans.get("competencias_busca") or []
-        for c in cargos:
-            if c and c not in seen_labels:
-                seen_labels.add(c)
-                slug = re.sub(r"[^a-z0-9]+", "-", c.lower()).strip("-") or f"area-{len(areas)+1}"
-                kws = [c] + [x for x in comp if x.lower() in c.lower() or len(x) <= 25][:4]
-                areas.append({
-                    "id": slug,
-                    "label": c,
-                    "keywords": kws[:5],
-                })
-        if comp and "competencias-gerais" not in seen_labels:
-            seen_labels.add("competencias-gerais")
-            areas.append({
-                "id": "competencias-gerais",
-                "label": "Competências do Perfil",
-                "keywords": comp[:6],
-            })
+            add_area(slug, cat_label, kws[:3])
 
     if not areas:
         areas.append({

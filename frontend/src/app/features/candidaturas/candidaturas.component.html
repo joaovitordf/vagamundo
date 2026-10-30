@@ -37,14 +37,14 @@
         <tbody>
           @for (app of applications(); track app.url || app.source || app.company + app.date) {
             <tr>
-              <td class="cell-date">{{ formatDate(app.date) }}</td>
+              <td class="cell-date">{{ formatDate(app.date || app.applied_date) }}</td>
               <td class="cell-company">
-                <strong>{{ app.company }}</strong>
-                @if (app.notes) {
+                <strong>{{ app.company || app.job_company || '-' }}</strong>
+                @if (app.notes && app.notes !== 'Registrado pelo painel' && app.notes !== 'Gerado pelo painel') {
                   <div class="cell-notes">{{ app.notes }}</div>
                 }
               </td>
-              <td class="cell-role">{{ app.role || app.title || '-' }}</td>
+              <td class="cell-role">{{ app.role || app.title || app.job_title || '-' }}</td>
               <td>
                 <span class="portal-badge">{{ app.channel || app.portal || 'portal' }}</span>
               </td>
@@ -55,24 +55,24 @@
               </td>
               <td>
                 <div class="materials-group">
-                  @if (app.cv_file) {
-                    <span class="doc-pill cv" title="Currículo associado: {{ app.cv_file }}">
-                      <i class="bi bi-file-earmark-text"></i> CV
-                    </span>
+                  @if (app.pdf_cv || app.cv_file) {
+                    <a [href]="'/api/file?path=' + encodePath(app.pdf_cv || app.cv_file)" target="_blank" class="doc-pill cv" title="Abrir Currículo em PDF">
+                      <i class="bi bi-file-earmark-pdf"></i> CV
+                    </a>
                   }
-                  @if (app.cover_letter_file) {
-                    <span class="doc-pill carta" title="Carta associada: {{ app.cover_letter_file }}">
+                  @if (app.pdf_carta || app.cover_letter_file) {
+                    <a [href]="'/api/file?path=' + encodePath(app.pdf_carta || app.cover_letter_file)" target="_blank" class="doc-pill carta" title="Abrir Carta em PDF">
                       <i class="bi bi-envelope"></i> Carta
-                    </span>
+                    </a>
                   }
-                  @if (!app.cv_file && !app.cover_letter_file) {
+                  @if (!app.pdf_cv && !app.cv_file && !app.pdf_carta && !app.cover_letter_file) {
                     <span class="no-materials">-</span>
                   }
                 </div>
               </td>
               <td class="text-right">
-                @if (app.source || app.url) {
-                  <a [href]="app.source || app.url" target="_blank" rel="noopener noreferrer" class="link-external" title="Ver vaga no portal">
+                @if (app.source || app.url || app.job_url) {
+                  <a [href]="app.source || app.url || app.job_url" target="_blank" rel="noopener noreferrer" class="link-external" title="Ver vaga no portal">
                     Ver vaga <i class="bi bi-box-arrow-up-right"></i>
                   </a>
                 }
@@ -84,4 +84,3 @@
     </div>
   }
 </div>
-

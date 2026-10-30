@@ -200,3 +200,20 @@ scratchpad/
 
 # Benchmark & audit documents (local analysis)
 docs/BENCHMARK_CAREER_OPS_E_SKILLSPECTOR.md
+
+# SQLite User Data (Vagamundo v2)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/documents/
+data/generated/
+data/cache/
+!data/.gitkeep
+
+# Databases and SQL dumps (schema.sql is tracked)
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sql.dump
+*.sql.bak
+*.sql.backup

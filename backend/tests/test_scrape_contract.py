@@ -47,9 +47,11 @@ def derive_contract_fields() -> frozenset[str]:
     return frozenset(fields)
 
 
-def search_output_source(search_ts: Path) -> str:
-    helpers_ts = search_ts.parent.parent / "helpers.ts"
-    files = [search_ts, helpers_ts] if helpers_ts.exists() else [search_ts]
+def search_output_source(portal: Path) -> str:
+    files = list((portal / "cli" / "src").rglob("*.ts"))
+    kit = portal.parent / "_portal-kit" / "src"
+    if kit.exists():
+        files.extend(kit.glob("*.ts"))
     return "\n".join(f.read_text(encoding="utf-8") for f in files)
 
 
@@ -65,11 +67,11 @@ class ScrapeSearchOutputContractTests(unittest.TestCase):
         contract = derive_contract_fields()
         failures: list[str] = []
         for portal in PORTAL_CLIS:
-            search_ts = portal / "cli" / "src" / "commands" / "search.ts"
-            if not search_ts.exists():
-                failures.append(f"{portal.name}: no cli/src/commands/search.ts")
+            src_dir = portal / "cli" / "src"
+            if not src_dir.exists():
+                failures.append(f"{portal.name}: no cli/src directory")
                 continue
-            source = search_output_source(search_ts)
+            source = search_output_source(portal)
             emitted = set(re.findall(r"^\s*([a-zA-Z_][a-zA-Z0-9_]*):", source, re.MULTILINE))
             missing = sorted(contract - emitted)
             if missing:

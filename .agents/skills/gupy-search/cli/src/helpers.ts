@@ -1,94 +1,46 @@
 // Fonte de dados: o Portal Gupy (portal.gupy.io), o agregador público das vagas
 // que as empresas publicam no ATS da Gupy.
-//
-// - Busca: a rota JSON que a própria página de busca do portal chama
-//   (/api/job-search/jobs). Sem login, sem chave. robots.txt do portal: tudo liberado.
-// - Detalhe: a página pública da vaga (https://<empresa>.gupy.io/jobs/<id>), que
-//   traz os dados completos no bloco __NEXT_DATA__ (JSON do Next.js). O robots.txt
-//   das páginas de empresa libera /jobs e só bloqueia /companies e /candidates.
-//
-// Zero dependências de execução: bun + fetch + regex.
+
+import {
+  decodeHtmlEntities,
+  foldAccents,
+  createHelpers,
+  type JobResult,
+} from "../../../_portal-kit/src/helpers.js"
+
+export { decodeHtmlEntities, foldAccents, type JobResult }
+
+export function cleanHtml(html: string | null | undefined): string | null {
+  if (!html) return null
+  const withBreaks = html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*li[^>]*>/gi, "\n- ")
+    .replace(/<\/(p|li|ul|ol|div|h\d)>/gi, "\n")
+  const text = decodeHtmlEntities(withBreaks.replace(/<[^>]+>/g, " "))
+    .replace(/ /g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n+- /g, "\n- ")
+    .replace(/^- \n/gm, "")
+    .trim()
+  return text || null
+}
 
 export const PORTAL_URL = "https://portal.gupy.io"
 export const SEARCH_PATH = "/api/job-search/jobs"
-// Domínio raiz das páginas de carreira (cada empresa tem um subdomínio). Usado
-// para validar URLs de vaga e, de quebra, declara o domínio para a checagem de
-// procedência do /apply.
 export const GUPY_DOMAIN_URL = "https://gupy.io"
 const GUPY_DOMAIN = new URL(GUPY_DOMAIN_URL).hostname
 
-// User-Agent honesto, que diz o nome da ferramenta (convenção de todas as CLIs
-// de portal deste repositório): nunca se passa por um navegador. Sem URL de
-// contato de propósito: toda URL literal nos fontes conta como host do portal na
-// checagem de procedência do /apply (tests/test_apply_host_check.py).
 const UA = "Mozilla/5.0 (compatible; gupy-cli/1.0)"
 
-export function writeError(error: string, code: string): void {
-  process.stderr.write(JSON.stringify({ error, code }) + "\n")
-}
+const h = createHelpers({
+  portal: "a Gupy",
+  ua: UA,
+  timeoutMs: 15000,
+})
 
-// Teto do tempo total de espera entre tentativas de um mesmo pedido.
-const RETRY_BUDGET_MS = 30_000
-
-/** Espera pedida por `Retry-After` (segundos ou data HTTP), em ms; null se ausente. */
-export function retryAfterMs(header: string | null, now = Date.now()): number | null {
-  if (!header) return null
-  const value = header.trim()
-  if (/^\d+$/.test(value)) return Number(value) * 1000
-  const date = Date.parse(value)
-  if (Number.isNaN(date)) return null
-  return Math.max(date - now, 0)
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
-}
-
-/**
- * GET com backoff exponencial e jitter em 429/5xx (até 6 novas tentativas,
- * dentro de RETRY_BUDGET_MS). Devolve `null` em 404. Falha de conexão falha
- * rápido, sem nova tentativa, para uma queda do portal não travar o /scrape.
- */
-export async function httpGet(url: string, accept: string): Promise<string | null> {
-  const maxRetries = 6
-  let delay = 500
-  let waited = 0
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    let response: Response
-    try {
-      response = await fetch(url, {
-        headers: { "User-Agent": UA, Accept: accept, "Accept-Language": "pt-BR,pt;q=0.9" },
-        redirect: "follow",
-        signal: AbortSignal.timeout(15000),
-      })
-    } catch (e) {
-      throw new Error(`não foi possível acessar a Gupy (${e instanceof Error ? e.message : String(e)})`)
-    }
-
-    if (response.status === 429 || response.status >= 500) {
-      if (attempt === maxRetries) {
-        throw new Error(`a Gupy recusou o pedido: ${response.status} ${response.statusText}`)
-      }
-      const backoff = delay + Math.floor(Math.random() * 500)
-      const wait = Math.max(backoff, retryAfterMs(response.headers.get("Retry-After")) ?? 0)
-      if (waited + wait > RETRY_BUDGET_MS) {
-        throw new Error(
-          `a Gupy recusou o pedido: ${response.status} ${response.statusText}; ` +
-            `pediu ${Math.ceil(wait / 1000)}s de espera, além do limite de ${RETRY_BUDGET_MS / 1000}s desta CLI`,
-        )
-      }
-      await sleep(wait)
-      waited += wait
-      delay = Math.min(delay * 2, 8000)
-      continue
-    }
-    if (response.status === 404) return null
-    if (!response.ok) throw new Error(`a Gupy recusou o pedido: ${response.status} ${response.statusText}`)
-    return await response.text()
-  }
-  throw new Error("a Gupy recusou o pedido depois de todas as tentativas")
-}
+export const { writeError, retryAfterMs, httpGet } = h
 
 // ---------------------------------------------------------------------------
 // Vocabulários
@@ -161,15 +113,6 @@ const NAME_TO_UF: Record<string, string> = Object.fromEntries(
   Object.entries(UF_NAMES).map(([uf, name]) => [foldAccents(name), uf]),
 )
 
-/** Minúsculas e sem acento, para comparar o que a pessoa digita. */
-export function foldAccents(text: string): string {
-  return text
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .trim()
-}
-
 /** Aceita "SP", "sp", "São Paulo" ou "sao paulo"; devolve o nome oficial ou null. */
 export function resolveState(input: string): string | null {
   const raw = input.trim()
@@ -208,28 +151,6 @@ export interface GupySearchJob {
 export interface GupySearchResponse {
   data: GupySearchJob[]
   pagination?: { total?: number; limit?: number; offset?: number }
-}
-
-/**
- * Resultado no formato do contrato de portais: `id`, `title`, `company`,
- * `location`, `date` (AAAA-MM-DD) e `url`, com `null` quando faltar - nunca
- * omitidos. Os demais campos são extras permitidos.
- */
-export interface JobResult {
-  id: string
-  title: string
-  company: string | null
-  location: string | null
-  date: string | null
-  url: string | null
-  deadline: string | null
-  contract: string | null
-  contract_code: string | null
-  workplace_type: string | null
-  city: string | null
-  state: string | null
-  pcd: boolean
-  description: string | null
 }
 
 /** A parte AAAA-MM-DD de um carimbo ISO, ou null. */
@@ -277,7 +198,6 @@ export function companySubdomain(url: string | null | undefined): string | null 
   const suffix = `.${GUPY_DOMAIN}`
   if (!host.endsWith(suffix)) return null
   const sub = host.slice(0, -suffix.length)
-  // Um único rótulo; subdomínios de infraestrutura não são páginas de vaga.
   if (!/^[a-z0-9][a-z0-9-]*$/.test(sub)) return null
   if (["portal", "login", "api", "www", "attachments", "suporte-candidatos", "pravoce"].includes(sub)) return null
   return sub
@@ -308,7 +228,6 @@ export function toResult(j: GupySearchJob): JobResult {
 // Detalhe
 // ---------------------------------------------------------------------------
 
-/** O objeto `job` do __NEXT_DATA__ da página de vaga (campos lidos aqui). */
 export interface GupyDetailJob {
   id: number
   name: string
@@ -377,13 +296,6 @@ export function toDetail(j: GupyDetailJob, subdomain: string): JobDetailResult {
   }
 }
 
-/**
- * Extrai (subdomínio, id) de uma URL de vaga da Gupy. Aceita as duas formas:
- * - https://empresa.gupy.io/jobs/12749301
- * - https://empresa.gupy.io/job/<base64 de {"jobId":12749301,...}>
- * Hosts de fora de *.gupy.io são recusados (URLs parecidas, como
- * gupy.io.exemplo.com, caem do lado da recusa porque a URL é analisada de verdade).
- */
 export function parseJobUrl(input: string): { subdomain: string; id: string } | null {
   const trimmed = input.trim()
   const sub = companySubdomain(trimmed)
@@ -403,43 +315,4 @@ export function parseJobUrl(input: string): { subdomain: string; id: string } | 
     }
   }
   return null
-}
-
-// ---------------------------------------------------------------------------
-// Texto
-// ---------------------------------------------------------------------------
-
-function numericEntity(cp: number): string {
-  return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ""
-}
-
-export function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, dec) => numericEntity(parseInt(dec, 10)))
-    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, hex) => numericEntity(parseInt(hex, 16)))
-    .replace(/&amp;/g, "&")
-}
-
-/** HTML -> texto legível: blocos viram quebras de linha, tags somem, entidades decodificadas. */
-export function cleanHtml(html: string | null | undefined): string | null {
-  if (!html) return null
-  const withBreaks = html
-    .replace(/<\s*br\s*\/?>/gi, "\n")
-    .replace(/<\s*li[^>]*>/gi, "\n- ")
-    .replace(/<\/(p|li|ul|ol|div|h\d)>/gi, "\n")
-  const text = decodeHtmlEntities(withBreaks.replace(/<[^>]+>/g, " "))
-    .replace(/ /g, " ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\n+- /g, "\n- ") // itens de lista seguidos, sem linha em branco entre eles
-    .replace(/^- \n/gm, "") // <li> vazio
-    .trim()
-  return text || null
 }

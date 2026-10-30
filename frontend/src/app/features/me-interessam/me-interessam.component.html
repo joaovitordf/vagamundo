@@ -1,5 +1,8 @@
 <div class="vc-panel info-panel">
-  <h2>Vagas que Me Interessam</h2>
+  <div class="title-with-badge">
+    <h2>Vagas que Me Interessam</h2>
+    <span class="badge-total">{{ savedJobs().length }} {{ savedJobs().length === 1 ? 'vaga salva' : 'vagas salvas' }}</span>
+  </div>
   <p class="panel-desc">
     <strong>Avaliar</strong> analisa a vaga completa em relação ao seu currículo (em português para vagas no Brasil e em inglês para vagas internacionais).
     Você pode gerar separadamente <strong>Gerar Currículo</strong> ou <strong>Gerar Carta</strong> compilados em PDF.
@@ -31,12 +34,12 @@
               {{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}
             </p>
           </div>
-          @if (job.screening?.score) {
+          @if (job.screening?.score !== undefined && job.screening?.score !== null) {
             <span class="vc-badge-fit"
               [class.vc-badge-fit--high]="job.screening!.score! >= 75"
               [class.vc-badge-fit--med]="job.screening!.score! >= 50 && job.screening!.score! < 75"
               [class.vc-badge-fit--low]="job.screening!.score! < 50">
-              {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict }}
+              {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict || (job.screening!.score >= 75 ? 'Alta Afinidade' : (job.screening!.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
             </span>
           }
         </div>
@@ -58,13 +61,13 @@
         </div>
 
         <div class="ai-actions-row">
-          <button type="button" class="btn-ai-action" (click)="runAi(job, 'avaliar')">
-            <i class="bi bi-search"></i> {{ job.claude?.avaliar ? 'Avaliar de novo' : 'Avaliar com IA' }}
+          <button type="button" class="btn-ai-action" (click)="runAi(job, 'avaliar')" title="Avaliar aderência e compatibilidade com IA">
+            <i class="bi bi-stars"></i> {{ (job.claude?.avaliar || job.screening) ? 'Reavaliar com IA' : 'Avaliar com IA' }}
           </button>
-          <button type="button" class="btn-ai-action" (click)="runAi(job, 'curriculo')">
+          <button type="button" class="btn-ai-action" (click)="runAi(job, 'curriculo')" title="Gerar currículo personalizado em PDF">
             <i class="bi bi-file-earmark-person"></i> {{ (job.claude?.curriculo || job.pdf_cv) ? 'Refazer Currículo' : 'Gerar Currículo' }}
           </button>
-          <button type="button" class="btn-ai-action" (click)="runAi(job, 'carta')">
+          <button type="button" class="btn-ai-action" (click)="runAi(job, 'carta')" title="Gerar carta de apresentação personalizada em PDF">
             <i class="bi bi-envelope"></i> {{ (job.claude?.carta || job.pdf_carta) ? 'Refazer Carta' : 'Gerar Carta' }}
           </button>
         </div>
@@ -73,13 +76,18 @@
         @if (job.pdf_cv || job.pdf_carta || job.pdf_entrevista) {
           <div class="generated-docs-row">
             @if (job.pdf_cv) {
-              <a [href]="'/api/file?path=' + encodePath(job.pdf_cv)" target="_blank" class="doc-link-btn">
+              <a [href]="'/api/file?path=' + encodePath(job.pdf_cv)" target="_blank" class="doc-link-btn" title="Baixar currículo gerado em PDF">
                 <i class="bi bi-file-earmark-pdf"></i> Currículo (PDF)
               </a>
             }
             @if (job.pdf_carta) {
-              <a [href]="'/api/file?path=' + encodePath(job.pdf_carta)" target="_blank" class="doc-link-btn">
+              <a [href]="'/api/file?path=' + encodePath(job.pdf_carta)" target="_blank" class="doc-link-btn" title="Baixar carta gerada em PDF">
                 <i class="bi bi-file-earmark-pdf"></i> Carta (PDF)
+              </a>
+            }
+            @if (job.pdf_entrevista) {
+              <a [href]="'/api/file?path=' + encodePath(job.pdf_entrevista)" target="_blank" class="doc-link-btn" title="Baixar guia de entrevista">
+                <i class="bi bi-file-earmark-text"></i> Entrevista (PDF)
               </a>
             }
           </div>
@@ -87,14 +95,14 @@
 
         <div class="job-card__footer">
           <div class="footer-buttons">
-            <button type="button" class="btn-primary-small" (click)="markApplied(job)">
+            <button type="button" class="btn-primary-small" (click)="markApplied(job)" title="Registrar que você já se candidatou nesta vaga">
               <i class="bi bi-send-check"></i> Já me candidatei
             </button>
-            <button type="button" class="btn-secondary-small" (click)="discardJob(job)">
-              Descartar
+            <button type="button" class="btn-secondary-small" (click)="discardJob(job)" title="Mover vaga para descartadas">
+              <i class="bi bi-trash"></i> Descartar
             </button>
           </div>
-          <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="link-external">
+          <a [href]="job.url || job.apply_url" target="_blank" rel="noopener noreferrer" class="link-external" title="Abrir vaga no portal de origem">
             Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
           </a>
         </div>
@@ -102,4 +110,3 @@
     }
   </div>
 }
-

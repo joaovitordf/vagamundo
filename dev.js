@@ -30,9 +30,9 @@ killPort(8765);
 killPort(4200);
 
 // 2. Inicia o Backend Python
-console.log('\x1b[36m[backend]\x1b[0m Iniciando servidor Python (porta 8765)...');
+console.log('\x1b[36m[backend]\x1b[0m Iniciando servidor FastAPI / Uvicorn (porta 8765)...');
 const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-const backend = spawn(pythonCmd, ['backend/tools/painel.py', '--no-browser'], {
+const backend = spawn(pythonCmd, ['-m', 'uvicorn', 'backend.api.app:app', '--port', '8765', '--host', '127.0.0.1'], {
   cwd: __dirname,
   stdio: ['inherit', 'pipe', 'pipe']
 });

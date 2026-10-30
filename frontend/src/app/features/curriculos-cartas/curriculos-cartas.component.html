@@ -1,41 +1,81 @@
 <div class="vc-panel main-panel">
   <div class="header-row">
     <div>
-      <h2>Currículos, Cartas e Dossiês Gerados</h2>
+      <h2>Currículos, Cartas e Dossiês Gerados ({{ allDocs().length }})</h2>
       <p class="panel-desc">
         Todos os PDFs gerados para as suas vagas ficam salvos nas pastas <code>cv/</code>, <code>cover_letters/</code> e <code>documents/interview/</code>.
       </p>
     </div>
-    <div class="filter-box">
-      <select class="vc-select" [(ngModel)]="kindFilter">
-        <option value="">Todos os documentos</option>
-        <option value="cv">Apenas Currículos</option>
-        <option value="carta">Apenas Cartas de Apresentação</option>
-        <option value="entrevista">Apenas Dossiês de Entrevista</option>
-      </select>
+    <div class="header-actions">
+      <div class="filter-box">
+        <select class="vc-select" [(ngModel)]="kindFilter">
+          <option value="">Todos os documentos ({{ allDocs().length }})</option>
+          <option value="cv">Apenas Currículos</option>
+          <option value="carta">Apenas Cartas de Apresentação</option>
+          <option value="entrevista">Apenas Dossiês de Entrevista</option>
+        </select>
+      </div>
+      <button type="button" class="btn-clear-docs" (click)="clearGeneratedDocs()" [disabled]="allDocs().length === 0" title="Limpar cartas e dossiês de entrevista antigos, mantendo seus currículos 100% protegidos">
+        <i class="bi bi-eraser"></i> Limpar Cartas e Dossiês
+      </button>
     </div>
   </div>
 </div>
 
-<div class="docs-grid">
-  @for (doc of filteredDocs(); track doc.path) {
-    <article class="doc-card">
-      <div class="doc-icon-col">
-        <i class="bi bi-file-earmark-pdf-fill doc-icon"></i>
-      </div>
-      <div class="doc-details">
-        <h3 class="doc-title">{{ doc.name }}</h3>
-        <p class="doc-meta">
-          <span class="doc-kind-badge" [class]="doc.kind">{{ getKindLabel(doc.kind) }}</span>
-          <span class="doc-date">{{ doc.date }}</span>
-        </p>
-      </div>
-      <div class="doc-actions">
-        <a [href]="'/api/file?path=' + encodePath(doc.path)" target="_blank" rel="noopener noreferrer" class="btn-pdf-view">
-          <i class="bi bi-box-arrow-up-right"></i> Abrir PDF
-        </a>
-      </div>
-    </article>
-  }
-</div>
+@if (loading()) {
+  <div class="loading-state">
+    Carregando documentos gerados…
+  </div>
+} @else if (allDocs().length === 0) {
+  <div class="vc-panel empty-state">
+    <i class="bi bi-file-earmark-pdf empty-icon"></i>
+    <p>Nenhum documento gerado ainda. Na aba <strong>Me Interessam</strong>, clique em "Gerar Currículo" ou "Gerar Carta" em qualquer vaga.</p>
+  </div>
+} @else {
+  <div class="docs-grid">
+    @for (doc of filteredDocs(); track doc.path) {
+      <article class="doc-card">
+        <div class="doc-card__header">
+          <div class="doc-card__main">
+            <div class="doc-icon-col">
+              <i class="bi bi-file-earmark-pdf-fill doc-icon"
+                [class.icon-cv]="doc.kind === 'cv'"
+                [class.icon-carta]="doc.kind === 'carta'"
+                [class.icon-entrevista]="doc.kind === 'entrevista'"></i>
+            </div>
+            <div class="doc-title-block">
+              <h3 class="doc-title" [title]="doc.name">{{ getDocTitle(doc) }}</h3>
+              <div class="doc-badges">
+                <span class="doc-kind-badge" [class]="doc.kind">{{ getKindLabel(doc.kind) }}</span>
+                @if (doc.size_kb) {
+                  <span class="doc-size-badge">{{ doc.size_kb }} KB</span>
+                }
+              </div>
+            </div>
+          </div>
 
+          <div class="doc-card__actions-top">
+            @if (doc.kind === 'cv') {
+              <span class="badge-protected" title="Currículo principal protegido contra exclusão">
+                <i class="bi bi-shield-check"></i> Protegido
+              </span>
+            } @else {
+              <button type="button" class="btn-delete-doc" (click)="deleteDoc(doc)" title="Excluir este documento">
+                <i class="bi bi-trash"></i>
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="doc-card__footer">
+          <span class="doc-date">
+            <i class="bi bi-calendar3"></i> {{ doc.date }}
+          </span>
+          <a [href]="'/api/file?path=' + encodePath(doc.path)" target="_blank" rel="noopener noreferrer" class="btn-pdf-view" title="Abrir arquivo PDF">
+            <i class="bi bi-box-arrow-up-right"></i> Abrir PDF
+          </a>
+        </div>
+      </article>
+    }
+  </div>
+}

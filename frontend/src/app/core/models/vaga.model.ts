@@ -54,3 +54,20 @@ export interface EvolutionResponse {
   updated_at: string;
   applications: Record<string, any>;
 }
+
+export interface SearchProgressInfo {
+  percent: number;
+  completed: number;
+  total: number;
+  current_portal?: string;
+  jobs_found: number;
+  portals: Record<string, { status: string; jobs: number; error?: string }>;
+}
+
+export interface SearchStatusState {
+  running: boolean;
+  started?: string;
+  error?: string;
+  summary?: string;
+  progress?: SearchProgressInfo;
+}

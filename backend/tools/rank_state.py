@@ -102,6 +102,40 @@ def save_state(path: Path, doc: dict) -> None:
         Path(tmp).unlink(missing_ok=True)
         raise
 
+    # Dual-write to SQLite database (Vagamundo v2 persistence)
+    try:
+        from backend.db.repository import Repository
+        seen_map = doc.get('seen') if isinstance(doc, dict) and 'seen' in doc else doc
+        if isinstance(seen_map, dict):
+            repo = Repository()
+            for key, entry in seen_map.items():
+                if not isinstance(entry, dict):
+                    continue
+                repo.upsert_job({
+                    'id': key,
+                    'title': entry.get('title'),
+                    'company': entry.get('company'),
+                    'url': entry.get('url'),
+                    'location': entry.get('location'),
+                    'portal': entry.get('portal'),
+                    'source': entry.get('source', 'cli'),
+                    'posted_date': entry.get('posted_date'),
+                    'deadline': entry.get('deadline'),
+                    'first_seen': entry.get('first_seen'),
+                    'status': entry.get('status'),
+                    'fit': entry.get('fit'),
+                    'rank_score': entry.get('rank_score'),
+                    'rank_verdict': entry.get('rank_verdict'),
+                    'rank_date': entry.get('rank_date'),
+                    'location_verdict': entry.get('location_verdict'),
+                    'language_gate': entry.get('language_gate'),
+                    'strengths': entry.get('strengths'),
+                    'gaps': entry.get('gaps'),
+                })
+            repo.close()
+    except Exception:
+        pass
+
 
 def parse_timestamp(value) -> datetime | None:
     """A stored UTC timestamp, or None for anything else (absent, malformed, a

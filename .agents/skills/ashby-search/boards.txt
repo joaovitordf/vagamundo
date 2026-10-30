@@ -1,0 +1,24 @@
+# Boards ativos do Ashby (api.ashbyhq.com/posting-api/job-board/<slug>)
+# Startups de ponta em IA, Unicórnios e DevTools globais (career-ops)
+cursor
+linear
+modal
+elevenlabs
+deepgram
+cognition
+dust
+ramp
+anyscale
+perplexity
+pinecone
+langchain
+posthog
+harvey
+runway
+synthesia
+lovable
+vapi
+cartesia
+cohere
+replit
+resend

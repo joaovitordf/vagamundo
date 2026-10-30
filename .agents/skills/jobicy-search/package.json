@@ -1,0 +1,9 @@
+{
+  "name": "@vagamundo/jobicy-search",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@vagamundo/portal-kit": "file:../../_portal-kit"
+  }
+}
+

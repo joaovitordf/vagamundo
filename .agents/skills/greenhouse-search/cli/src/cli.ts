@@ -2,13 +2,16 @@
 // CLI independente para buscar vagas nos boards públicos do Greenhouse.
 // Sem framework de CLI e sem dependências de execução: roda só com `bun`.
 
-import { join } from "path"
+import { readFileSync } from "fs"
+import { join, dirname } from "path"
+import { fileURLToPath } from "url"
 import { runSearch } from "./commands/search.js"
 import { runDetail } from "./commands/detail.js"
 import { badArg, parseFlags, parseIntFlag, rejectEmpty, rejectUnknown, writeError, type JobResult } from "./helpers.js"
 import { parseBoardsFile } from "./parse.js"
 
-const BOARDS_FILE = join(import.meta.dir, "..", "..", "boards.txt")
+const __currentDir = (import.meta as any).dir || dirname(fileURLToPath(import.meta.url))
+const BOARDS_FILE = join(__currentDir, "..", "..", "boards.txt")
 
 const HELP = `greenhouse-cli - busca vagas nos boards públicos do Greenhouse (ATS de empresas de tecnologia)
 
@@ -70,7 +73,7 @@ async function main(): Promise<number> {
       if (!boards.length) return badArg("--boards precisa de identificadores (letras, números, - e _)")
     } else {
       try {
-        boards = parseBoardsFile(await Bun.file(BOARDS_FILE).text())
+        boards = parseBoardsFile(readFileSync(BOARDS_FILE, "utf-8"))
       } catch {
         writeError("boards.txt não encontrado; passe --boards", "NO_BOARDS")
         return 1

@@ -72,7 +72,7 @@ Confira se o Python, o Bun e o lualatex estão funcionando.
 Cole esta mensagem:
 
 ```text
-Baixe o projeto com git clone https://github.com/rosanapegasgodoy/vagamundo.git
+Baixe o projeto com git clone https://github.com/joaovitordf/vagamundo.git
 dentro da minha pasta Documentos e, dentro dele, rode
 python tools/install_portal_clis.py.
 ```

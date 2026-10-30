@@ -1,4 +1,4 @@
-import { Component, OnInit, ElementRef, ViewChild, AfterViewInit, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, ElementRef, ViewChild, AfterViewInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
@@ -27,6 +27,12 @@ const PORTAIS: Record<string, string> = {
   'habrcareer-search': 'Habr Career',
   'google-careers': 'Google Careers',
   'eures': 'EURES (Europa)',
+  'remoteok-search': 'RemoteOK',
+  'wwr-search': 'We Work Remotely',
+  'jobicy-search': 'Jobicy',
+  'hn-search': 'Hacker News',
+  'ashby-search': 'Ashby',
+  'lever-search': 'Lever',
 };
 
 const MODELOS: Record<string, string> = {
@@ -87,12 +93,20 @@ const WORLD_PATTERNS = [
   { code: 'RO', name: 'Romênia', scope: 'europa', words: ['romania', 'romênia', 'bucharest'] },
   { code: 'HU', name: 'Hungria', scope: 'europa', words: ['hungary', 'hungria', 'budapest'] },
   { code: 'CA', name: 'Canadá', scope: 'global', words: ['canada', 'canadá', 'toronto', 'ontario', 'vancouver', 'montreal'] },
-  { code: 'US', name: 'Estados Unidos', scope: 'global', words: ['united states', 'estados unidos', 'usa', 'u.s.', 'mountain view', 'sunnyvale', 'san francisco', 'california', 'new york', 'seattle', 'austin', 'boston', 'chicago'] },
+  { code: 'US', name: 'Estados Unidos', scope: 'global', words: ['united states', 'estados unidos', 'usa', 'u.s.', 'washington', 'd.c.', 'san francisco', 'california', 'new york', 'seattle', 'austin', 'boston', 'chicago', 'texas', 'florida', 'los angeles', 'colorado', 'denver', 'mountain view', 'sunnyvale'] },
   { code: 'RU', name: 'Rússia', scope: 'global', words: ['russia', 'rússia', 'россия', 'moscow', 'москва', 'saint petersburg'] },
   { code: 'JP', name: 'Japão', scope: 'global', words: ['japan', 'japão', 'tokyo', 'osaka'] },
   { code: 'SG', name: 'Singapura', scope: 'global', words: ['singapore', 'singapura', 'cingapura'] },
   { code: 'AU', name: 'Austrália', scope: 'global', words: ['australia', 'austrália', 'sydney', 'melbourne'] },
-  { code: 'IN', name: 'Índia', scope: 'global', words: ['india', 'índia', 'bangalore', 'bengaluru', 'hyderabad'] }
+  { code: 'IN', name: 'Índia', scope: 'global', words: ['india', 'índia', 'bangalore', 'bengaluru', 'hyderabad'] },
+  { code: 'AR', name: 'Argentina', scope: 'global', words: ['argentina', 'buenos aires', 'cordoba'] },
+  { code: 'CL', name: 'Chile', scope: 'global', words: ['chile', 'santiago'] },
+  { code: 'CO', name: 'Colômbia', scope: 'global', words: ['colombia', 'colômbia', 'bogota', 'bogotá', 'medellin'] },
+  { code: 'MX', name: 'México', scope: 'global', words: ['mexico', 'méxico', 'mexico city', 'cdmx', 'guadalajara'] },
+  { code: 'UY', name: 'Uruguai', scope: 'global', words: ['uruguay', 'uruguai', 'montevideo'] },
+  { code: 'IL', name: 'Israel', scope: 'global', words: ['israel', 'tel aviv'] },
+  { code: 'KR', name: 'Coreia do Sul', scope: 'global', words: ['korea', 'south korea', 'coreia', 'seoul'] },
+  { code: 'AE', name: 'Emirados Árabes', scope: 'global', words: ['uae', 'emirates', 'dubai', 'abu dhabi'] }
 ];
 
 const BR_PORTALS = new Set([
@@ -118,6 +132,60 @@ interface ActiveGeoFilter {
   name: string;
   count: number;
 }
+
+
+export interface PortalOption {
+  id: string;
+  name: string;
+  category: 'brasil' | 'tech' | 'global' | 'executivo' | 'agro';
+  categoryLabel: string;
+  badge?: string;
+}
+
+export const PORTAL_CATEGORIES = [
+  { id: 'brasil', label: 'Portais Brasil' },
+  { id: 'tech', label: 'Tecnologia & Inovação' },
+  { id: 'global', label: 'Internacional & Remoto Global (Career-Ops)' },
+  { id: 'executivo', label: 'Executivo & Especialistas' },
+  { id: 'agro', label: 'Agronegócio' },
+];
+
+export const AVAILABLE_PORTALS: PortalOption[] = [
+  // Portais Brasil
+  { id: 'gupy-search', name: 'Gupy', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'portal.gupy.io' },
+  { id: 'solides-search', name: 'Sólides Vagas', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PMEs BR' },
+  { id: 'vagas-search', name: 'VAGAS.com', category: 'brasil', categoryLabel: 'Portais Brasil' },
+  { id: 'infojobs-search', name: 'InfoJobs Brasil', category: 'brasil', categoryLabel: 'Portais Brasil' },
+  { id: 'empregos-search', name: 'Empregos.com.br', category: 'brasil', categoryLabel: 'Portais Brasil' },
+  { id: 'trampos-search', name: 'Trampos', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Freelas & Tech' },
+  { id: 'digai-search', name: 'DigAÍ', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Entrevista IA' },
+  { id: 'pcd-search', name: 'PCD Online', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PcD Exclusivo' },
+
+  // Tecnologia & Inovação
+  { id: 'geekhunter-search', name: 'GeekHunter', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Tech BR' },
+  { id: 'programathor-search', name: 'Programathor', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Devs BR' },
+  { id: 'remotar-search', name: 'Remotar', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: '100% Remoto' },
+  { id: 'greenhouse-search', name: 'Greenhouse ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Global & BR' },
+  { id: 'ashby-search', name: 'Ashby ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'IA & Startups' },
+
+  // Internacional & Remoto Global (career-ops)
+  { id: 'remoteok-search', name: 'RemoteOK', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Remoto USD' },
+  { id: 'jobicy-search', name: 'Jobicy', category: 'global', categoryLabel: 'Internacional & Global', badge: '100% Remoto' },
+  { id: 'hn-search', name: 'Hacker News (HN)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Who is hiring' },
+  { id: 'freehire-search', name: 'FreeHire', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech Global' },
+  { id: 'linkedin-search', name: 'LinkedIn', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Global' },
+  { id: 'hh-search', name: 'HeadHunter (hh.ru)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Internacional' },
+  { id: 'habrcareer-search', name: 'Habr Career', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech RU' },
+  { id: 'europa', name: 'Europa EURES', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Oficial UE' },
+
+  // Executivo & Especialistas
+  { id: 'michaelpage-search', name: 'Michael Page', category: 'executivo', categoryLabel: 'Executivo & Especialistas' },
+  { id: 'roberthalf-search', name: 'Robert Half', category: 'executivo', categoryLabel: 'Executivo & Especialistas' },
+
+  // Agronegócio
+  { id: 'agrobase-search', name: 'Agrobase', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Agro BR' },
+  { id: 'agrosearch-search', name: 'AGROSearch', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Gestão Agro' }
+];
 
 @Component({
   selector: 'app-buscar-vagas',
@@ -148,6 +216,101 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   filterNoWarn = false;
   filterVisa = false;
 
+  readonly availablePortals = AVAILABLE_PORTALS;
+  readonly portalCategories = PORTAL_CATEGORIES;
+  portalsDropdownOpen = signal<boolean>(false);
+  selectedPortalIds = signal<Set<string>>(new Set(AVAILABLE_PORTALS.map(p => p.id)));
+  filterPortalSearchText = signal<string>('');
+
+  portalsSummaryLabel = computed(() => {
+    const total = this.availablePortals.length;
+    const selected = this.selectedPortalIds();
+    if (selected.size === total) return `Todas as fontes (${total})`;
+    if (selected.size === 0) return 'Nenhum portal selecionado';
+    if (selected.size === 1) {
+      const id = Array.from(selected)[0];
+      const p = this.availablePortals.find(x => x.id === id);
+      return p ? p.name : id;
+    }
+    if (selected.size <= 2) {
+      return Array.from(selected)
+        .map(id => this.availablePortals.find(x => x.id === id)?.name || id)
+        .join(', ');
+    }
+    return `${selected.size} portais selecionados`;
+  });
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (this.portalsDropdownOpen()) {
+      this.portalsDropdownOpen.set(false);
+    }
+  }
+
+  togglePortalsDropdown(event: MouseEvent): void {
+    event.stopPropagation();
+    this.portalsDropdownOpen.update(v => !v);
+  }
+
+  isPortalSelected(id: string): boolean {
+    return this.selectedPortalIds().has(id);
+  }
+
+  togglePortal(id: string, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    const current = new Set(this.selectedPortalIds());
+    if (current.has(id)) {
+      current.delete(id);
+    } else {
+      current.add(id);
+    }
+    this.selectedPortalIds.set(current);
+    this.onFilterChange();
+  }
+
+  selectAllPortals(): void {
+    this.selectedPortalIds.set(new Set(this.availablePortals.map(p => p.id)));
+    this.onFilterChange();
+  }
+
+  deselectAllPortals(): void {
+    this.selectedPortalIds.set(new Set());
+    this.onFilterChange();
+  }
+
+  isCategoryFullySelected(catId: string): boolean {
+    const inCat = this.availablePortals.filter(p => p.category === catId);
+    if (!inCat.length) return false;
+    const sel = this.selectedPortalIds();
+    return inCat.every(p => sel.has(p.id));
+  }
+
+  toggleCategoryPortals(catId: string): void {
+    const inCat = this.availablePortals.filter(p => p.category === catId);
+    const fullySelected = this.isCategoryFullySelected(catId);
+    const current = new Set(this.selectedPortalIds());
+    if (fullySelected) {
+      inCat.forEach(p => current.delete(p.id));
+    } else {
+      inCat.forEach(p => current.add(p.id));
+    }
+    this.selectedPortalIds.set(current);
+    this.onFilterChange();
+  }
+
+  getFilteredPortalsByCategory(catId: string): PortalOption[] {
+    const q = this.filterPortalSearchText().trim().toLowerCase();
+    const inCat = this.availablePortals.filter(p => p.category === catId);
+    if (!q) return inCat;
+    return inCat.filter(p => p.name.toLowerCase().includes(q) || (p.badge && p.badge.toLowerCase().includes(q)));
+  }
+
+  hasMatchingPortalsInCategory(catId: string): boolean {
+    return this.getFilteredPortalsByCategory(catId).length > 0;
+  }
+
   cvAreaBadge = signal<string>('');
   private cvAreasList: any[] = [];
   private cvAreaQueue: any[] = [];
@@ -165,11 +328,43 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   searchStatus = signal<string>('');
   searchError = signal<string>('');
   searchSummary = signal<string>('');
+
+  // Painel Retrátil de Progresso
+  showProgressPanel = signal<boolean>(false);
+  progressExpanded = signal<boolean>(true);
+  searchProgressPercent = signal<number>(0);
+  searchCompletedCount = signal<number>(0);
+  searchTotalCount = signal<number>(0);
+  searchCurrentPortal = signal<string>('');
+  searchJobsFoundCount = signal<number>(0);
+  searchPortalStatuses = signal<Array<{ portal: string; label: string; status: string; jobs: number; error?: string }>>([]);
   batchRunning = signal<boolean>(false);
   batchStatus = signal<string>('');
+  showTriagePanel = signal<boolean>(false);
+  triageExpanded = signal<boolean>(true);
+  triageProgressPercent = signal<number>(0);
+  triageCurrentCount = signal<number>(0);
+  triageTotalCount = signal<number>(0);
+  triageCurrentTitle = signal<string>('');
+  triageHighFitCount = signal<number>(0);
+  triageMedFitCount = signal<number>(0);
+  triageLowFitCount = signal<number>(0);
+  triageErrorCount = signal<number>(0);
+  triageProviderLabel = signal<string>('Google Gemini (Antigravity)');
   batchScope = 'all-visible';
-
   selectedUrls = new Set<string>();
+
+  // Toast de feedback visual
+  toastMessage = signal<string>('');
+  private toastTimer: any = null;
+
+  showToast(msg: string): void {
+    this.toastMessage.set(msg);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => {
+      this.toastMessage.set('');
+    }, 4500);
+  }
 
   ngOnInit(): void {
     this.loadCvAreas();
@@ -214,7 +409,8 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     if (!picked) return;
     this.lastPickedAreaId = picked.id;
 
-    this.filterText = (picked.keywords || []).join(', ');
+    const keywords = (picked.keywords || []).slice(0, 3);
+    this.filterText = keywords.join(', ');
     this.cvAreaBadge.set(`Área CV: ${picked.label || picked.title}`);
     this.onFilterChange();
   }
@@ -228,7 +424,17 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   loadResults(): void {
     this.api.getResults().subscribe({
       next: (res) => {
-        this.allVagas.set(res.new || []);
+        const newVagas = res.new || [];
+        this.allVagas.set(newVagas);
+        // Deseleciona quaisquer vagas que tenham saído da lista (ex: auto-descartadas)
+        if (this.selectedUrls.size > 0) {
+          const currentUrls = new Set(newVagas.map((v: any) => v.url));
+          for (const u of Array.from(this.selectedUrls)) {
+            if (!currentUrls.has(u)) {
+              this.selectedUrls.delete(u);
+            }
+          }
+        }
         this.onFilterChange();
       },
       error: (err) => console.error('Erro ao carregar resultados:', err)
@@ -261,19 +467,39 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
 
   triggerPortalSearch(): void {
     this.searching.set(true);
+    this.showProgressPanel.set(true);
+    this.progressExpanded.set(true);
+    this.searchProgressPercent.set(0);
+    this.searchCompletedCount.set(0);
+    this.searchTotalCount.set(0);
+    this.searchCurrentPortal.set('');
+    this.searchJobsFoundCount.set(0);
+    this.searchPortalStatuses.set([]);
     this.searchStatus.set('Iniciando busca nos portais…');
     this.searchError.set('');
     this.searchSummary.set('');
 
-    // Ao iniciar busca nos portais, limpamos filtros locais de texto e geo para exibir todas as vagas retornadas
-    this.filterText = '';
-    this.cvAreaBadge.set('');
+    // Mantemos o termo digitado pelo usuário (não apagamos filterText)
     this.activeGeoFilter = null;
 
+    const trimmedQuery = (this.filterText || '').trim();
+
+    const selectedList = Array.from(this.selectedPortalIds());
+    if (selectedList.length === 0) {
+      this.searching.set(false);
+      this.searchStatus.set('');
+      this.showToast('⚠️ Selecione pelo menos uma fonte de busca (portal) no dropdown.');
+      return;
+    }
+
+    const isAllPortals = selectedList.length === this.availablePortals.length;
     const payload = {
       all: true,
       jobage: Number(this.filterJobAge) || 14,
-      focus: this.filterFocus
+      focus: isAllPortals ? 'all' : selectedList.join(','),
+      portals: isAllPortals ? ['all'] : selectedList,
+      region: this.filterRegion || 'all',
+      query: trimmedQuery || undefined
     };
 
     this.api.startSearch(payload).subscribe({
@@ -288,34 +514,119 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     });
   }
 
+  toggleProgressExpanded(): void {
+    this.progressExpanded.set(!this.progressExpanded());
+  }
+
+  closeProgressPanel(): void {
+    this.showProgressPanel.set(false);
+  }
+
+  getPortalLabel(portal: string): string {
+    return PORTAIS[portal] || portal.replace('-search', '');
+  }
+
   private pollSearchStatus(): void {
-    const interval = setInterval(() => {
-      this.api.getSearchStatus().subscribe({
-        next: (st) => {
-          const job = st.search;
-          if (job && job.running) {
-            this.searchStatus.set(`Buscando desde ${job.started?.slice(11, 16) || ''}…`);
-          } else {
-            clearInterval(interval);
-            this.searching.set(false);
-            if (job && job.error) {
-              this.searchError.set('A busca não terminou: ' + job.error);
-              this.searchStatus.set('');
+    let eventSource: EventSource | null = null;
+    let fallbackInterval: any = null;
+
+    const cleanup = () => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+        fallbackInterval = null;
+      }
+    };
+
+    const handleProgressUpdate = (p: any) => {
+      if (!p) return;
+      this.searchProgressPercent.set(Math.min(100, Math.round(p.percent || 0)));
+      this.searchCompletedCount.set(p.completed || 0);
+      this.searchTotalCount.set(p.total || 0);
+      if (p.current_portal) {
+        this.searchCurrentPortal.set(p.current_portal);
+      }
+      this.searchJobsFoundCount.set(p.jobs_found || 0);
+      if (p.portals) {
+        const list = Object.entries(p.portals).map(([key, val]: [string, any]) => ({
+          portal: key,
+          label: PORTAIS[key] || key.replace('-search', ''),
+          status: val.status,
+          jobs: val.jobs || 0,
+          error: val.error
+        }));
+        this.searchPortalStatuses.set(list);
+      }
+    };
+
+    const handleDone = (job?: any) => {
+      cleanup();
+      this.searching.set(false);
+      this.searchProgressPercent.set(100);
+      if (job && job.error) {
+        this.searchError.set('A busca não terminou: ' + job.error);
+        this.searchStatus.set('');
+      } else {
+        this.searchStatus.set('Busca concluída!');
+      }
+      if (job && job.summary) {
+        this.searchSummary.set(job.summary);
+      }
+      this.loadResults();
+    };
+
+    const startPolling = () => {
+      return setInterval(() => {
+        this.api.getSearchStatus().subscribe({
+          next: (st) => {
+            const job = st.search || st;
+            if (job && job.progress) {
+              handleProgressUpdate(job.progress);
+            }
+            if (job && job.running) {
+              this.searchStatus.set(`Buscando desde ${job.started?.slice(11, 16) || ''}…`);
             } else {
-              this.searchStatus.set('Busca concluída!');
+              handleDone(job);
             }
-            if (job && job.summary) {
-              this.searchSummary.set(job.summary);
-            }
-            this.loadResults();
+          },
+          error: () => {
+            cleanup();
+            this.searching.set(false);
           }
-        },
-        error: () => {
-          clearInterval(interval);
-          this.searching.set(false);
-        }
-      });
-    }, 2000);
+        });
+      }, 1000);
+    };
+
+    if (typeof EventSource !== 'undefined') {
+      try {
+        eventSource = new EventSource('/api/search/stream');
+        eventSource.addEventListener('progress', (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data);
+            handleProgressUpdate(data);
+          } catch (_) {}
+        });
+        eventSource.addEventListener('done', (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data);
+            handleDone(data);
+          } catch (_) {
+            handleDone();
+          }
+        });
+        eventSource.onerror = () => {
+          cleanup();
+          fallbackInterval = startPolling();
+        };
+      } catch (_) {
+        fallbackInterval = startPolling();
+      }
+    } else {
+      fallbackInterval = startPolling();
+    }
   }
 
   getBaseFilteredVagas(): Vaga[] {
@@ -338,8 +649,9 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       if (region) {
         if (region === 'remote' && !geo.isRemote) return false;
         if (region === 'brasil' && geo.scope !== 'brasil') return false;
+        if (region === 'estados-unidos' && geo.countryCode !== 'US' && geo.remoteBucket !== 'US_REMOTE' && !geo.label.includes('Estados Unidos')) return false;
         if (region === 'europa' && geo.scope !== 'europa') return false;
-        if (region === 'global' && geo.scope !== 'global') return false;
+        if (region === 'global' && geo.scope !== 'global' && !geo.isRemote) return false;
       }
 
       if (nowarn && this.getWarning(r)) return false;
@@ -349,12 +661,24 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
         if (model === 'none' ? Boolean(r.workplace_type) : r.workplace_type !== model) return false;
       }
 
-      if (focus && focus !== 'all') {
-        if (focus === 'google') {
-          if (r.portal !== 'google' && r.portal !== 'google-careers') return false;
-        } else if (focus === 'europa') {
-          if (r.portal !== 'europa' && r.portal !== 'eures') return false;
-        } else if (r.portal !== focus) {
+      // Verificação por seleção de portais multi-select
+      const selectedPortals = this.selectedPortalIds();
+      if (selectedPortals.size === 0) {
+        return false;
+      }
+      if (selectedPortals.size < this.availablePortals.length) {
+        const portal = String(r.portal || '').toLowerCase();
+        let matches = selectedPortals.has(portal);
+        if (!matches && !portal.endsWith('-search')) {
+          matches = selectedPortals.has(`${portal}-search`);
+        }
+        if (!matches && (portal === 'google' || portal === 'google-careers') && selectedPortals.has('google')) {
+          matches = true;
+        }
+        if (!matches && (portal === 'europa' || portal === 'eures') && selectedPortals.has('europa')) {
+          matches = true;
+        }
+        if (!matches) {
           return false;
         }
       }
@@ -420,6 +744,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     this.cvAreaBadge.set('');
     this.filterModel = '';
     this.filterFocus = 'all';
+    this.selectedPortalIds.set(new Set(this.availablePortals.map(p => p.id)));
     this.filterRegion = '';
     this.filterJobAge = '';
     this.filterScore = '';
@@ -478,6 +803,13 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   localVagas(): Vaga[] {
     if (!this.activeGeoFilter) return [];
     return this.filteredVagas();
+  }
+
+  filterByBestScore(): void {
+    if (!this.hasTriagedJobs()) return;
+    this.filterScore = 'triadas';
+    this.filterSort = 'score-desc';
+    this.onFilterChange();
   }
 
   hasTriagedJobs(): boolean {
@@ -820,13 +1152,85 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     return '#0369a1';
   }
 
+  formatSalaryBRL(raw?: string): string {
+    if (!raw) return '';
+    const text = raw.trim();
+    if (text.includes('R$') || text.toLowerCase().includes('brl')) {
+      return text;
+    }
+
+    const USD_RATE = 5.70;
+    const EUR_RATE = 6.20;
+    const GBP_RATE = 7.40;
+
+    let rate = USD_RATE;
+    let currencySymbol = 'USD';
+
+    if (text.includes('€') || text.toLowerCase().includes('eur')) {
+      rate = EUR_RATE;
+      currencySymbol = 'EUR';
+    } else if (text.includes('£') || text.toLowerCase().includes('gbp')) {
+      rate = GBP_RATE;
+      currencySymbol = 'GBP';
+    }
+
+    const matches = text.match(/\d+([.,]\d+)?/g);
+    if (!matches || matches.length === 0) return text;
+
+    const nums = matches.map(m => {
+      let clean = m.replace(/\./g, '').replace(/,/g, '');
+      let val = Number(clean);
+      if (val < 1000 && (text.toLowerCase().includes('k') || text.toLowerCase().includes('mil'))) {
+        val = val * 1000;
+      }
+      return val;
+    }).filter(n => !isNaN(n) && n > 0);
+
+    if (nums.length === 0) return text;
+
+    const isAnnual = text.toLowerCase().includes('/ano') || text.toLowerCase().includes('/yr') || text.toLowerCase().includes('annual') || nums[0] > 25000;
+
+    const toBrlMonthly = (val: number) => {
+      const annualOrMonthly = isAnnual ? val / 12 : val;
+      const brl = Math.round(annualOrMonthly * rate);
+      return 'R$ ' + brl.toLocaleString('pt-BR');
+    };
+
+    if (nums.length >= 2) {
+      return `${toBrlMonthly(nums[0])} - ${toBrlMonthly(nums[1])}/mês (~${currencySymbol})`;
+    }
+    return `${toBrlMonthly(nums[0])}/mês (~${currencySymbol})`;
+  }
+
   resolveGeo(r: Vaga): GeoResolution {
     const rawLoc = String(r.location || '').trim();
     const loc = rawLoc.toLowerCase();
     const portal = String(r.portal || '').toLowerCase();
     const workplace = String(r.workplace_type || '').toLowerCase();
-    const isRemote = workplace === 'remote' || loc.includes('remot') || loc.includes('home office') || loc.includes('teletrabalho');
+    const isRemote = workplace === 'remote' || loc.includes('remot') || loc.includes('home office') || loc.includes('teletrabalho') || loc.includes('anywhere') || loc.includes('worldwide');
     const hasExplicitBrasil = loc.includes('brasil') || loc.includes('brazil');
+
+    if (loc.includes('latam') || loc.includes('latin america')) {
+      return {
+        scope: 'global',
+        countryCode: 'LATAM_REMOTE',
+        code: 'LATAM_REMOTE',
+        label: 'Remoto LATAM',
+        isRemote: true,
+        remoteBucket: 'GLOBAL_REMOTE'
+      };
+    }
+
+    if (loc.includes('us only') || loc.includes('u.s. only') || loc.includes('us time zones') || loc.includes('united states remote')) {
+      return {
+        scope: 'global',
+        countryCode: 'US',
+        code: 'US_REMOTE',
+        label: 'Remoto EUA',
+        isRemote: true,
+        remoteBucket: 'GLOBAL_REMOTE'
+      };
+    }
 
     if (!hasExplicitBrasil) {
       for (const country of WORLD_PATTERNS) {
@@ -911,6 +1315,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
         this.allVagas.set(this.allVagas().filter(v => v.url !== vaga.url));
         this.api.sessionVagas.set(this.allVagas());
         this.onFilterChange();
+        this.showToast(`⭐ Vaga salva! "${vaga.title}" foi movida com segurança para a aba "Me Interessam".`);
       },
       error: (err) => alert('Não consegui salvar: ' + err.message)
     });
@@ -922,6 +1327,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
         this.allVagas.set(this.allVagas().filter(v => v.url !== vaga.url));
         this.api.sessionVagas.set(this.allVagas());
         this.onFilterChange();
+        this.showToast(`🗑️ Vaga descartada e movida para a aba "Descartadas".`);
       },
       error: (err) => alert('Não consegui descartar: ' + err.message)
     });
@@ -962,8 +1368,20 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       return;
     }
 
+    // Ativa automaticamente o modo de triagem para exibir as notas no mapa e nos cards
+    this.isTriageMode = true;
     this.batchRunning.set(true);
-    this.batchStatus.set(`Iniciando triagem de ${urls.length} vagas…`);
+    this.showTriagePanel.set(true);
+    this.triageExpanded.set(true);
+    this.triageProgressPercent.set(0);
+    this.triageCurrentCount.set(0);
+    this.triageTotalCount.set(urls.length);
+    this.triageCurrentTitle.set('Iniciando triagem com Antigravity (Gemini)...');
+    this.triageHighFitCount.set(0);
+    this.triageMedFitCount.set(0);
+    this.triageLowFitCount.set(0);
+    this.triageErrorCount.set(0);
+    this.batchStatus.set(`Iniciando triagem de ${urls.length} vagas...`);
 
     this.api.startBatchScreen(urls).subscribe({
       next: () => {
@@ -972,7 +1390,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       error: (err) => {
         this.batchRunning.set(false);
         this.batchStatus.set('');
-        alert('Erro ao iniciar triagem: ' + err.message);
+        alert('Erro ao iniciar triagem: ' + (err?.error?.error || err?.message || 'Falha na comunicação'));
       }
     });
   }
@@ -982,13 +1400,35 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       this.api.getSearchStatus().subscribe({
         next: (st) => {
           const batch = st.batch;
-          if (batch && batch.running) {
-            this.batchStatus.set(`Triando ${batch.current} de ${batch.total}…`);
-          } else {
-            clearInterval(interval);
-            this.batchRunning.set(false);
-            this.batchStatus.set(batch?.total ? `Triagem de ${batch.total} vagas concluída!` : '');
-            this.loadResults();
+          if (batch) {
+            this.triageCurrentCount.set(batch.current || 0);
+            this.triageTotalCount.set(batch.total || 0);
+            this.triageProgressPercent.set(Math.min(100, Math.round(batch.percent || 0)));
+            if (batch.current_title) {
+              this.triageCurrentTitle.set(batch.current_title);
+            }
+            if (batch.provider) {
+              this.triageProviderLabel.set(batch.provider);
+            }
+            this.triageHighFitCount.set(batch.high_fit || 0);
+            this.triageMedFitCount.set(batch.med_fit || 0);
+            this.triageLowFitCount.set(batch.low_fit || 0);
+            this.triageErrorCount.set(batch.errors || 0);
+
+            if (batch.running) {
+              this.showTriagePanel.set(true);
+              const errs = batch.errors ? ` (${batch.errors} com erro)` : '';
+              this.batchStatus.set(`Triando ${batch.current} de ${batch.total}...${errs}`);
+              this.loadResults();
+              this.api.refreshCounts();
+            } else {
+              clearInterval(interval);
+              this.batchRunning.set(false);
+              this.triageProgressPercent.set(100);
+              this.batchStatus.set(batch?.total ? `Triagem de ${batch.total} vagas concluída! Encontradas ${batch.high_fit || 0} de alta afinidade.` : '');
+              this.loadResults();
+              this.api.refreshCounts();
+            }
           }
         },
         error: () => {
@@ -996,7 +1436,15 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
           this.batchRunning.set(false);
         }
       });
-    }, 2000);
+    }, 1500);
+  }
+
+  toggleTriageExpanded(): void {
+    this.triageExpanded.set(!this.triageExpanded());
+  }
+
+  closeTriagePanel(): void {
+    this.showTriagePanel.set(false);
   }
 
   clearPendingJobs(): void {

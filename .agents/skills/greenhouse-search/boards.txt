@@ -1,13 +1,31 @@
-# Boards do Greenhouse consultados pela busca (um por linha; # comenta).
-# O identificador é o trecho depois de job-boards.greenhouse.io/ na página de
-# vagas da empresa. Acrescente as empresas que te interessam; tire as que não.
-# Lista inicial: empresas com operação no Brasil que publicavam vagas no
-# Greenhouse em outubro de 2026.
+# Boards ativos do Greenhouse (API boards-api.greenhouse.io)
+# Empresas de Tecnologia com vagas no Brasil e Internacionais / Remoto Global
+
+# --- Empresas Globais Tech & Remotas (career-ops) ---
+gitlab
+stripe
+cloudflare
+reddit
+discord
+databricks
+elastic
+datadog
+mongodb
+canonical
+scaleai
+airbnb
+pinterest
+twitch
+instacart
+coinbase
+figma
+
+# --- Empresas Brasil & LATAM ---
 stone
 c6bank
 xpinc
 quintoandar
-gympass        # Wellhub
+gympass
 ebanx
 vtex
 jusbrasil

@@ -177,7 +177,7 @@ Se algum comando ainda usar `pdftotext -layout`, ele precisa passar também `-en
 ## 2. Fork e clone
 
 ```bash
-gh repo fork rosanapegasgodoy/vagamundo --clone
+gh repo fork joaovitordf/vagamundo --clone
 cd vagamundo
 gh repo set-default <seu-usuario-no-github>/vagamundo
 ```
@@ -323,20 +323,20 @@ Esses comandos valem para os modelos padrão (currículo moderncv, carta `cover.
 
 Há dois níveis de upstream:
 
-- **Para quem usa o vagamundo:** o upstream é este repositório (`https://github.com/rosanapegasgodoy/vagamundo.git`), que traz a adaptação para o Brasil.
+- **Para quem usa o vagamundo:** o upstream é este repositório (`https://github.com/joaovitordf/vagamundo.git`), que traz a adaptação para o Brasil.
 - **Para o próprio vagamundo:** o upstream é o projeto original (`https://github.com/MadsLorentzen/ai-job-search`), que continua melhorando o método. Como este fork traduziu os arquivos de instrução, quase toda atualização do original precisa ser portada à mão; as ferramentas abaixo ajudam a escolher o que vale.
 
 Planeje as atualizações desde o primeiro dia:
 
 **Prefira versões marcadas ao `master` cru.** Versões com tag são pontos de checagem revisados, cada uma descrita no [CHANGELOG.md](CHANGELOG.md). Atualizar para uma tag traz um estado estável e documentado, em vez do que o `master` estiver no meio de uma revisão. Busque as tags com `git fetch upstream --tags` e mescle uma versão (por exemplo, `git merge v1.0.0`) quando quiser estabilidade; puxe o `master` direto só quando quiser especificamente as mudanças ainda não lançadas. Os passos abaixo valem nos dois casos — troque `upstream/master` pela tag da versão onde aparecer.
 
-1. **Versione a sua personalização — mas saiba para onde vão esses commits.** O `/setup` edita o CLAUDE.md e os arquivos de perfil no lugar; essas edições são *suas*, e versioná-las é o que deixa as atualizações se mesclarem limpas. Mas um **fork deste repositório no GitHub é público** — forks de repositórios públicos não podem ser privados —, então tudo o que você versionar *e fizer push para um fork* fica visível para qualquer pessoa. Se quiser o seu perfil num remoto, não faça push para um fork: crie um repositório **privado**, faça push para ele e acrescente este repositório como o remoto `upstream` (`git remote add upstream https://github.com/rosanapegasgodoy/vagamundo.git`) para continuar recebendo atualizações. Versionar só localmente, sem push, também tudo bem. Os arquivos realmente sensíveis (tracker, dados salariais, `documents/`, arquivos das candidaturas) são ignorados pelo git e nunca entram nele de qualquer forma. Uma árvore de trabalho com mudanças não versionadas é o motivo mais comum de o `git pull` se recusar a mesclar (`Your local changes ... would be overwritten`).
+1. **Versione a sua personalização — mas saiba para onde vão esses commits.** O `/setup` edita o CLAUDE.md e os arquivos de perfil no lugar; essas edições são *suas*, e versioná-las é o que deixa as atualizações se mesclarem limpas. Mas um **fork deste repositório no GitHub é público** — forks de repositórios públicos não podem ser privados —, então tudo o que você versionar *e fizer push para um fork* fica visível para qualquer pessoa. Se quiser o seu perfil num remoto, não faça push para um fork: crie um repositório **privado**, faça push para ele e acrescente este repositório como o remoto `upstream` (`git remote add upstream https://github.com/joaovitordf/vagamundo.git`) para continuar recebendo atualizações. Versionar só localmente, sem push, também tudo bem. Os arquivos realmente sensíveis (tracker, dados salariais, `documents/`, arquivos das candidaturas) são ignorados pelo git e nunca entram nele de qualquer forma. Uma árvore de trabalho com mudanças não versionadas é o motivo mais comum de o `git pull` se recusar a mesclar (`Your local changes ... would be overwritten`).
 
    Receita do repositório privado com o `gh`:
    ```bash
    gh repo create minha-busca --private --clone
    cd minha-busca
-   git remote add upstream https://github.com/rosanapegasgodoy/vagamundo.git
+   git remote add upstream https://github.com/joaovitordf/vagamundo.git
    git fetch upstream
    git merge upstream/master --allow-unrelated-histories
    git remote set-url --push upstream DISABLE   # impede push acidental para o upstream público

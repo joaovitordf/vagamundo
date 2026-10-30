@@ -10,6 +10,10 @@
 
 /* Aviso de privacidade */
 .warn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   background: rgba(245, 158, 11, 0.1);
   color: #fcd34d;
   border: 1px solid rgba(245, 158, 11, 0.25);
@@ -18,6 +22,22 @@
   font-size: 0.88rem;
   margin: 0 0 20px;
   line-height: 1.45;
+}
+
+.btn-close-warn {
+  background: transparent;
+  border: none;
+  color: #fcd34d;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+
+.btn-close-warn:hover {
+  opacity: 1;
 }
 
 .muted {

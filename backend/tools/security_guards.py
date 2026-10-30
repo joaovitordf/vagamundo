@@ -276,6 +276,8 @@ ALLOWED_IGNORE_NEGATIONS = {
     "!backend/cv/main_example.tex",
     "!backend/cover_letters/cover_example.tex",
     "!backend/documents/**/.gitkeep",
+    "!data/.gitkeep",
+    "!backend/data/.gitkeep",
     "!backend/.env.example",
 }
 

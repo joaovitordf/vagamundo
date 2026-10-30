@@ -2,13 +2,16 @@
 // CLI independente para buscar vagas nas páginas de carreira do DigAÍ.
 // Sem framework de CLI e sem dependências de execução: roda só com `bun`.
 
-import { join } from "path"
+import { readFileSync } from "fs"
+import { join, dirname } from "path"
+import { fileURLToPath } from "url"
 import { runSearch } from "./commands/search.js"
 import { runDetail } from "./commands/detail.js"
 import { badArg, parseFlags, parseIntFlag, rejectEmpty, rejectUnknown, writeError } from "./helpers.js"
 import { parseCompaniesFile } from "./parse.js"
 
-const COMPANIES_FILE = join(import.meta.dir, "..", "..", "companies.txt")
+const __currentDir = (import.meta as any).dir || dirname(fileURLToPath(import.meta.url))
+const COMPANIES_FILE = join(__currentDir, "..", "..", "companies.txt")
 
 const HELP = `digai-cli - busca vagas nas páginas de carreira do DigAÍ (recrutamento com entrevista por IA)
 
@@ -69,7 +72,7 @@ async function main(): Promise<number> {
       if (!companies.length) return badArg("--companies precisa de identificadores (letras, números e -)")
     } else {
       try {
-        companies = parseCompaniesFile(await Bun.file(COMPANIES_FILE).text())
+        companies = parseCompaniesFile(readFileSync(COMPANIES_FILE, "utf-8"))
       } catch {
         writeError("companies.txt não encontrado; passe --companies", "NO_COMPANIES")
         return 1

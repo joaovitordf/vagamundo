@@ -51,4 +51,8 @@ export class CandidaturasComponent implements OnInit {
   getStatusLabel(s: string): string {
     return STATUS_LABELS[(s || '').toLowerCase()] || s || 'Enviada';
   }
+
+  encodePath(path: string): string {
+    return encodeURIComponent(path || '');
+  }
 }

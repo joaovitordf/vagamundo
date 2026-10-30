@@ -116,7 +116,7 @@ import tempfile
 
 import unicodedata
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from datetime import date
 
@@ -156,6 +156,28 @@ CALL_TIMEOUT = 120
 QUERY_LINE = re.compile(r"^([a-z0-9-]+-search):\s+(.+)$")
 
 LEGAL_SUFFIXES = {"ltda", "sa", "s", "a", "eireli", "me", "epp", "inc", "llc", "ltd", "corp", "co", "gmbh", "plc"}
+
+REGION_PORTALS = {
+    "brasil": {
+        "gupy-search", "solides-search", "vagas-search", "infojobs-search",
+        "empregos-search", "trampos-search", "pcd-search", "remotar-search",
+        "geekhunter-search", "programathor-search", "digai-search",
+        "agrobase-search", "agrosearch-search", "michaelpage-search", "roberthalf-search"
+    },
+    "estados-unidos": {
+        "remoteok-search", "wwr-search", "jobicy-search", "hn-search",
+        "freehire-search", "ashby-search", "lever-search", "greenhouse-search",
+        "linkedin-search"
+    },
+    "europa": {
+        "eures", "jobicy-search", "freehire-search", "greenhouse-search", "linkedin-search"
+    },
+    "global": {
+        "remoteok-search", "wwr-search", "jobicy-search", "hn-search",
+        "freehire-search", "ashby-search", "lever-search", "greenhouse-search",
+        "linkedin-search", "hh-search", "habrcareer-search", "remotar-search"
+    }
+}
 
 
 
@@ -588,8 +610,27 @@ def collect(calls, portals: dict, seen: SeenIndex, accept, jobage: int, runner=r
 
 
     with ThreadPoolExecutor(max(1, workers)) as ex:
-
-        outcomes = list(ex.map(one, runnable))
+        futures = {ex.submit(one, c): (i, c) for i, c in enumerate(runnable)}
+        outcomes = [None] * len(runnable)
+        completed = 0
+        total = len(runnable)
+        for fut in as_completed(futures):
+            i, c = futures[fut]
+            res = fut.result()
+            outcomes[i] = res
+            completed += 1
+            prio, portal, args, results, err = res
+            prog_evt = {
+                "type": "progress",
+                "portal": portal,
+                "status": "error" if err else "ok",
+                "jobs": len(results) if results else 0,
+                "error": err,
+                "completed": completed,
+                "total": total,
+                "percent": round((completed / max(1, total)) * 100, 1)
+            }
+            print("PROGRESS:" + json.dumps(prog_evt, ensure_ascii=False), flush=True)
 
 
 
@@ -813,6 +854,45 @@ def record(rows: list, seen_path: Path = SEEN, today: str | None = None) -> dict
 
     seen_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
+    # Dual-write to SQLite database (Vagamundo v2 persistence)
+    try:
+        from backend.db.repository import Repository
+        repo = Repository()
+        for key, entry in state.get("seen", {}).items():
+            if not isinstance(entry, dict):
+                continue
+            st = entry.get("status")
+            if entry.get("source") == "painel":
+                if st not in ("applied", "skipped") and entry.get("fit") != "low":
+                    st = "interested"
+                elif st == "skipped" or entry.get("fit") == "low":
+                    st = "discarded"
+
+            repo.upsert_job({
+                "id": key,
+                "title": entry.get("title"),
+                "company": entry.get("company"),
+                "url": entry.get("url"),
+                "location": entry.get("location"),
+                "portal": entry.get("portal"),
+                "source": entry.get("source", "cli"),
+                "posted_date": entry.get("posted_date"),
+                "deadline": entry.get("deadline"),
+                "first_seen": entry.get("first_seen"),
+                "status": st,
+                "fit": entry.get("fit"),
+                "rank_score": entry.get("rank_score"),
+                "rank_verdict": entry.get("rank_verdict"),
+                "rank_date": entry.get("rank_date"),
+                "location_verdict": entry.get("location_verdict"),
+                "language_gate": entry.get("language_gate"),
+                "strengths": entry.get("strengths"),
+                "gaps": entry.get("gaps"),
+            })
+        repo.close()
+    except Exception:
+        pass
+
     return {"added": added, "already_seen": kept, "invalid": invalid, "total": len(state["seen"])}
 
 
@@ -918,6 +998,8 @@ def main(argv=None) -> int:
     s.add_argument("--out", type=Path, default=None, help="results file (default: system temp dir; never inside the repo)")
 
     s.add_argument("--portal", default=None, help="limit search to a specific portal CLI (e.g. gupy-search)")
+    s.add_argument("--region", default="all", choices=["all", "brasil", "estados-unidos", "europa", "global"], help="filter portals by target region (default all)")
+    s.add_argument("--query", "-q", default=None, help="search query / keyword to override or apply across portal calls")
 
     s.add_argument("--workers", type=int, default=4, help="parallel CLI calls (default 4; keep it low)")
 
@@ -989,61 +1071,82 @@ def main(argv=None) -> int:
 
         return 2
 
-    if getattr(args, "portal", None):
+    if getattr(args, "portal", None) and args.portal.strip() and args.portal.strip() != "all":
+        raw_portals = [p.strip() for p in args.portal.split(",") if p.strip()]
+        target_portals = set()
+        for p in raw_portals:
+            target_portals.add(p)
+            if not p.endswith("-search") and p not in ("europa", "eures", "google"):
+                target_portals.add(f"{p}-search")
 
-        target_portal = args.portal.strip()
+        filtered_calls = [c for c in calls if c[1] in target_portals]
 
-        calls = [c for c in calls if c[1] == target_portal]
+        # Portais selecionados sem queries prontas ganham chamada default
+        installed = installed_portals()
+        default_q = None
+        raw_queries = parse_queries(queries_file.read_text(encoding="utf-8"))
+        for _, _, cargs in raw_queries:
+            if "-q" in cargs:
+                default_q = cargs[cargs.index("-q") + 1]
+                break
+            elif "--query" in cargs:
+                default_q = cargs[cargs.index("--query") + 1]
+                break
+        if not default_q and LOCAL_ANSWERS.exists():
+            try:
+                ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
+                if ans.get("cargos"):
+                    default_q = ans["cargos"][0]
+            except Exception:
+                pass
+        if not default_q:
+            default_q = "desenvolvedor"
 
-        if not calls:
+        for tp in target_portals:
+            if not any(c[1] == tp for c in filtered_calls):
+                if tp in installed:
+                    filtered_calls.append((1, tp, ["-q", default_q]))
 
-            installed = installed_portals()
-
-            if target_portal in installed:
-
-                default_q = None
-
-                raw_queries = parse_queries(queries_file.read_text(encoding="utf-8"))
-
-                for _, _, cargs in raw_queries:
-
-                    if "-q" in cargs:
-
-                        default_q = cargs[cargs.index("-q") + 1]
-
-                        break
-
-                    elif "--query" in cargs:
-
-                        default_q = cargs[cargs.index("--query") + 1]
-
-                        break
-
-                if not default_q and LOCAL_ANSWERS.exists():
-
-                    try:
-
-                        ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
-
-                        if ans.get("cargos"):
-
-                            default_q = ans["cargos"][0]
-
-                    except Exception:
-
-                        pass
-
-                if not default_q:
-
-                    default_q = "desenvolvedor"
-
-                calls = [(1, target_portal, ["-q", default_q])]
+        calls = filtered_calls
 
     elif not args.all:
-
         wanted = {int(p) for p in args.priority.split(",") if p.strip().isdigit()}
-
         calls = [c for c in calls if c[0] in wanted]
+
+    if getattr(args, "region", None) and args.region != "all":
+        region_set = REGION_PORTALS.get(args.region, set())
+        calls = [c for c in calls if c[1] in region_set]
+        if not calls:
+            installed = installed_portals()
+            default_q = "desenvolvedor"
+            if LOCAL_ANSWERS.exists():
+                try:
+                    ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
+                    if ans.get("cargos"):
+                        default_q = ans["cargos"][0]
+                except Exception:
+                    pass
+            for p in sorted(region_set):
+                if installed.get(p):
+                    calls.append((1, p, ["-q", default_q]))
+
+    if getattr(args, "query", None) and args.query.strip():
+        q_user = args.query.strip()
+        updated_calls = []
+        for prio, portal, cargs in calls:
+            new_cargs = list(cargs)
+            if "-q" in new_cargs:
+                idx = new_cargs.index("-q")
+                if idx + 1 < len(new_cargs):
+                    new_cargs[idx + 1] = q_user
+            elif "--query" in new_cargs:
+                idx = new_cargs.index("--query")
+                if idx + 1 < len(new_cargs):
+                    new_cargs[idx + 1] = q_user
+            else:
+                new_cargs.extend(["-q", q_user])
+            updated_calls.append((prio, portal, new_cargs))
+        calls = updated_calls
 
     if not calls:
 

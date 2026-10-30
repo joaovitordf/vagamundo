@@ -40,27 +40,19 @@ export class SidebarComponent implements OnInit {
       const vagas = this.api.sessionVagas();
       this.updateCount('/buscar-vagas', this.api.hasSearchedInSession() ? vagas.length : 0);
     });
+    effect(() => {
+      this.updateCount('/me-interessam', this.api.savedCount());
+    });
+    effect(() => {
+      this.updateCount('/candidaturas', this.api.applicationsCount());
+    });
+    effect(() => {
+      this.updateCount('/descartadas', this.api.discardedCount());
+    });
   }
 
   ngOnInit(): void {
-    this.refreshCounts();
-  }
-
-  refreshCounts(): void {
-    this.api.getSaved().subscribe({
-      next: (saved) => this.updateCount('/me-interessam', saved.length),
-      error: () => {}
-    });
-
-    this.api.getApplications().subscribe({
-      next: (apps) => this.updateCount('/candidaturas', apps.length),
-      error: () => {}
-    });
-
-    this.api.getDiscarded().subscribe({
-      next: (disc) => this.updateCount('/descartadas', disc.length),
-      error: () => {}
-    });
+    this.api.refreshCounts();
   }
 
   private updateCount(route: string, count: number): void {

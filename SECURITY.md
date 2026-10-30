@@ -2,7 +2,7 @@
 
 ## Como relatar uma vulnerabilidade
 
-Relate achados de segurança de forma privada pelo **[relato privado de vulnerabilidades do GitHub](https://github.com/rosanapegasgodoy/vagamundo/security/advisories/new)** deste repositório, e não numa issue pública. Se o problema estiver no núcleo do fluxo (e não na adaptação para o Brasil), relate também ao [projeto original](https://github.com/MadsLorentzen/ai-job-search/security/advisories/new). Você recebe resposta em poucos dias, crédito na correção (se quiser) e uma divulgação pública coordenada com a correção.
+Relate achados de segurança de forma privada pelo **[relato privado de vulnerabilidades do GitHub](https://github.com/joaovitordf/vagamundo/security/advisories/new)** deste repositório, e não numa issue pública. Você recebe resposta em poucos dias, crédito na correção (se quiser) e uma divulgação pública coordenada com a correção.
 
 Se o formulário privado não estiver disponível, abra uma issue pública que descreva a *classe* do problema, sem uma receita que funcione, e avise que tem detalhes para compartilhar em particular.
 

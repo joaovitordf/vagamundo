@@ -41,6 +41,15 @@ export class MeInteressamComponent implements OnInit {
   loading = signal<boolean>(true);
   actionStatus = signal<string>('');
 
+  hasDoc(job: any, type: 'avaliar' | 'curriculo' | 'carta' | 'entrevista'): boolean {
+    if (!job) return false;
+    if (type === 'avaliar') return !!(job.claude && job.claude.avaliar || job.screening);
+    if (type === 'curriculo') return !!(job.claude && job.claude.curriculo || job.pdf_cv);
+    if (type === 'carta') return !!(job.claude && job.claude.carta || job.pdf_carta);
+    if (type === 'entrevista') return !!(job.claude && job.claude.entrevista || job.pdf_entrevista);
+    return false;
+  }
+
   ngOnInit(): void {
     this.loadSaved();
   }
@@ -68,7 +77,12 @@ export class MeInteressamComponent implements OnInit {
   }
 
   runAi(job: any, step: string): void {
-    const label = step === 'avaliar' ? 'Avaliação rápida' : (step === 'curriculo' ? 'Currículo em PDF' : 'Carta de Apresentação');
+    let label = 'Ação de IA';
+    if (step === 'avaliar') label = 'Avaliação rápida';
+    else if (step === 'curriculo') label = 'Currículo em PDF';
+    else if (step === 'carta') label = 'Carta de Apresentação';
+    else if (step === 'entrevista') label = 'Dossiê de Preparação para Entrevista';
+
     this.actionStatus.set(`A IA está gerando ${label} para "${job.title || 'a vaga'}"… Aguarde.`);
     this.api.triggerClaude({ url: job.url, step }).subscribe({
       next: () => {

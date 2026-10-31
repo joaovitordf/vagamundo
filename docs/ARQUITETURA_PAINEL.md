@@ -1,59 +1,63 @@
-# Arquitetura do Painel Web Local
+# Arquitetura do Painel Web Local (Vagamundo v2)
 
-## 1. Princípios de Design
+## 1. Princípios Arquiteturais
 
-O painel de controle do `vagamundo` (`tools/painel.py` e `tools/painel/index.html`) opera como uma aplicação web monoliticamente servida em `127.0.0.1`, sem dependência de ferramentas pesadas de build ou frameworks compilados:
-1. **Zero Node / Zero Webpack / Zero NPM no Runtime:** HTML, CSS e Vanilla JavaScript nativo com execução direta no navegador.
-2. **Defesa em Profundidade contra XSS:**
-   - Content Security Policy (CSP) restritiva com `default-src 'self'`.
-   - Proibição absoluta de sinks perigosos de injeção (`innerHTML`, `outerHTML`, `document.write`, `eval`). Todo nó de dado é inserido via `textContent`, `setAttribute`, `replaceChildren` ou `document.createElement`.
-3. **Proteção Anti-CSRF:**
-   - Token secreto aleatório de sessão injetado na tag `<meta name="painel-token">` e exigido em todas as mutações (`POST`) via cabeçalho `X-Painel-Token`.
-4. **Respeito à Privacidade e Whitelabel (100% Apropriável):**
-   - A interface e os scrapers não contêm termos ou áreas fixas (hardcoded) específicas de um único candidato.
-   - Todo dado e sugestão de palavras-chave é inferido dinamicamente a partir dos arquivos Markdown do perfil (`cv.md`, `CLAUDE.md`) ou `respostas.json`.
-   - Nenhum dado pessoal da pessoa candidata é versionado no Git, mantendo conformidade com `tools/check_privacy.py`.
+O painel de controle do **Vagamundo** opera como uma aplicação local fullstack moderna, dividida em camadas bem definidas e desacopladas:
 
----
+1. **Frontend SPA (Angular 17+):**
+   - Construído com TypeScript, componentes standalone e Angular Signals para reatividade de alto desempenho.
+   - Comunicação transparente com o backend através de proxy local (`proxy.conf.json`) apontando para `http://127.0.0.1:8765`.
+   - Interface com design dark moderno, mapas interativos em SVG/Canvas e renderização instantânea com cache inteligente.
 
-## 2. Estrutura de Abas e Subabas
+2. **Backend API Gateway (FastAPI + Uvicorn):**
+   - API REST assíncrona modularizada sob `backend/api/` (`routes/`, `models.py`, `deps.py`).
+   - Documentação interativa automática OpenAPI disponível em `http://127.0.0.1:8765/docs`.
+   - Gerenciamento de tarefas em segundo plano (background tasks) para scraping paralelo e chamadas de IA.
 
-A interface organiza-se em um fluxo de trabalho progressivo:
-- **Buscar e Vagas (Aba Unificada):**
-  - **Console de Filtros Inteligentes:**
-    - **Input com Randomizador do CV:** Botão integrado com ícone de dados (🎲) para alternar e sugerir termos técnicos extraídos dinamicamente do currículo da pessoa usuária.
-    - **Filtro Textual Abrangente:** O filtro de texto busca simultaneamente em título, empresa, localização, descrição completa da vaga, habilidades requeridas e tags associadas.
-    - **Filtro de Nota Reativo:** O seletor de "Nota de Aderência (Fit IA)" ajusta-se automaticamente após o processo de triagem com IA.
-    - **Reset Inteligente:** Empty-state cards intuitivos com botão "Limpar filtros" quando uma busca combinada não retorna vagas.
-  - **Subaba 1 — Mapa Mundial & Estatísticas da Busca:**
-    - Visualização interativa cartográfica do Mundo e do Brasil.
-    - Badges com contagem de vagas e notas de triagem.
-    - Barra de chips para vagas 100% remotas (Brasil, Europa e Global).
-    - Polos com maior afinidade técnica ao currículo.
-    - Gráficos de barras dinâmicos (Top localidades, Modelos de trabalho e Portais).
-  - **Subaba 2 — Lista Completa de Vagas:**
-    - Cards de vagas com sinalizações de golpe/alerta, chips de modelo, regime e botões de ação ("Me interessa" / "Descartar").
-    - Barra de ações em lote para triagem automatizada com IA.
-- **Me interessam:** Vagas salvas para aprofundamento, avaliação com IA e preparação de candidaturas.
-- **Candidaturas:** Acompanhamento do pipeline de vagas enviadas, entrevistas e propostas.
-- **Currículos e Cartas:** Hub de documentos LaTeX e PDFs gerados.
-- **Descartadas:** Histórico de vagas descartadas com opção de restauração.
-- **Configurações:** Seleção e teste de motor de IA (Gemini, Claude ou OpenAI).
+3. **Camada de Persistência Primária (SQLite com WAL Mode):**
+   - Banco de dados relacional local `data/vagamundo.db` com transações ACID, integridade referencial e modo WAL (*Write-Ahead Logging*).
+   - Inicialização e migração de schema automáticas a partir de `backend/db/schema.sql`.
+
+4. **Gateway de Inteligência Artificial Multi-Provedor:**
+   - Suporte unificado para Google Gemini, Anthropic Claude e OpenAI (com compatibilidade para Ollama local).
+   - Pipeline de triagem rápida, notas de aderência (fit scoring), dossiês preparatórios para entrevistas e geração de currículos/cartas sob medida.
 
 ---
 
-## 3. Endpoints da API HTTP Local
+## 2. Estrutura de Abas da Interface
 
-| Método | Endpoint | Descrição |
-|---|---|---|
-| `GET` | `/` | Serve a interface web `tools/painel/index.html` com injeção do token |
-| `GET` | `/api/status` | Estado dos processos em segundo plano (busca, triagem, provedor de IA) |
-| `GET` | `/api/results` | Lista de vagas novas encontradas e não marcadas |
-| `GET` | `/api/saved` | Vagas marcadas como "Me interessa" com notas e PDFs associados |
-| `GET` | `/api/geo` | Dados vetoriais SVG do Brasil (27 UFs) e Mundo (172 países) |
-| `GET` | `/api/eures/stats` | Estatísticas oficiais do mercado de trabalho europeu (EURES) |
-| `GET` | `/api/profile` | Retorna metadados e termos de busca dinâmicos do perfil do usuário |
-| `POST` | `/api/search` | Dispara busca em segundo plano nos portais configurados |
-| `POST` | `/api/batch-screen` | Dispara triagem em lote assíncrona das vagas selecionadas |
-| `POST` | `/api/mark` | Marca vaga como "Me interessa" ou "Descartar" |
-| `POST` | `/api/clear-pending` | Limpa em lote vagas pendentes não salvas |
+1. **Buscar Vagas:**
+   - Console de filtros avançados por cargo, modalidade (remoto, híbrido, presencial), regime (CLT, PJ, estágio) e intervalo de publicação (`jobage`).
+   - Visualização alternável entre **Cards de Vagas** e **Mapa Mundial / Brasil** interativo com distribuição geográfica de oportunidades.
+   - Ações de triagem rápida com IA e classificação de afinidade.
+2. **Vagas que me interessam:**
+   - Hub de vagas marcadas com estrela para acompanhamento aprofundado.
+   - Ações de geração instantânea de **Carta de Apresentação**, **Currículo Adaptado** e **Dossiê de Entrevista com IA**.
+3. **Candidaturas:**
+   - Tabela de gestão de pipeline com status (aplicada, em processo, entrevista, aprovada, rejeitada).
+   - Acesso direto a materiais gerados e modal de histórico detalhado.
+4. **Evolução Profissional:**
+   - Análise de tendências de mercado, lacunas de competências identificadas e roadmap de capacitação (*upskilling*).
+5. **Currículos e Cartas:**
+   - Histórico e download dos documentos compilados em PDF e fontes LaTeX.
+6. **Descartadas:**
+   - Repositório de vagas descartadas com filtro e restauração em um clique.
+7. **Meu Perfil:**
+   - Visualização e edição do perfil profissional, histórico e upload de currículo base.
+8. **Configurações:**
+   - Seleção visual do provedor de IA ativo e teste de conectividade.
+
+---
+
+## 3. Inicialização Unificada
+
+O ecossistema é gerenciado de forma automatizada pelo script `dev.js`:
+
+```bash
+npm run dev
+```
+
+- Libera as portas `8765` e `4200` caso tenham processos órfãos.
+- Inicia o servidor backend FastAPI com Uvicorn.
+- Aguarda a prontidão da API e inicia o servidor de desenvolvimento do Angular.
+- Abre o fluxo completo na porta `http://localhost:4200/`.

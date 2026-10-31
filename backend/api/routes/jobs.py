@@ -66,8 +66,24 @@ async def get_saved_jobs(
                 cached_score = None
 
             screening = cached_score or s.get("screening")
+            if not screening and (s.get("rank_score") is not None or s.get("rank_verdict")):
+                screening = {
+                    "score": s.get("rank_score"),
+                    "verdict": s.get("rank_verdict"),
+                }
+
+            workplace_type = s.get("workplace_type") or s.get("work_model")
+            date_val = s.get("date") or s.get("posted_date") or s.get("first_seen")
+            contract_val = s.get("contract") or s.get("contract_type")
+
             rows.append({
                 **s,
+                "workplace_type": workplace_type,
+                "work_model": workplace_type,
+                "date": date_val,
+                "posted_date": date_val,
+                "contract": contract_val,
+                "contract_type": contract_val,
                 "claude": answers,
                 **pdfs,
                 "screening": screening,
@@ -80,7 +96,7 @@ async def get_saved_jobs(
         score = -1
         if isinstance(sc, dict) and sc.get("score") is not None:
             score = sc.get("score")
-        return (score, r.get("first_seen") or "")
+        return (score, r.get("first_seen") or r.get("date") or "")
 
     rows.sort(key=sort_key, reverse=True)
     return {"saved": rows, "total": len(rows)}
@@ -127,8 +143,18 @@ async def get_discarded_jobs(
                 "verdict": d.get("rank_verdict"),
             }
 
+        workplace_type = d.get("workplace_type") or d.get("work_model")
+        date_val = d.get("date") or d.get("posted_date") or d.get("first_seen")
+        contract_val = d.get("contract") or d.get("contract_type")
+
         rows.append({
             **d,
+            "workplace_type": workplace_type,
+            "work_model": workplace_type,
+            "date": date_val,
+            "posted_date": date_val,
+            "contract": contract_val,
+            "contract_type": contract_val,
             "screening": screening,
         })
 
@@ -177,7 +203,14 @@ async def mark_jobs(
     decision = req.decision
 
     if req.job_data:
-        tracker.upsert_job(req.job_data)
+        status = "interested" if decision in ("interesse", "interested") else ("discarded" if decision in ("descartar", "discarded") else decision)
+        fit = "medium" if decision in ("interesse", "interested") else ("low" if decision in ("descartar", "discarded") else None)
+        job_dict = {
+            **req.job_data,
+            "status": status,
+            "fit": fit,
+        }
+        tracker.upsert_job(job_dict)
 
     ids_to_mark = list(req.ids or [])
     for u in urls:

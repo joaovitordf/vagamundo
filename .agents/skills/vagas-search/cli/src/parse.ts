@@ -41,11 +41,9 @@ export function slugify(query: string): string {
   return foldAccents(query).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
 }
 
-export function buildSearchUrl(query: string, page: number, workplace: string[]): string {
-  const q = new URLSearchParams({ q: query })
-  if (page > 1) q.set("pagina", String(page))
-  for (const w of workplace) q.append("m[]", w)
-  return `${BASE_URL}/vagas-de-${slugify(query)}?${q.toString()}`
+export function buildSearchUrl(query: string, page: number, workplace?: string[]): string {
+  const qs = page > 1 ? `?pagina=${page}` : ""
+  return `${BASE_URL}/vagas-de-${slugify(query)}${qs}`
 }
 
 export function detailUrl(id: string): string {

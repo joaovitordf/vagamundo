@@ -2,7 +2,7 @@
 
 Esta pasta guarda os seus documentos de carreira reais. O comando `/setup` lê tudo o que está aqui e usa para preencher os arquivos de perfil em `.claude/skills/job-application-assistant/`. Pode rodar o `/setup` de novo sempre que acrescentar documentos — ele mescla com inteligência e nunca sobrescreve conteúdo existente sem perguntar antes.
 
-> **Privacidade:** estes arquivos têm dados pessoais. Não faça push deles para um fork público (veja a seção 8 do SETUP.md). Antes de colocar um currículo antigo aqui, considere apagar CPF, RG e data de nascimento: o `/setup` ignora esses dados, mas o melhor é eles nem estarem no repositório.
+> **Privacidade:** estes arquivos contêm dados pessoais. Não faça push deles para um repositório público. O arquivo `.gitignore` já protege uploads locais em `documents/cv/`, `documents/linkedin/` e `documents/perfil/`. Antes de colocar um currículo aqui, lembre-se de que CPF, RG e dados sensíveis não precisam ser expostos.
 
 ---
 

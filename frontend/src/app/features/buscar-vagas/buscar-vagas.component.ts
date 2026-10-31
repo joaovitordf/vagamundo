@@ -1321,6 +1321,23 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     });
   }
 
+  markApplied(vaga: Vaga): void {
+    this.api.markApplied({
+      url: vaga.url,
+      company: vaga.company,
+      role: vaga.title,
+      portal: vaga.portal,
+    }).subscribe({
+      next: () => {
+        this.allVagas.set(this.allVagas().filter(v => v.url !== vaga.url));
+        this.api.sessionVagas.set(this.allVagas());
+        this.onFilterChange();
+        this.showToast(`🎯 Candidatura registrada! "${vaga.title}" foi salva em "Minhas Candidaturas".`);
+      },
+      error: (err) => alert('Não consegui registrar candidatura: ' + (err.error?.detail || err.message))
+    });
+  }
+
   markDescartar(vaga: Vaga): void {
     this.api.markDecision([vaga.url], 'descartar').subscribe({
       next: () => {

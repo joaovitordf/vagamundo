@@ -104,15 +104,11 @@ async function main(): Promise<number> {
   }
 
   if (cmd === "search") {
-    const location = typeof flags.location === "string" ? flags.location : undefined
+    let location = typeof flags.location === "string" ? flags.location.trim() : undefined
     if (!location) {
-      process.stderr.write(
-        JSON.stringify({
-          error: 'the --location/-l flag is required (e.g. -l "Mumbai, Maharashtra, India", -l "Berlin, Germany", or -l "Remote")',
-          code: "NO_LOCATION",
-        }) + "\n",
-      )
-      return 1
+      location = "Brazil"
+    } else if (location.toLowerCase() === "brasil") {
+      location = "Brazil"
     }
     // --query is optional, but a present one needs keywords: parseFlags stores
     // a bare -q as true and -q "" as "", and both used to be treated as unset,

@@ -94,7 +94,8 @@ async function main(): Promise<number> {
     }
     const tag = typeof flags.query === "string" ? flags.query.trim() : undefined
     const url = buildSearchUrl({ tag, remote: flags.remote === true, level, contract, page })
-    return runSearch({ url, page, limit, jobage, format: fmt as "json", includeDescription: true })
+    const fallbackUrl = tag ? buildSearchUrl({ remote: flags.remote === true, level, contract, page }) : undefined
+    return runSearch({ url, fallbackUrl, query: tag, page, limit, jobage, format: fmt as "json", includeDescription: true })
   }
 
   if (cmd === "detail") {

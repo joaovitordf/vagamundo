@@ -41,6 +41,16 @@ async def get_evolution(
     return profile_svc.get_evolution()
 
 
+@router.post("/evolucao/atualizar")
+async def update_evolution_endpoint(
+    profile_svc: ProfileService = Depends(get_profile),
+    _csrf: str = Depends(verify_csrf_token),
+) -> Dict[str, Any]:
+    """Recalculate evolution metrics, audit sources, and sync ledger."""
+    data = profile_svc.update_evolution()
+    return {"ok": True, "evolution": data}
+
+
 @router.get("/geo")
 async def get_geo_data(
     profile_svc: ProfileService = Depends(get_profile),

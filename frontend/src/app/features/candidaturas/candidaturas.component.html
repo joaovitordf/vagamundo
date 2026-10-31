@@ -3,7 +3,7 @@
     <div>
       <h2>Minhas Candidaturas ({{ applications().length }} Ativas)</h2>
       <p class="candidaturas-desc">
-        Acompanhamento direto do arquivo job_search_tracker.csv e histórico sincronizado.
+        Acompanhamento completo de candidaturas, entrevistas e feedbacks sincronizados no SQLite e histórico local.
       </p>
     </div>
     <button type="button" class="btn-refresh" (click)="loadApplications()">
@@ -52,6 +52,11 @@
                 <span class="status-badge" [class]="app.status || 'applied'">
                   {{ getStatusLabel(app.status) }}
                 </span>
+                @if (app.latest_event_stage) {
+                  <div class="sub-stage-label" title="Última etapa registrada">
+                    <i class="bi bi-arrow-return-right"></i> {{ app.latest_event_stage }}
+                  </div>
+                }
               </td>
               <td>
                 <div class="materials-group">
@@ -59,23 +64,60 @@
                     <a [href]="'/api/file?path=' + encodePath(app.pdf_cv || app.cv_file)" target="_blank" class="doc-pill cv" title="Abrir Currículo em PDF">
                       <i class="bi bi-file-earmark-pdf"></i> CV
                     </a>
+                  } @else {
+                    <button type="button" class="btn-material-add cv" (click)="generateCv(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')" title="Gerar Currículo Adaptado com IA em PDF">
+                      <i class="bi bi-plus" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')"></i> CV
+                    </button>
                   }
+
                   @if (app.pdf_carta || app.cover_letter_file) {
                     <a [href]="'/api/file?path=' + encodePath(app.pdf_carta || app.cover_letter_file)" target="_blank" class="doc-pill carta" title="Abrir Carta em PDF">
                       <i class="bi bi-envelope"></i> Carta
                     </a>
+                  } @else {
+                    <button type="button" class="btn-material-add carta" (click)="generateCarta(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')" title="Gerar Carta de Apresentação com IA em PDF">
+                      <i class="bi bi-plus" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')"></i> Carta
+                    </button>
                   }
-                  @if (!app.pdf_cv && !app.cv_file && !app.pdf_carta && !app.cover_letter_file) {
-                    <span class="no-materials">-</span>
+
+                  @if (app.pdf_entrevista) {
+                    <a [href]="'/api/file?path=' + encodePath(app.pdf_entrevista)" target="_blank" class="doc-pill entrevista" title="Abrir Dossiê de Preparação para Entrevista">
+                      <i class="bi bi-person-video3"></i> Dossiê
+                    </a>
                   }
                 </div>
               </td>
               <td class="text-right">
-                @if (app.source || app.url || app.job_url) {
-                  <a [href]="app.source || app.url || app.job_url" target="_blank" rel="noopener noreferrer" class="link-external" title="Ver vaga no portal">
-                    Ver vaga <i class="bi bi-box-arrow-up-right"></i>
-                  </a>
-                }
+                <div class="actions-cell">
+                  <button type="button" class="btn-action-icon btn-action-carta" (click)="generateCarta(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')" [title]="(app.pdf_carta || app.cover_letter_file) ? 'Refazer Carta de Apresentação com IA' : 'Gerar Carta de Apresentação com IA'">
+                    <i class="bi bi-envelope" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')"></i>
+                  </button>
+
+                  <button type="button" class="btn-action-icon btn-action-cv" (click)="generateCv(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')" [title]="(app.pdf_cv || app.cv_file) ? 'Refazer Currículo com IA' : 'Gerar Currículo Adaptado com IA'">
+                    <i class="bi bi-file-earmark-person" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')"></i>
+                  </button>
+
+                  <button type="button" class="btn-prep-interview-action" (click)="prepareInterview(app)" [disabled]="preparingInterview() === (app.url || app.job_url || app.source)" [title]="app.pdf_entrevista ? 'Regerar Dossiê de Entrevista com IA' : 'Gerar Dossiê de Entrevista com IA'">
+                    <i class="bi bi-person-video3" [class.spin]="preparingInterview() === (app.url || app.job_url || app.source)"></i>
+                  </button>
+
+                  <button type="button" class="btn-history-action" (click)="openHistoryModal(app)" title="Histórico de Entrevistas & Feedbacks">
+                    <i class="bi bi-clock-history"></i>
+                    @if (app.event_count > 0) {
+                      <span class="event-badge">{{ app.event_count }}</span>
+                    }
+                  </button>
+
+                  @if (app.source || app.url || app.job_url) {
+                    <a [href]="app.source || app.url || app.job_url" target="_blank" rel="noopener noreferrer" class="link-external" title="Ver vaga no portal">
+                      Ver vaga <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                  }
+
+                  <button type="button" class="btn-delete-action" (click)="deleteApplication(app)" title="Remover candidatura da lista">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </div>
               </td>
             </tr>
           }
@@ -84,3 +126,210 @@
     </div>
   }
 </div>
+
+<!-- Modal de Histórico de Entrevistas & Feedbacks -->
+@if (selectedApp()) {
+  <div class="modal-overlay" (click)="closeHistoryModal()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <h3>Histórico da Candidatura</h3>
+          <p class="modal-subtitle">
+            <strong>{{ selectedApp().company || selectedApp().job_company }}</strong> — {{ selectedApp().role || selectedApp().job_title }}
+          </p>
+        </div>
+        <button type="button" class="btn-close-modal" (click)="closeHistoryModal()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Banners de IA: Carta, Currículo e Entrevista -->
+        <div class="ai-docs-section">
+          <!-- Banner Carta -->
+          <div class="interview-prep-banner carta-banner">
+            <div class="banner-left">
+              <i class="bi bi-envelope-paper banner-icon icon-carta"></i>
+              <div>
+                <strong>Carta de Apresentação com IA</strong>
+                <p class="banner-subtext">Carta personalizada e persuasiva com base no perfil e requisitos da vaga em PDF.</p>
+              </div>
+            </div>
+            <div class="banner-actions">
+              @if (selectedApp().pdf_carta || selectedApp().cover_letter_file) {
+                <a [href]="'/api/file?path=' + encodePath(selectedApp().pdf_carta || selectedApp().cover_letter_file)" target="_blank" class="btn-open-dossier btn-open-carta" title="Abrir carta gerada em PDF">
+                  <i class="bi bi-file-earmark-pdf"></i> Ver Carta
+                </a>
+              }
+              <button type="button" class="btn-generate-dossier btn-generate-carta" (click)="generateCarta(selectedApp())" [disabled]="generatingDoc() === ((selectedApp().url || selectedApp().job_url || selectedApp().source) + '_carta')">
+                <i class="bi bi-stars" [class.spin]="generatingDoc() === ((selectedApp().url || selectedApp().job_url || selectedApp().source) + '_carta')"></i>
+                {{ (selectedApp().pdf_carta || selectedApp().cover_letter_file) ? 'Regerar Carta' : 'Gerar Carta' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Banner Currículo -->
+          <div class="interview-prep-banner cv-banner">
+            <div class="banner-left">
+              <i class="bi bi-file-earmark-person banner-icon icon-cv"></i>
+              <div>
+                <strong>Currículo Adaptado com IA</strong>
+                <p class="banner-subtext">Currículo em PDF com palavras-chave alinhadas e destaque das experiências mais relevantes.</p>
+              </div>
+            </div>
+            <div class="banner-actions">
+              @if (selectedApp().pdf_cv || selectedApp().cv_file) {
+                <a [href]="'/api/file?path=' + encodePath(selectedApp().pdf_cv || selectedApp().cv_file)" target="_blank" class="btn-open-dossier btn-open-cv" title="Abrir currículo gerado em PDF">
+                  <i class="bi bi-file-earmark-pdf"></i> Ver Currículo
+                </a>
+              }
+              <button type="button" class="btn-generate-dossier btn-generate-cv" (click)="generateCv(selectedApp())" [disabled]="generatingDoc() === ((selectedApp().url || selectedApp().job_url || selectedApp().source) + '_cv')">
+                <i class="bi bi-stars" [class.spin]="generatingDoc() === ((selectedApp().url || selectedApp().job_url || selectedApp().source) + '_cv')"></i>
+                {{ (selectedApp().pdf_cv || selectedApp().cv_file) ? 'Regerar Currículo' : 'Gerar Currículo' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Banner Dossiê de Preparação para Entrevista com IA -->
+          <div class="interview-prep-banner">
+            <div class="banner-left">
+              <i class="bi bi-person-video3 banner-icon"></i>
+              <div>
+                <strong>Dossiê de Preparação com IA</strong>
+                <p class="banner-subtext">Elevator pitch de 2 min, 6 perguntas técnicas com respostas modelo e histórias STAR.</p>
+              </div>
+            </div>
+            <div class="banner-actions">
+              @if (selectedApp().pdf_entrevista) {
+                <a [href]="'/api/file?path=' + encodePath(selectedApp().pdf_entrevista)" target="_blank" class="btn-open-dossier" title="Abrir dossiê gerado">
+                  <i class="bi bi-file-earmark-text"></i> Ver Dossiê
+                </a>
+              }
+              <button type="button" class="btn-generate-dossier" (click)="prepareInterview(selectedApp())" [disabled]="preparingInterview() === (selectedApp().url || selectedApp().job_url || selectedApp().source)">
+                <i class="bi bi-stars" [class.spin]="preparingInterview() === (selectedApp().url || selectedApp().job_url || selectedApp().source)"></i>
+                {{ selectedApp().pdf_entrevista ? 'Regerar Dossiê' : 'Gerar Dossiê' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Linha do Tempo de Etapas Registradas -->
+        <div class="history-timeline-section">
+          <h4><i class="bi bi-journal-text"></i> Etapas e Eventos Realizados</h4>
+
+          @if (loadingEvents()) {
+            <p class="loading-subtext">Carregando histórico…</p>
+          } @else if (historyEvents().length === 0) {
+            <div class="empty-events-notice">
+              <i class="bi bi-chat-left-dots"></i>
+              <span>Nenhum evento registrado ainda. Registre abaixo o contato com RH, testes técnicos ou feedbacks recebidos.</span>
+            </div>
+          } @else {
+            <div class="timeline-container">
+              @for (ev of historyEvents(); track ev.id || ev.event_date + ev.stage) {
+                <div class="timeline-card">
+                  <div class="timeline-header">
+                    <div class="timeline-stage-title">
+                      <span class="timeline-dot"></span>
+                      <strong>{{ ev.stage }}</strong>
+                      <span class="timeline-date">{{ formatDate(ev.event_date) }}</span>
+                    </div>
+                    @if (ev.id) {
+                      <button type="button" class="btn-delete-event" (click)="deleteEvent(ev.id)" title="Excluir este evento">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    }
+                  </div>
+
+                  @if (ev.feedback) {
+                    <div class="timeline-content-block">
+                      <div class="block-label"><i class="bi bi-chat-heart"></i> Feedback recebido:</div>
+                      <div class="block-text">{{ ev.feedback }}</div>
+                    </div>
+                  }
+
+                  @if (ev.questions_and_answers) {
+                    <div class="timeline-content-block qna-block">
+                      <div class="block-label"><i class="bi bi-question-circle"></i> Perguntas & Respostas da Entrevista:</div>
+                      <div class="block-text">{{ ev.questions_and_answers }}</div>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Formulário para Registrar Nova Etapa -->
+        <div class="add-event-section">
+          <h4><i class="bi bi-plus-circle"></i> Registrar Nova Etapa / Evento</h4>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="eventDate">Data do Evento</label>
+              <input type="date" id="eventDate" [(ngModel)]="formDate" class="form-control" />
+            </div>
+
+            <div class="form-group">
+              <label for="eventStage">Etapa do Processo</label>
+              <select id="eventStage" [(ngModel)]="formStage" class="form-control">
+                <option value="Triagem RH">Triagem RH (Screening)</option>
+                <option value="Entrevista Técnica">Entrevista Técnica</option>
+                <option value="Live Coding">Live Coding / Teste Prático</option>
+                <option value="Entrevista com Gestor">Entrevista com Gestor</option>
+                <option value="Apresentação de Case">Apresentação de Case</option>
+                <option value="Proposta Recebida">Proposta Recebida</option>
+                <option value="Dinâmica em Grupo">Dinâmica em Grupo</option>
+                <option value="Alinhamento Cultural">Alinhamento Cultural</option>
+                <option value="Outro">Outro</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="appStatus">Novo Status da Candidatura</label>
+              <select id="appStatus" [(ngModel)]="formStatus" class="form-control">
+                <option value="applied">Enviada</option>
+                <option value="screening">Triagem</option>
+                <option value="interview">Em Entrevista</option>
+                <option value="offer">Proposta Recebida</option>
+                <option value="hired">Contratação</option>
+                <option value="rejected">Não seguiu</option>
+                <option value="no_response">Sem resposta</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="eventFeedback">Feedback Recebido dos Recrutadores / Avaliadores</label>
+            <textarea
+              id="eventFeedback"
+              [(ngModel)]="formFeedback"
+              rows="3"
+              class="form-control"
+              placeholder="Ex: Elogiaram o domínio em Angular e TypeScript, sugeriram aprofundar em testes e2e com Playwright…">
+            </textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="eventQuestions">Perguntas Técnicas ou Comportamentais Feitas na Entrevista (Q&A)</label>
+            <textarea
+              id="eventQuestions"
+              [(ngModel)]="formQuestions"
+              rows="3"
+              class="form-control"
+              placeholder="Ex: P: Como você gerencia estado no frontend? R: Signals para estado reativo local e RxJS para fluxos assíncronos complexos…">
+            </textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-cancel" (click)="closeHistoryModal()">Fechar</button>
+            <button type="button" class="btn-save-event" (click)="submitNewEvent()" [disabled]="savingEvent()">
+              <i class="bi bi-check2"></i>
+              {{ savingEvent() ? 'Salvando…' : 'Salvar Etapa no Histórico' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+}

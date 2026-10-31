@@ -87,10 +87,11 @@ class TestFastAPI(unittest.TestCase):
         self.assertTrue(resp_ok.json().get("ok"))
 
     def test_applied_endpoint(self):
+        test_url = "https://example.com/test-applied-unit"
         resp = self.client.post(
             "/api/applied",
             json={
-                "url": "https://example.com/test-applied-unit",
+                "url": test_url,
                 "company": "Empresa Teste",
                 "role": "Frontend Angular",
                 "portal": "linkedin-search"
@@ -100,6 +101,98 @@ class TestFastAPI(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertTrue(data.get("applied"))
+
+        # Clean up test application and verify remove endpoint
+        del_resp = self.client.post(
+            "/api/applications/remove",
+            json={"url": test_url},
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(del_resp.status_code, 200)
+        self.assertTrue(del_resp.json().get("ok"))
+
+    def test_job_interest_and_apply_data_lifecycle(self):
+        sample_url = "https://example.com/job-lifecycle-audit-123"
+        job_payload = {
+            "title": "Engenheiro de Software Pleno",
+            "company": "Tech Inova",
+            "url": sample_url,
+            "location": "São Paulo, SP",
+            "portal": "gupy-search",
+            "workplace_type": "remote",
+            "date": "2026-10-31",
+            "contract": "CLT",
+            "seniority": "Pleno",
+            "screening": {
+                "score": 88,
+                "verdict": "Alta Afinidade",
+                "summary": "Excelente aderência ao perfil."
+            }
+        }
+
+        # 1. Mark as interest
+        mark_resp = self.client.post(
+            "/api/mark",
+            json={
+                "urls": [sample_url],
+                "decision": "interesse",
+                "job_data": job_payload
+            },
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(mark_resp.status_code, 200)
+
+        # 2. Check /api/saved returns all normalized fields
+        saved_resp = self.client.get("/api/saved")
+        self.assertEqual(saved_resp.status_code, 200)
+        saved_jobs = saved_resp.json().get("saved", [])
+        matched = next((j for j in saved_jobs if j.get("url") == sample_url), None)
+        self.assertIsNotNone(matched)
+        self.assertEqual(matched.get("company"), "Tech Inova")
+        self.assertEqual(matched.get("title"), "Engenheiro de Software Pleno")
+        self.assertEqual(matched.get("workplace_type"), "remote")
+        self.assertEqual(matched.get("date"), "2026-10-31")
+        self.assertEqual(matched.get("contract"), "CLT")
+        self.assertIsNotNone(matched.get("screening"))
+        self.assertEqual(matched["screening"].get("score"), 88)
+
+        # 3. Mark applied from Me Interessam / Buscar Vagas
+        app_resp = self.client.post(
+            "/api/applied",
+            json={
+                "url": sample_url,
+                "company": "Tech Inova",
+                "role": "Engenheiro de Software Pleno",
+                "portal": "gupy-search"
+            },
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(app_resp.status_code, 200)
+
+        # 4. Check /api/applications returns the application with full metadata and id
+        list_resp = self.client.get("/api/applications")
+        self.assertEqual(list_resp.status_code, 200)
+        apps = list_resp.json().get("applications", [])
+        app_match = next((a for a in apps if a.get("url") == sample_url), None)
+        self.assertIsNotNone(app_match)
+        self.assertEqual(app_match.get("company"), "Tech Inova")
+        self.assertEqual(app_match.get("role"), "Engenheiro de Software Pleno")
+        self.assertEqual(app_match.get("channel"), "gupy-search")
+        self.assertEqual(app_match.get("status"), "applied")
+        self.assertIsNotNone(app_match.get("id"))
+
+        # 5. Delete application using the remove endpoint
+        del_resp = self.client.post(
+            "/api/applications/remove",
+            json={"url": sample_url, "id": app_match.get("id")},
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(del_resp.status_code, 200)
+        self.assertTrue(del_resp.json().get("ok"))
+
+        # 6. Verify it is removed from applications
+        after_del = self.client.get("/api/applications").json().get("applications", [])
+        self.assertIsNone(next((a for a in after_del if a.get("url") == sample_url), None))
 
     def test_file_endpoint_security(self):
         # Non-existing or illegal path -> 404/403
@@ -164,6 +257,71 @@ class TestFastAPI(unittest.TestCase):
         self.assertIn("screening", found)
         self.assertEqual(found["screening"]["score"], 25)
         self.assertEqual(found["screening"]["verdict"], "Poor Fit")
+
+        # Cleanup
+        repo.delete_application(job_id=j["id"])
+        repo.conn.execute("DELETE FROM jobs WHERE id = ?", (j["id"],))
+        repo.conn.commit()
+
+    def test_application_event_lifecycle_and_evolution_sync(self):
+        # 1. Apply to a job
+        test_url = "https://example.com/job-lifecycle-event-test"
+        apply_resp = self.client.post("/api/applied", json={
+            "url": test_url,
+            "company": "Event Tech S/A",
+            "role": "Senior Frontend Angular",
+            "portal": "gupy-search"
+        }, headers={"X-Painel-Token": self.token})
+        self.assertEqual(apply_resp.status_code, 200)
+
+        # 2. Retrieve application id
+        apps_resp = self.client.get("/api/applications")
+        self.assertEqual(apps_resp.status_code, 200)
+        apps = apps_resp.json().get("applications", [])
+        my_app = next((a for a in apps if a.get("url") == test_url), None)
+        self.assertIsNotNone(my_app)
+        app_id = my_app["id"]
+
+        # 3. Add an interview event
+        event_payload = {
+            "application_id": app_id,
+            "stage": "Entrevista Técnica",
+            "event_date": "2026-10-31",
+            "feedback": "Excelente domínio de Angular Signals e RxJS.",
+            "questions_and_answers": "P: Como otimizar performance no Angular? R: Usar OnPush, signals e lazy loading.",
+            "status": "interview"
+        }
+        event_resp = self.client.post("/api/applications/event", json=event_payload, headers={"X-Painel-Token": self.token})
+        self.assertEqual(event_resp.status_code, 200)
+        event_data = event_resp.json()
+        self.assertTrue(event_data.get("ok"))
+        event_id = event_data.get("event_id")
+        self.assertIsNotNone(event_id)
+
+        # 4. List events for this application
+        events_list_resp = self.client.get(f"/api/applications/{app_id}/events")
+        self.assertEqual(events_list_resp.status_code, 200)
+        events_list = events_list_resp.json().get("events", [])
+        self.assertGreaterEqual(len(events_list), 1)
+        self.assertEqual(events_list[0]["stage"], "Entrevista Técnica")
+        self.assertEqual(events_list[0]["feedback"], "Excelente domínio de Angular Signals e RxJS.")
+
+        # 5. Call update evolution endpoint
+        evo_resp = self.client.post("/api/evolucao/atualizar", headers={"X-Painel-Token": self.token})
+        self.assertEqual(evo_resp.status_code, 200)
+        evo_data = evo_resp.json()
+        self.assertTrue(evo_data.get("ok"))
+        metrics = evo_data["evolution"]["evolution"]["metrics"]
+        self.assertGreaterEqual(metrics["applications"], 1)
+        self.assertGreaterEqual(metrics["applications_with_feedback"], 1)
+        self.assertGreaterEqual(metrics["applications_with_questions"], 1)
+
+        # 6. Delete event and cleanup application
+        del_ev_resp = self.client.delete(f"/api/applications/event/{event_id}", headers={"X-Painel-Token": self.token})
+        self.assertEqual(del_ev_resp.status_code, 200)
+
+        rem_resp = self.client.post("/api/applications/remove", json={"id": app_id, "url": test_url}, headers={"X-Painel-Token": self.token})
+        self.assertEqual(rem_resp.status_code, 200)
 
 
 if __name__ == "__main__":

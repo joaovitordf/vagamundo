@@ -4,7 +4,7 @@
 
 import { runSearch } from "./commands/search.js"
 import { runDetail } from "./commands/detail.js"
-import { badArg, foldAccents, parseFlags, parseIntFlag, rejectEmpty, rejectUnknown, writeError } from "./helpers.js"
+import { badArg, foldAccents, parseFlags, parseIntFlag, rejectEmpty, rejectUnknown, writeError, type JobResult } from "./helpers.js"
 import { PAGE_SIZE, WORKPLACE_FILTER, buildSearchUrl } from "./parse.js"
 
 const HELP = `vagas-cli - busca vagas na VAGAS.com (www.vagas.com.br), portal generalista brasileiro
@@ -93,8 +93,11 @@ async function main(): Promise<number> {
       if (v === null) return 1
       limit = v
     }
+    const keep = flags.remote !== undefined
+      ? (r: JobResult) => (flags.remote === true || String(flags.remote).includes("remoto") ? r.workplace_type === "remote" : true)
+      : undefined
     const url = buildSearchUrl(query, page, workplace)
-    return runSearch({ url, page, limit, jobage, format: fmt as "json", includeDescription: flags["no-description"] === undefined })
+    return runSearch({ url, page, limit, jobage, format: fmt as "json", includeDescription: flags["no-description"] === undefined, keep })
   }
 
   if (cmd === "detail") {

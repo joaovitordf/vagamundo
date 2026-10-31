@@ -118,7 +118,7 @@ import unicodedata
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from datetime import date
+from datetime import date, timedelta
 
 from pathlib import Path
 
@@ -162,19 +162,20 @@ REGION_PORTALS = {
         "gupy-search", "solides-search", "vagas-search", "infojobs-search",
         "empregos-search", "trampos-search", "pcd-search", "remotar-search",
         "geekhunter-search", "programathor-search", "digai-search",
-        "agrobase-search", "agrosearch-search", "michaelpage-search", "roberthalf-search"
+        "agrobase-search", "agrosearch-search", "michaelpage-search", "roberthalf-search",
+        "linkedin-search", "greenhouse-search", "freehire-search"
     },
     "estados-unidos": {
-        "remoteok-search", "wwr-search", "jobicy-search", "hn-search",
-        "freehire-search", "ashby-search", "lever-search", "greenhouse-search",
+        "remoteok-search", "jobicy-search", "hn-search",
+        "freehire-search", "ashby-search", "greenhouse-search",
         "linkedin-search"
     },
     "europa": {
-        "eures", "jobicy-search", "freehire-search", "greenhouse-search", "linkedin-search"
+        "jobicy-search", "freehire-search", "greenhouse-search", "linkedin-search"
     },
     "global": {
-        "remoteok-search", "wwr-search", "jobicy-search", "hn-search",
-        "freehire-search", "ashby-search", "lever-search", "greenhouse-search",
+        "remoteok-search", "jobicy-search", "hn-search",
+        "freehire-search", "ashby-search", "greenhouse-search",
         "linkedin-search", "hh-search", "habrcareer-search", "remotar-search"
     }
 }
@@ -678,6 +679,11 @@ def collect(calls, portals: dict, seen: SeenIndex, accept, jobage: int, runner=r
 
                 urls_now.add(url)
 
+            if jobage and jobage < 9999 and r.get("date"):
+                cutoff_date = (date.today() - timedelta(days=jobage)).isoformat()
+                if str(r["date"])[:10] < cutoff_date:
+                    continue
+
             if seen.match(company, title, url):
 
                 seen_before += 1
@@ -1105,7 +1111,10 @@ def main(argv=None) -> int:
         for tp in target_portals:
             if not any(c[1] == tp for c in filtered_calls):
                 if tp in installed:
-                    filtered_calls.append((1, tp, ["-q", default_q]))
+                    extra_cargs = ["-q", default_q]
+                    if tp == "linkedin-search":
+                        extra_cargs.extend(["-l", "Brazil"])
+                    filtered_calls.append((1, tp, extra_cargs))
 
         calls = filtered_calls
 
@@ -1128,7 +1137,10 @@ def main(argv=None) -> int:
                     pass
             for p in sorted(region_set):
                 if installed.get(p):
-                    calls.append((1, p, ["-q", default_q]))
+                    extra_cargs = ["-q", default_q]
+                    if p == "linkedin-search":
+                        extra_cargs.extend(["-l", "Brazil"])
+                    calls.append((1, p, extra_cargs))
 
     if getattr(args, "query", None) and args.query.strip():
         q_user = args.query.strip()

@@ -102,3 +102,15 @@ CREATE TABLE IF NOT EXISTS scan_runs (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS application_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    feedback TEXT,
+    questions_and_answers TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_events_app_id ON application_events(application_id);
+

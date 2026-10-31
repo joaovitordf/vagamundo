@@ -1069,6 +1069,8 @@
 
                   <button type="button" class="btn-card-action primary" (click)="markInteresse(vaga)">Me interessa</button>
 
+                  <button type="button" class="btn-card-action applied-btn" (click)="markApplied(vaga)" title="Registrar que você já se candidatou nesta vaga">Já me candidatei</button>
+
                   <button type="button" class="btn-card-action secondary" (click)="markDescartar(vaga)">Descartar</button>
 
                   <a [href]="vaga.url" target="_blank" rel="noopener noreferrer" class="link-external">
@@ -1482,6 +1484,8 @@
             <div class="job-card__actions">
 
               <button type="button" class="btn-card-action primary" (click)="markInteresse(vaga)">Me interessa</button>
+
+              <button type="button" class="btn-card-action applied-btn" (click)="markApplied(vaga)" title="Registrar que você já se candidatou nesta vaga">Já me candidatei</button>
 
               <button type="button" class="btn-card-action secondary" (click)="markDescartar(vaga)">Descartar</button>
 

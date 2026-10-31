@@ -12,8 +12,8 @@
       <div>
         <strong>Motor em uso:</strong>
         <span class="active-provider-name">{{ activeProviderLabel() }}</span>
-        @if (settingsData()?.model) {
-          <span class="active-model-tag">({{ settingsData()?.model }})</span>
+        @if (settingsData()?.model; as model) {
+          <span class="active-model-tag">({{ model }})</span>
         }
       </div>
     </div>

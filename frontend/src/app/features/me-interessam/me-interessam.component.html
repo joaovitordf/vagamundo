@@ -34,18 +34,18 @@
               {{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}
             </p>
           </div>
-          @if (job.screening?.score !== undefined && job.screening?.score !== null) {
+          @if (job.screening && job.screening.score !== undefined && job.screening.score !== null) {
             <span class="vc-badge-fit"
-              [class.vc-badge-fit--high]="job.screening!.score! >= 75"
-              [class.vc-badge-fit--med]="job.screening!.score! >= 50 && job.screening!.score! < 75"
-              [class.vc-badge-fit--low]="job.screening!.score! < 50">
-              {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict || (job.screening!.score >= 75 ? 'Alta Afinidade' : (job.screening!.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
+              [class.vc-badge-fit--high]="job.screening.score >= 75"
+              [class.vc-badge-fit--med]="job.screening.score >= 50 && job.screening.score < 75"
+              [class.vc-badge-fit--low]="job.screening.score < 50">
+              {{ job.screening.score }}/100 &bull; {{ job.screening.verdict || (job.screening.score >= 75 ? 'Alta Afinidade' : (job.screening.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
             </span>
           }
         </div>
 
-        @if (job.screening?.summary) {
-          <p class="screening-summary-text">{{ job.screening?.summary }}</p>
+        @if (job.screening && job.screening.summary) {
+          <p class="screening-summary-text">{{ job.screening.summary }}</p>
         }
 
         <div class="job-card__chips">
@@ -61,14 +61,17 @@
         </div>
 
         <div class="ai-actions-row">
-          <button type="button" class="btn-ai-action" (click)="runAi(job, 'avaliar')" title="Avaliar aderência e compatibilidade com IA">
-            <i class="bi bi-stars"></i> {{ (job.claude?.avaliar || job.screening) ? 'Reavaliar com IA' : 'Avaliar com IA' }}
+          <button type="button" class="btn-ai-action btn-ai-avaliar" (click)="runAi(job, 'avaliar')" title="Avaliar aderência e compatibilidade com IA">
+            <i class="bi bi-stars"></i> {{ hasDoc(job, 'avaliar') ? 'Reavaliar com IA' : 'Avaliar com IA' }}
           </button>
-          <button type="button" class="btn-ai-action" (click)="runAi(job, 'curriculo')" title="Gerar currículo personalizado em PDF">
-            <i class="bi bi-file-earmark-person"></i> {{ (job.claude?.curriculo || job.pdf_cv) ? 'Refazer Currículo' : 'Gerar Currículo' }}
+          <button type="button" class="btn-ai-action btn-ai-cv" (click)="runAi(job, 'curriculo')" title="Gerar currículo personalizado em PDF">
+            <i class="bi bi-file-earmark-person"></i> {{ hasDoc(job, 'curriculo') ? 'Refazer Currículo' : 'Gerar Currículo' }}
           </button>
-          <button type="button" class="btn-ai-action" (click)="runAi(job, 'carta')" title="Gerar carta de apresentação personalizada em PDF">
-            <i class="bi bi-envelope"></i> {{ (job.claude?.carta || job.pdf_carta) ? 'Refazer Carta' : 'Gerar Carta' }}
+          <button type="button" class="btn-ai-action btn-ai-carta" (click)="runAi(job, 'carta')" title="Gerar carta de apresentação personalizada em PDF">
+            <i class="bi bi-envelope"></i> {{ hasDoc(job, 'carta') ? 'Refazer Carta' : 'Gerar Carta' }}
+          </button>
+          <button type="button" class="btn-ai-action btn-ai-entrevista" (click)="runAi(job, 'entrevista')" title="Gerar dossiê preparatório para entrevista com IA">
+            <i class="bi bi-person-video3"></i> {{ hasDoc(job, 'entrevista') ? 'Refazer Dossiê' : 'Preparar Entrevista' }}
           </button>
         </div>
 
@@ -86,8 +89,8 @@
               </a>
             }
             @if (job.pdf_entrevista) {
-              <a [href]="'/api/file?path=' + encodePath(job.pdf_entrevista)" target="_blank" class="doc-link-btn" title="Baixar guia de entrevista">
-                <i class="bi bi-file-earmark-text"></i> Entrevista (PDF)
+              <a [href]="'/api/file?path=' + encodePath(job.pdf_entrevista)" target="_blank" class="doc-link-btn" title="Baixar ou abrir dossiê de preparação para entrevista">
+                <i class="bi bi-file-earmark-text"></i> Entrevista (Dossiê)
               </a>
             }
           </div>

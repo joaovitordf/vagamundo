@@ -47,13 +47,35 @@ export function brDate(value: string | null | undefined): string | null {
 }
 
 export function relativeDate(text: string | null | undefined, now = new Date()): string | null {
-  const t = foldAccents(text ?? "")
+  const t = foldAccents(text ?? "").trim().toLowerCase()
   const shift = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 10)
   if (!t) return null
-  if (/\bhoje\b|\bhora|\bminuto/.test(t)) return shift(0)
-  if (/\bontem\b/.test(t)) return shift(1)
-  const days = /ha\s+(\d+)\s+dias?/.exec(t)
-  if (days) return shift(Number(days[1]))
+  if (/\b(hoje|today|just now|agora|hora|horas|hour|hours|minuto|minutos|minute|minutes)\b/.test(t)) return shift(0)
+  if (/\b(ontem|yesterday)\b/.test(t)) return shift(1)
+
+  // Portuguese: "há N dias", "há N semanas", "há N meses"
+  const dPt = /ha\s+(\d+)\s+dias?/.exec(t)
+  if (dPt) return shift(Number(dPt[1]))
+  const wPt = /ha\s+(\d+)\s+semanas?/.exec(t)
+  if (wPt) return shift(Number(wPt[1]) * 7)
+  const mPt = /ha\s+(\d+)\s+mes(?:es)?/.exec(t)
+  if (mPt) return shift(Number(mPt[1]) * 30)
+  if (/ha\s+(?:uma?|1)\s+semana/.test(t)) return shift(7)
+  if (/ha\s+(?:um|1)\s+mes/.test(t)) return shift(30)
+
+  // English: "N days ago", "N weeks ago", "N months ago"
+  const dEn = /(\d+)\s+days?\s+ago/.exec(t)
+  if (dEn) return shift(Number(dEn[1]))
+  const wEn = /(\d+)\s+weeks?\s+ago/.exec(t)
+  if (wEn) return shift(Number(wEn[1]) * 7)
+  const mEn = /(\d+)\s+months?\s+ago/.exec(t)
+  if (mEn) return shift(Number(mEn[1]) * 30)
+  if (/(?:1|a)\s+week\s+ago/.test(t)) return shift(7)
+  if (/(?:1|a)\s+month\s+ago/.test(t)) return shift(30)
+
+  // Standard ISO or BR dates
+  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(t)
+  if (iso) return iso[1]
   return brDate(t)
 }
 

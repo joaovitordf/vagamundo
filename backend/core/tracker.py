@@ -80,8 +80,23 @@ class TrackerService:
     def record_application(self, app_data: dict) -> int:
         return self.repo.upsert_application(app_data)
 
+    def delete_application(self, app_id: int | None = None, job_id: str | None = None) -> int:
+        return self.repo.delete_application(app_id=app_id, job_id=job_id)
+
+    def get_application(self, app_id: int) -> dict | None:
+        return self.repo.get_application(app_id)
+
     def list_applications(self, status: str | None = None) -> list[dict]:
         return self.repo.list_applications(status=status)
+
+    def insert_application_event(self, event_data: dict) -> int:
+        return self.repo.insert_application_event(event_data)
+
+    def list_application_events(self, application_id: int | None = None) -> list[dict]:
+        return self.repo.list_application_events(application_id=application_id)
+
+    def delete_application_event(self, event_id: int) -> int:
+        return self.repo.delete_application_event(event_id=event_id)
 
     def record_scan_run(self, run_data: dict) -> int:
         return self.repo.insert_scan_run(run_data)

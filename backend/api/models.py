@@ -51,6 +51,12 @@ class SingleUrlRequest(BaseModel):
     url: str
 
 
+class ApplicationRemoveRequest(BaseModel):
+    url: Optional[str] = None
+    id: Optional[int] = None
+    job_id: Optional[str] = None
+
+
 class BatchScreenRequest(BaseModel):
     urls: List[str]
 
@@ -117,3 +123,14 @@ class AppliedRequest(BaseModel):
     company: Optional[str] = ''
     role: Optional[str] = ''
     portal: Optional[str] = ''
+
+
+class ApplicationEventCreateRequest(BaseModel):
+    application_id: Optional[int] = None
+    job_id: Optional[str] = None
+    url: Optional[str] = None
+    stage: str
+    event_date: Optional[str] = None
+    feedback: Optional[str] = None
+    questions_and_answers: Optional[str] = None
+    status: Optional[str] = None

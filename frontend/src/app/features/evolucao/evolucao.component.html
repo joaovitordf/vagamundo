@@ -1,62 +1,320 @@
 <div class="evolucao-container">
+  <!-- Painel Principal de Cabeçalho -->
   <div class="vc-panel main-panel">
     <div class="panel-header-row">
-      <div>
-        <h2>Evolução Profissional</h2>
+      <div class="header-info">
+        <div class="title-with-badge">
+          <h2>Evolução Profissional & Inteligência de Carreira</h2>
+          <span class="sync-badge" [class.badge-active]="evolutionData()?.updated_at">
+            <i class="bi bi-clock-history"></i>
+            Atualizado: {{ formatDate(evolutionData()?.updated_at) }}
+          </span>
+        </div>
         <p class="panel-desc">
-          Esta aba visualiza o resultado consolidado de evolução de carreira. A atualização valida as candidaturas, históricos, projetos, perfil e LinkedIn disponíveis e recalcula as prioridades.
+          Este painel audita e consolida o histórico de candidaturas, entrevistas realizadas, feedbacks recebidos e inventário de projetos.
+          A cada atualização, as fontes locais são conferidas e novas prioridades são recalculadas para aumentar sua taxa de conversão em processos seletivos.
         </p>
       </div>
       <button type="button" class="btn-primary" (click)="updateEvolution()" [disabled]="updating()">
-        <i class="bi bi-arrow-repeat"></i> Atualizar evolução
+        <i class="bi bi-arrow-repeat" [class.spin]="updating()"></i>
+        {{ updating() ? 'Atualizando…' : 'Atualizar evolução' }}
       </button>
     </div>
 
     @if (statusMsg()) {
-      <p class="status-text" aria-live="polite">
-        @if (updating()) { <span class="vc-spinner"></span> }
-        {{ statusMsg() }}
-      </p>
+      <div class="alert-box alert-success" role="status">
+        <i class="bi bi-check-circle-fill"></i>
+        <span>{{ statusMsg() }}</span>
+      </div>
     }
 
-    @if (evolutionData()) {
-      <div class="metrics-summary-grid">
-        <div class="metric-box">
-          <span class="metric-val">{{ evolutionData()?.evolution?.metrics?.total_applied ?? 12 }}</span>
-          <span class="metric-lbl">Candidaturas Ativas</span>
+    @if (errorMsg()) {
+      <div class="alert-box alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span>{{ errorMsg() }}</span>
+      </div>
+    }
+
+    <!-- Resumo em Destaque -->
+    @if (summaryText) {
+      <div class="summary-callout">
+        <i class="bi bi-stars"></i>
+        <span class="summary-text">{{ summaryText }}</span>
+      </div>
+    }
+
+    <!-- Grid de Métricas Reais Consolidadas -->
+    @if (metrics) {
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon-wrapper icon-blue">
+            <i class="bi bi-send-check"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.applications }}</span>
+            <span class="metric-lbl">Candidaturas Ativas</span>
+          </div>
         </div>
-        <div class="metric-box">
-          <span class="metric-val">{{ evolutionData()?.evolution?.metrics?.response_rate ?? '25%' }}</span>
-          <span class="metric-lbl">Taxa de Resposta</span>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrapper icon-teal">
+            <i class="bi bi-file-earmark-person"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.applications_with_cv }}</span>
+            <span class="metric-lbl">Com Currículo Enviado</span>
+          </div>
         </div>
-        <div class="metric-box">
-          <span class="metric-val">{{ evolutionData()?.evolution?.metrics?.interviews ?? 2 }}</span>
-          <span class="metric-lbl">Entrevistas Realizadas</span>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrapper icon-purple">
+            <i class="bi bi-chat-square-quote"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.applications_with_feedback }}</span>
+            <span class="metric-lbl">Feedbacks Registrados</span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrapper icon-cyan">
+            <i class="bi bi-patch-question"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.applications_with_questions }}</span>
+            <span class="metric-lbl">Perguntas & Respostas</span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrapper icon-green">
+            <i class="bi bi-kanban"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.projects_in_source }}</span>
+            <span class="metric-lbl">Projetos Comprovados</span>
+          </div>
+        </div>
+
+        <div class="metric-card">
+          <div class="metric-icon-wrapper icon-linkedin">
+            <i class="bi bi-linkedin"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.linkedin_files }}</span>
+            <span class="metric-lbl">Documentos LinkedIn</span>
+          </div>
+        </div>
+
+        <div class="metric-card" [class.metric-warning]="metrics.validation_warnings > 0">
+          <div class="metric-icon-wrapper icon-amber">
+            <i class="bi bi-exclamation-triangle"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.validation_warnings }}</span>
+            <span class="metric-lbl">Avisos de Validação</span>
+          </div>
+        </div>
+
+        <div class="metric-card" [class.metric-danger]="metrics.validation_errors > 0">
+          <div class="metric-icon-wrapper icon-red">
+            <i class="bi bi-x-octagon"></i>
+          </div>
+          <div class="metric-data">
+            <span class="metric-val">{{ metrics.validation_errors }}</span>
+            <span class="metric-lbl">Erros de Validação</span>
+          </div>
         </div>
       </div>
     }
   </div>
 
-  @if (gapsList().length > 0) {
-    <div class="vc-panel section-panel">
-      <h3>Lacunas e Oportunidades Identificadas (Gaps)</h3>
-      <ul class="evolution-list">
-        @for (gap of gapsList(); track gap) {
-          <li><i class="bi bi-lightbulb"></i> {{ gap }}</li>
+  <!-- Prioridades Desta Atualização -->
+  <div class="vc-panel section-panel">
+    <div class="section-title-row">
+      <div class="section-icon icon-amber"><i class="bi bi-bullseye"></i></div>
+      <div>
+        <h3>Prioridades Desta Atualização</h3>
+        <p class="section-subtitle">Ações estratégicas sugeridas para enriquecer seu histórico e aumentar o score de seleção.</p>
+      </div>
+    </div>
+
+    @if (priorities.length > 0) {
+      <ul class="priority-list">
+        @for (item of priorities; track item) {
+          <li class="priority-item">
+            <i class="bi bi-arrow-right-circle-fill"></i>
+            <span>{{ item }}</span>
+          </li>
         }
       </ul>
+    } @else {
+      <div class="empty-notice">
+        <i class="bi bi-check-all"></i>
+        <span>Nenhuma pendência crítica identificada! Todas as fontes e históricos estão consistentes.</span>
+      </div>
+    }
+  </div>
+
+  <!-- Grid Duplo: Lacunas (Gaps) e Plano de Treino (Actions) -->
+  <div class="two-col-grid">
+    <div class="vc-panel col-panel">
+      <div class="section-title-row">
+        <div class="section-icon icon-yellow"><i class="bi bi-lightbulb"></i></div>
+        <div>
+          <h3>Lacunas Mapeadas (Gaps)</h3>
+          <p class="section-subtitle">Pontos de melhoria identificados em feedbacks ou requisitos técnicos.</p>
+        </div>
+      </div>
+
+      @if (gaps.length > 0) {
+        <ul class="styled-list">
+          @for (gap of gaps; track gap) {
+            <li><i class="bi bi-exclamation-circle"></i> {{ gap }}</li>
+          }
+        </ul>
+      } @else {
+        <div class="empty-notice">
+          <i class="bi bi-shield-check"></i>
+          <span>Nenhuma lacuna técnica crítica pendente de resolução.</span>
+        </div>
+      }
+    </div>
+
+    <div class="vc-panel col-panel">
+      <div class="section-title-row">
+        <div class="section-icon icon-green"><i class="bi bi-lightning-charge"></i></div>
+        <div>
+          <h3>Plano de Treino & Ações</h3>
+          <p class="section-subtitle">Diretrizes práticas para enriquecer seu portfólio e desempenho em entrevistas.</p>
+        </div>
+      </div>
+
+      @if (actions.length > 0) {
+        <ul class="styled-list">
+          @for (act of actions; track act) {
+            <li><i class="bi bi-check2-circle"></i> {{ act }}</li>
+          }
+        </ul>
+      } @else {
+        <div class="empty-notice">
+          <i class="bi bi-trophy"></i>
+          <span>Aguardando novos registros de entrevistas para gerar recomendações.</span>
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- Inventário de Projetos e Experiências -->
+  @if (projects.length > 0) {
+    <div class="vc-panel section-panel">
+      <div class="section-title-row">
+        <div class="section-icon icon-blue"><i class="bi bi-folder-check"></i></div>
+        <div>
+          <h3>Inventário de Projetos & Experiências Detectadas</h3>
+          <p class="section-subtitle">Projetos independentes e atuações profissionais validadas a partir do seu perfil canônico.</p>
+        </div>
+      </div>
+
+      <div class="projects-badge-grid">
+        @for (proj of projects; track proj) {
+          <div class="project-pill">
+            <i class="bi bi-code-slash"></i>
+            <span>{{ proj }}</span>
+          </div>
+        }
+      </div>
     </div>
   }
 
-  @if (actionsList().length > 0) {
-    <div class="vc-panel section-panel">
-      <h3>Plano de Ações Recomendadas</h3>
-      <ul class="evolution-list">
-        @for (act of actionsList(); track act) {
-          <li><i class="bi bi-check-circle"></i> {{ act }}</li>
+  <!-- Tabela de Auditoria de Fontes do Sistema -->
+  <div class="vc-panel section-panel">
+    <div class="section-title-row">
+      <div class="section-icon icon-purple"><i class="bi bi-journal-check"></i></div>
+      <div>
+        <h3>Auditoria de Fontes Profissionais</h3>
+        <p class="section-subtitle">Verificação de integridade dos arquivos e bancos de dados locais que compõem sua base de conhecimento.</p>
+      </div>
+    </div>
+
+    @if (sourceRows.length > 0) {
+      <div class="table-responsive">
+        <table class="vc-table audit-table">
+          <thead>
+            <tr>
+              <th>Fonte / Recurso</th>
+              <th>Caminho no Espaço de Trabalho</th>
+              <th class="text-center">Arquivos</th>
+              <th class="text-center">Linhas / Tamanho</th>
+              <th class="text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (src of sourceRows; track src.key) {
+              <tr>
+                <td>
+                  <div class="source-name">{{ src.name }}</div>
+                  <div class="source-desc">{{ src.description }}</div>
+                </td>
+                <td>
+                  <code class="path-code" [title]="src.path">{{ src.path }}</code>
+                </td>
+                <td class="text-center">
+                  {{ src.files > 0 ? src.files : '-' }}
+                </td>
+                <td class="text-center">
+                  @if (src.lines > 0) {
+                    <span>{{ src.lines }} linhas</span>
+                  } @else if (src.bytes) {
+                    <span>{{ src.bytes }} bytes</span>
+                  } @else {
+                    <span>-</span>
+                  }
+                </td>
+                <td class="text-center">
+                  @if (src.exists) {
+                    <span class="status-pill pill-success">
+                      <i class="bi bi-check-circle-fill"></i> Integrado
+                    </span>
+                  } @else {
+                    <span class="status-pill pill-warning">
+                      <i class="bi bi-dash-circle"></i> Opcional / Não encontrado
+                    </span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+
+  <!-- Avisos e Alertas de Validação -->
+  @if (warnings.length > 0 || errors.length > 0) {
+    <div class="vc-panel section-panel validation-alerts-panel">
+      <div class="section-title-row">
+        <div class="section-icon icon-amber"><i class="bi bi-shield-exclamation"></i></div>
+        <div>
+          <h3>Avisos e Observações do Sistema</h3>
+          <p class="section-subtitle">Alertas gerados durante a auditoria das fontes e cadastros de candidaturas.</p>
+        </div>
+      </div>
+
+      <div class="alerts-container">
+        @for (err of errors; track err) {
+          <div class="alert-item error-item">
+            <i class="bi bi-x-circle-fill"></i>
+            <span>{{ err }}</span>
+          </div>
         }
-      </ul>
+        @for (warn of warnings; track warn) {
+          <div class="alert-item warn-item">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>{{ warn }}</span>
+          </div>
+        }
+      </div>
     </div>
   }
 </div>
-

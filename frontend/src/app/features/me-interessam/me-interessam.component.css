@@ -167,6 +167,36 @@
   background: rgba(56, 189, 248, 0.2);
 }
 
+.btn-ai-carta {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.35);
+  color: #c084fc;
+}
+.btn-ai-carta:hover {
+  background: rgba(168, 85, 247, 0.22);
+  border-color: #a855f7;
+}
+
+.btn-ai-cv {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: var(--vc-blue);
+}
+.btn-ai-cv:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: var(--vc-blue);
+}
+
+.btn-ai-entrevista {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+.btn-ai-entrevista:hover {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: #10b981;
+}
+
 .generated-docs-row {
   display: flex;
   gap: 8px;

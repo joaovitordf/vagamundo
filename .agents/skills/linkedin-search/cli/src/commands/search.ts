@@ -57,6 +57,10 @@ export async function runSearch(opts: SearchOpts): Promise<number> {
   try {
     const html = await htmlFetch(buildUrl(opts))
     let cards = parseJobCards(html)
+    if (opts.jobage && opts.jobage > 0 && opts.jobage < 9999) {
+      const cutoff = new Date(Date.now() - opts.jobage * 86_400_000).toISOString().slice(0, 10)
+      cards = cards.filter((c) => !c.date || c.date >= cutoff)
+    }
     if (opts.limit !== undefined && opts.limit >= 0) cards = cards.slice(0, opts.limit)
 
     if (opts.format === "table") {

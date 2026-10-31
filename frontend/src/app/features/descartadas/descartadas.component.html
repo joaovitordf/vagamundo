@@ -40,7 +40,7 @@
             <h3 class="job-card__title">{{ job.title }}</h3>
             <p class="job-card__company">{{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}</p>
           </div>
-          @if (job.screening?.score !== undefined && job.screening?.score !== null) {
+          @if (job.screening?.score !== undefined && job.screening.score !== null) {
             <span class="vc-badge-fit vc-badge-fit--low">
               {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict }}
             </span>

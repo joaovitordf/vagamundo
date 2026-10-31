@@ -26,7 +26,9 @@ export function slugify(query: string): string {
 }
 
 export function buildSearchUrl(query: string, page: number): string {
-  return `${BASE_URL}/jobs/${slugify(query)}${page > 1 ? `?page=${page - 1}` : ""}`
+  const params: string[] = [`search=${encodeURIComponent(query)}`]
+  if (page > 1) params.push(`page=${page - 1}`)
+  return `${BASE_URL}/jobs?${params.join("&")}`
 }
 
 function workplace(text: string | null): JobResult["workplace_type"] {

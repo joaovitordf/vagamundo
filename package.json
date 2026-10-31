@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "node dev.js",
     "start": "node dev.js",
+    "install:all": "npm install && npm --prefix frontend install && python backend/tools/install_portal_clis.py",
+    "install:portals": "python backend/tools/install_portal_clis.py",
     "backend": "uvicorn backend.api.app:app --port 8765 --host 127.0.0.1",
     "frontend": "npm --prefix frontend start",
     "build": "npm --prefix frontend run build"

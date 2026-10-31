@@ -79,26 +79,45 @@ class Repository:
         company = job.get("company", "")
         url = job.get("url", "")
 
-        if not job_id:
+        # Generate canonical slug key if id is missing or numeric portal ID
+        if not job_id or (isinstance(job_id, str) and (job_id.isdigit() or not ("-" in job_id or "_" in job_id))):
             try:
                 from backend.tools.job_key import make_key
                 job_id = make_key(company, title, url)
             except Exception:
-                job_id = f"job-{hash(url or title + company)}"
+                job_id = f"job-{abs(hash(url or title + company))}"
 
         now = _now_iso()
 
         # Check existing by id or url
-        cur = self.conn.execute("SELECT id, created_at, status, fit FROM jobs WHERE id = ? OR url = ?", (job_id, url))
+        cur = self.conn.execute("SELECT id, created_at, status, fit, rank_score, rank_verdict FROM jobs WHERE id = ? OR url = ?", (job_id, url))
         row = cur.fetchone()
+
+        status = job.get("status") or (row["status"] if row else "new")
+        fit = job.get("fit") or (row["fit"] if row else None)
+
+        # Normalize score and verdict from screening dict if present
+        rank_score = job.get("rank_score")
+        rank_verdict = job.get("rank_verdict")
+        screening = job.get("screening")
+        if isinstance(screening, dict):
+            if rank_score is None:
+                rank_score = screening.get("score")
+            if rank_verdict is None:
+                rank_verdict = screening.get("verdict")
+        if row:
+            if rank_score is None:
+                rank_score = row["rank_score"]
+            if rank_verdict is None:
+                rank_verdict = row["rank_verdict"]
+
+        work_model = job.get("work_model") or job.get("workplace_type")
+        contract_type = job.get("contract_type") or job.get("contract")
+        posted_date = job.get("posted_date") or job.get("date")
 
         with self.conn:
             if row:
                 target_id = row["id"]
-                created_at = row["created_at"]
-                status = job.get("status") or row["status"]
-                fit = job.get("fit") or row["fit"]
-
                 self.conn.execute(
                     """
                     UPDATE jobs SET
@@ -138,17 +157,17 @@ class Repository:
                         job.get("location"),
                         job.get("portal"),
                         job.get("source"),
-                        job.get("work_model"),
-                        job.get("contract_type"),
+                        work_model,
+                        contract_type,
                         job.get("seniority"),
                         job.get("description"),
-                        job.get("posted_date"),
+                        posted_date,
                         job.get("deadline"),
                         job.get("first_seen"),
                         status,
                         fit,
-                        job.get("rank_score"),
-                        job.get("rank_verdict"),
+                        rank_score,
+                        rank_verdict,
                         job.get("rank_date"),
                         job.get("location_verdict"),
                         job.get("language_gate"),
@@ -190,17 +209,17 @@ class Repository:
                         job.get("location"),
                         job.get("portal"),
                         job.get("source", "cli"),
-                        job.get("work_model"),
-                        job.get("contract_type"),
+                        work_model,
+                        contract_type,
                         job.get("seniority"),
                         job.get("description"),
-                        job.get("posted_date"),
+                        posted_date,
                         job.get("deadline"),
                         job.get("first_seen", now[:10]),
-                        job.get("status", "new"),
-                        job.get("fit"),
-                        job.get("rank_score"),
-                        job.get("rank_verdict"),
+                        status,
+                        fit,
+                        rank_score,
+                        rank_verdict,
                         job.get("rank_date"),
                         job.get("location_verdict"),
                         job.get("language_gate"),
@@ -423,6 +442,13 @@ class Repository:
         now = _now_iso()
 
         with self.conn:
+            # If app_id is not given, check if an application with this job_id already exists to prevent duplicates
+            if not app_id and job_id:
+                cur = self.conn.execute("SELECT id FROM applications WHERE job_id = ?", (job_id,))
+                existing = cur.fetchone()
+                if existing:
+                    app_id = existing["id"]
+
             if app_id:
                 self.conn.execute(
                     """
@@ -459,7 +485,7 @@ class Repository:
                     """,
                     (
                         job_id,
-                        app.get("status", "preparando"),
+                        app.get("status", "applied"),
                         app.get("cv_path"),
                         app.get("cover_letter_path"),
                         app.get("interview_notes_path"),
@@ -471,11 +497,30 @@ class Repository:
                 )
                 return cur.lastrowid
 
+    def delete_application(self, app_id: int | None = None, job_id: str | None = None) -> int:
+        """Delete an application by its id or associated job_id."""
+        with self.conn:
+            if app_id:
+                cur = self.conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+                return cur.rowcount
+            elif job_id:
+                cur = self.conn.execute("DELETE FROM applications WHERE job_id = ?", (job_id,))
+                return cur.rowcount
+            return 0
+
+    def get_application(self, app_id: int) -> dict | None:
+        """Fetch application record by id."""
+        cur = self.conn.execute("SELECT * FROM applications WHERE id = ?", (app_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
     def list_applications(self, status: str | None = None) -> list[dict]:
-        """List all applications with joined job metadata."""
+        """List all applications with joined job metadata and event counts."""
         query = """
             SELECT a.*, j.title as job_title, j.company as job_company, j.url as job_url,
-                   j.portal as job_portal, j.location as job_location
+                   j.portal as job_portal, j.location as job_location,
+                   (SELECT COUNT(*) FROM application_events WHERE application_id = a.id) as event_count,
+                   (SELECT stage FROM application_events WHERE application_id = a.id ORDER BY event_date DESC, id DESC LIMIT 1) as latest_event_stage
             FROM applications a
             JOIN jobs j ON a.job_id = j.id
             WHERE 1=1
@@ -488,6 +533,63 @@ class Repository:
 
         cur = self.conn.execute(query, params)
         return [dict(row) for row in cur.fetchall()]
+
+    # -------------------------------------------------------------------------
+    # Application Events CRUD (Interview Stages, Feedback, Q&A)
+    # -------------------------------------------------------------------------
+
+    def insert_application_event(self, event_data: dict) -> int:
+        """Insert an interview stage, feedback, or Q&A event."""
+        now = _now_iso()
+        with self.conn:
+            cur = self.conn.execute(
+                """
+                INSERT INTO application_events (
+                    application_id, stage, event_date, feedback,
+                    questions_and_answers, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_data["application_id"],
+                    event_data.get("stage") or "Entrevista",
+                    event_data.get("event_date") or now[:10],
+                    event_data.get("feedback") or "",
+                    event_data.get("questions_and_answers") or "",
+                    now,
+                ),
+            )
+            event_id = cur.lastrowid
+
+            # Also update applications.updated_at
+            self.conn.execute(
+                "UPDATE applications SET updated_at = ? WHERE id = ?",
+                (now, event_data["application_id"]),
+            )
+            return event_id
+
+    def list_application_events(self, application_id: int | None = None) -> list[dict]:
+        """List all interview stage events, optionally filtered by application_id."""
+        query = """
+            SELECT e.*, a.job_id, j.title as job_title, j.company as job_company
+            FROM application_events e
+            JOIN applications a ON e.application_id = a.id
+            JOIN jobs j ON a.job_id = j.id
+            WHERE 1=1
+        """
+        params: list[Any] = []
+        if application_id is not None:
+            query += " AND e.application_id = ?"
+            params.append(application_id)
+        query += " ORDER BY e.event_date DESC, e.id DESC"
+
+        cur = self.conn.execute(query, params)
+        return [dict(row) for row in cur.fetchall()]
+
+    def delete_application_event(self, event_id: int) -> int:
+        """Delete an interview event by its ID."""
+        with self.conn:
+            cur = self.conn.execute("DELETE FROM application_events WHERE id = ?", (event_id,))
+            return cur.rowcount
 
     # -------------------------------------------------------------------------
     # Scan Runs

@@ -45,6 +45,9 @@ class ProfileService:
     def get_evolution(self) -> Dict[str, Any]:
         return painel.load_evolution()
 
+    def update_evolution(self) -> Dict[str, Any]:
+        return painel.update_evolution()
+
     def save_evolution(self, data: Dict[str, Any]) -> None:
         painel.save_evolution(data)
 

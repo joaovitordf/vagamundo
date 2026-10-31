@@ -431,16 +431,51 @@ def _projects_from_source(path: Path) -> list[str]:
             continue
         if in_fence:
             continue
-        if line.startswith("## Fila de enriquecimento"):
-            break
-        if line.startswith("## Inventário atual de projetos") or line.startswith("## Projetos locais"):
+        if line.startswith("## Fila de enriquecimento") or line.startswith("## Competências técnicas"):
+            collecting = False
+            continue
+        if (
+            line.startswith("## Inventário atual de projetos")
+            or line.startswith("## Projetos locais")
+            or line.startswith("## Projetos independentes")
+            or line.startswith("## Experiência profissional")
+        ):
             collecting = True
             continue
-        if collecting and line.startswith("### "):
-            title = line[4:].strip()
-            if title and title not in projects and title != "Modelo de registro":
-                projects.append(title)
+        if collecting:
+            if line.startswith("### "):
+                title = line[4:].strip()
+                if title and title not in projects and title != "Modelo de registro" and not title.startswith("Pessoa Jur"):
+                    projects.append(title)
+            elif line.startswith("- **") and "**:" in line:
+                title = line[4:].split("**:")[0].strip()
+                if title and title not in projects:
+                    projects.append(title)
     return projects
+
+
+def _profile_skills_summary(path: Path) -> tuple[list[str], list[str], list[str]]:
+    strengths, gaps, actions = [], [], []
+    if not path.is_file():
+        return strengths, gaps, actions
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return strengths, gaps, actions
+    in_skills = False
+    for line in lines:
+        if line.startswith("## Competências técnicas"):
+            in_skills = True
+            continue
+        if in_skills and line.startswith("## "):
+            in_skills = False
+            break
+        if in_skills and line.startswith("- **") and "**" in line[4:]:
+            skill = line[4:].split("**")[0].strip()
+            detail = line[4:].split("**")[1].lstrip(":").strip()
+            if skill:
+                strengths.append(f"{skill}: {detail}" if detail else skill)
+    return strengths, gaps, actions
 
 
 def _markdown_section(path: Path, heading: str) -> list[str]:
@@ -512,7 +547,8 @@ def _context_summary(path: Path) -> tuple[list[str], list[str], list[str]]:
 def update_evolution(evolution_path: Path = EVOLUTION_PATH,
                      tracker_path: Path = scrape_run.TRACKER,
                      seen_path: Path = scrape_run.SEEN,
-                     documents_path: Path = painel_ia.DOCUMENTS) -> dict:
+                     documents_path: Path = painel_ia.DOCUMENTS,
+                     db_path: str | Path | None = None) -> dict:
     """Valida fontes e candidaturas e grava o resultado derivado no JSON."""
     data = load_evolution(evolution_path)
     applications_data = data.setdefault("applications", {})
@@ -521,6 +557,66 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
         if not isinstance(data.get(list_name), list):
             errors.append(f"A seção {list_name} do JSON de evolução precisa ser uma lista.")
             data[list_name] = []
+
+    # 1. Sync from SQLite if available
+    try:
+        from backend.db.repository import Repository
+        repo = Repository(db_path)
+        sqlite_apps = repo.list_applications()
+        sqlite_events = repo.list_application_events()
+        events_by_app_id: dict[int, list[dict]] = {}
+        for ev in sqlite_events:
+            events_by_app_id.setdefault(ev["application_id"], []).append(ev)
+
+        for sapp in sqlite_apps:
+            s_url = (sapp.get("job_url") or sapp.get("url") or "").strip()
+            if not s_url:
+                continue
+            app_id = sapp.get("id")
+            app_events = events_by_app_id.get(app_id, [])
+
+            if s_url not in applications_data:
+                applications_data[s_url] = {
+                    "url": s_url,
+                    "job": {
+                        "title": sapp.get("job_title") or sapp.get("role") or "",
+                        "company": sapp.get("job_company") or sapp.get("company") or "",
+                        "portal": sapp.get("job_portal") or sapp.get("portal") or "",
+                        "url": s_url,
+                    },
+                    "application": {
+                        "applied_date": sapp.get("applied_date") or "",
+                        "status": sapp.get("status") if sapp.get("status") in APPLICATION_STATUSES else "applied",
+                        "cv_file": sapp.get("cv_path") or sapp.get("cv_file") or "",
+                        "cover_letter_file": sapp.get("cover_letter_path") or sapp.get("cover_letter_file") or "",
+                        "notes": sapp.get("notes") or "",
+                    },
+                    "history": [],
+                    "updated_at": sapp.get("updated_at"),
+                    "imported_from_tracker": True,
+                }
+            else:
+                existing_entry = applications_data[s_url]
+                app_obj = existing_entry.setdefault("application", {})
+                if sapp.get("cv_path") and not app_obj.get("cv_file"):
+                    app_obj["cv_file"] = sapp["cv_path"]
+                if sapp.get("status") and sapp["status"] in APPLICATION_STATUSES:
+                    app_obj["status"] = sapp["status"]
+
+            if app_events:
+                hist_entries = []
+                for ev in app_events:
+                    hist_entries.append({
+                        "date": ev.get("event_date") or "",
+                        "stage": ev.get("stage") or "",
+                        "feedback": ev.get("feedback") or "",
+                        "questions_and_answers": ev.get("questions_and_answers") or "",
+                    })
+                applications_data[s_url]["history"] = hist_entries
+    except Exception:
+        pass
+
+    # 2. Sync from tracker CSV
     for row in applications(tracker_path):
         url = (row.get("source") or row.get("url") or "").strip()
         if not url:
@@ -570,7 +666,19 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
     context_file = WORK_CONTEXT_DIR / "contexto-entrevistas.md"
     projects_file = WORK_CONTEXT_DIR / "fontes.md"
     application_notes_file = WORK_CONTEXT_DIR / "vagas.md"
+
+    if not projects_file.is_file() and painel_ia.PROFILE_MD.is_file():
+        projects_file = painel_ia.PROFILE_MD
+
     source_strengths, source_gaps, source_actions = _context_summary(context_file)
+    if not source_strengths and painel_ia.PROFILE_MD.is_file():
+        p_str, p_gap, p_act = _profile_skills_summary(painel_ia.PROFILE_MD)
+        source_strengths = p_str
+        if not source_gaps:
+            source_gaps = p_gap
+        if not source_actions:
+            source_actions = p_act
+
     if source_strengths:
         data["strengths"] = source_strengths
     if source_gaps:
@@ -578,22 +686,27 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
     if source_actions:
         data["actions"] = source_actions
 
+    # Audited sources (workspace local primary, legacy fallback)
+    agents_file = painel_ia.REPO_ROOT / "AGENTS.md" if (painel_ia.REPO_ROOT / "AGENTS.md").is_file() else WORK_CONTEXT_DIR / "AGENTS.md"
+    usage_file = painel_ia.REPO_ROOT / "CLAUDE.md" if (painel_ia.REPO_ROOT / "CLAUDE.md").is_file() else WORK_CONTEXT_DIR / "usage.md"
+    interviews_src = context_file if context_file.is_file() else (documents_path / "interview" if (documents_path / "interview").exists() else painel_ia.PROFILE_MD)
+    notes_src = application_notes_file if application_notes_file.is_file() else (documents_path / "applications")
+
     sources = {
         "applications_tracker": _source_info(tracker_path),
         "candidate_profile": _source_info(painel_ia.PROFILE_MD),
         "linkedin": _source_info(documents_path / "linkedin"),
         "projects": _source_info(projects_file),
-        "interviews": _source_info(context_file),
-        "application_notes": _source_info(application_notes_file),
-        "guidance": _source_info(WORK_CONTEXT_DIR / "AGENTS.md"),
-        "usage": _source_info(WORK_CONTEXT_DIR / "usage.md"),
+        "interviews": _source_info(interviews_src),
+        "application_notes": _source_info(notes_src),
+        "guidance": _source_info(agents_file),
+        "usage": _source_info(usage_file),
     }
+
     if not sources["linkedin"]["exists"] or not sources["linkedin"].get("files"):
         warnings.append("Nenhum arquivo do LinkedIn foi encontrado em documents/linkedin.")
     if not sources["projects"]["exists"]:
-        warnings.append("O inventário de projetos de E:\\Projects\\work não foi encontrado.")
-    if not sources["interviews"]["exists"]:
-        warnings.append("O contexto de entrevistas de E:\\Projects\\work não foi encontrado.")
+        warnings.append("O inventário de projetos não foi encontrado.")
 
     project_count = 0
     source_projects = _projects_from_source(projects_file)
@@ -604,19 +717,22 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
             pass
     if source_projects:
         data["projects"] = source_projects
-    work_application_section = []
-    for line in _markdown_section(application_notes_file, "## Registro de candidaturas"):
-        if line.startswith("### "):
-            break
-        work_application_section.append(line)
-    work_application_rows = [line for line in work_application_section
-                             if line.startswith("|") and not line.startswith("|---")
-                             and "Empresa" not in line and "---" not in line]
-    if work_application_rows and len(work_application_rows) != len(applications_data):
-        warnings.append(
-            f"O histórico do work registra {len(work_application_rows)} candidatura(s), "
-            f"mas o rastreador local contém {len(applications_data)}."
-        )
+
+    if application_notes_file.is_file():
+        work_application_section = []
+        for line in _markdown_section(application_notes_file, "## Registro de candidaturas"):
+            if line.startswith("### "):
+                break
+            work_application_section.append(line)
+        work_application_rows = [line for line in work_application_section
+                                 if line.startswith("|") and not line.startswith("|---")
+                                 and "Empresa" not in line and "---" not in line]
+        if work_application_rows and len(work_application_rows) != len(applications_data):
+            warnings.append(
+                f"O histórico de candidaturas registra {len(work_application_rows)} candidatura(s), "
+                f"mas o rastreador local contém {len(applications_data)}."
+            )
+
     metrics = {
         "applications": len(applications_data),
         "applications_with_cv": with_cv,
@@ -638,6 +754,7 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
         priorities.append("Adicionar o LinkedIn salvo em PDF para validar a fonte profissional.")
     if not project_count:
         priorities.append("Adicionar ou confirmar o inventário de projetos.")
+
     data["updated_at"] = datetime.now().isoformat(timespec="seconds")
     data["validation"] = {"checked_at": data["updated_at"], "errors": errors, "warnings": warnings, "sources": sources}
     data["evolution"] = {
@@ -682,9 +799,22 @@ def mark(results: dict | None, urls: list, decision: str, seen_path: Path = scra
         except Exception:
             pass
         marked = {
-            "title": row.get("title"), "company": row.get("company"), "url": row.get("url"),
-            "date": row.get("date"), "deadline": row.get("deadline"), "portal": row.get("portal"),
-            "source": "painel", **DECISIONS[decision],
+            "title": row.get("title"),
+            "company": row.get("company"),
+            "url": row.get("url"),
+            "date": row.get("date") or row.get("posted_date"),
+            "posted_date": row.get("posted_date") or row.get("date"),
+            "deadline": row.get("deadline"),
+            "portal": row.get("portal"),
+            "location": row.get("location"),
+            "workplace_type": row.get("workplace_type") or row.get("work_model"),
+            "contract": row.get("contract") or row.get("contract_type"),
+            "seniority": row.get("seniority"),
+            "salary": row.get("salary"),
+            "description": row.get("description"),
+            "screening": row.get("screening"),
+            "source": "painel",
+            **DECISIONS[decision],
         }
         if row.get("visa_sponsorship") is True:
             marked["visa_sponsorship"] = True
@@ -803,8 +933,13 @@ def saved(seen_path: Path = scrape_run.SEEN) -> list:
         state = json.loads(seen_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
+    fields = (
+        "title", "company", "url", "first_seen", "posted_date", "date", "deadline",
+        "portal", "status", "location", "workplace_type", "work_model",
+        "contract", "contract_type", "seniority", "salary", "description", "screening",
+    )
     rows = [
-        _stored_row(e, ("title", "company", "url", "first_seen", "posted_date", "deadline", "portal", "status"))
+        _stored_row(e, fields)
         for e in state.get("seen", {}).values()
         if isinstance(e, dict) and e.get("source") == "painel"
         and e.get("fit") != "low" and e.get("status") not in ("applied", "skipped")
@@ -818,8 +953,13 @@ def discarded(seen_path: Path = scrape_run.SEEN) -> list:
         state = json.loads(seen_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return []
+    fields = (
+        "title", "company", "url", "first_seen", "posted_date", "date", "deadline",
+        "portal", "status", "location", "workplace_type", "work_model",
+        "contract", "contract_type", "seniority", "salary", "description", "screening", "fit",
+    )
     rows = [
-        _stored_row(e, ("title", "company", "url", "first_seen", "posted_date", "deadline", "portal", "status", "fit"))
+        _stored_row(e, fields)
         for e in state.get("seen", {}).values()
         if isinstance(e, dict) and e.get("source") == "painel"
         and (e.get("status") == "skipped" or e.get("fit") == "low")
@@ -827,15 +967,23 @@ def discarded(seen_path: Path = scrape_run.SEEN) -> list:
     return sorted(rows, key=lambda r: r.get("first_seen") or "", reverse=True)
 
 
-def remove_application(url: str, to_status: str = "skipped",
+def remove_application(url: str, to_status: str = "skipped", company: str = "", role: str = "",
                        tracker_path: Path = scrape_run.TRACKER, seen_path: Path = scrape_run.SEEN) -> dict:
     """Remove uma vaga da lista de candidaturas no tracker.csv e atualiza seen_jobs.json."""
+    clean_url = (url or "").strip()
     if tracker_path.exists():
         try:
             with tracker_path.open(encoding="utf-8", newline="") as fh:
                 reader = csv.DictReader(fh)
                 fieldnames = list(reader.fieldnames or painel_ia.TRACKER_FIELDS)
-                rows = [r for r in reader if (r.get("source") or "").strip() != url.strip()]
+                rows = []
+                for r in reader:
+                    r_source = (r.get("source") or "").strip()
+                    if clean_url and r_source == clean_url:
+                        continue
+                    if company and role and (r.get("company") or "").strip() == company.strip() and (r.get("role") or "").strip() == role.strip():
+                        continue
+                    rows.append(r)
             with tracker_path.open("w", encoding="utf-8", newline="") as fh:
                 writer = csv.DictWriter(fh, fieldnames=fieldnames, extrasaction="ignore", restval="")
                 writer.writeheader()
@@ -848,9 +996,14 @@ def remove_application(url: str, to_status: str = "skipped",
             state = json.loads(seen_path.read_text(encoding="utf-8"))
             seen = state.get("seen", {})
             for k, v in seen.items():
-                if isinstance(v, dict) and (v.get("url") or "").strip() == url.strip():
-                    v["status"] = to_status
-                    v["fit"] = "low"
+                if isinstance(v, dict):
+                    v_url = (v.get("url") or "").strip()
+                    if clean_url and v_url == clean_url:
+                        v["status"] = to_status
+                        v["fit"] = "low"
+                    elif company and role and (v.get("company") or "").strip() == company.strip() and (v.get("title") or "").strip() == role.strip():
+                        v["status"] = to_status
+                        v["fit"] = "low"
             seen_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
@@ -908,23 +1061,24 @@ def job_pdfs(company: str, role: str) -> dict:
     if not company_slug or company_slug == "documento":
         return out
 
-    def _find_best(folder: Path, prefix: str) -> str | None:
+    def _find_best(folder: Path, prefix: str, exts: tuple[str, ...] = (".pdf",)) -> str | None:
         if not folder.exists():
             return None
-        if role_slug and role_slug != "documento":
-            exact = sorted(folder.glob(f"{prefix}_{company_slug}_*{role_slug[:20]}*.pdf"),
-                           key=lambda p: p.stat().st_mtime, reverse=True)
-            if exact:
-                return str(exact[0].relative_to(ROOT)).replace("\\", "/")
-        matches = sorted(folder.glob(f"{prefix}_*{company_slug}*.pdf"),
-                         key=lambda p: p.stat().st_mtime, reverse=True)
-        if matches:
-            return str(matches[0].relative_to(ROOT)).replace("\\", "/")
+        for ext in exts:
+            if role_slug and role_slug != "documento":
+                exact = sorted(folder.glob(f"{prefix}_{company_slug}_*{role_slug[:20]}*{ext}"),
+                               key=lambda p: p.stat().st_mtime, reverse=True)
+                if exact:
+                    return str(exact[0].relative_to(ROOT)).replace("\\", "/")
+            matches = sorted(folder.glob(f"{prefix}_*{company_slug}*{ext}"),
+                             key=lambda p: p.stat().st_mtime, reverse=True)
+            if matches:
+                return str(matches[0].relative_to(ROOT)).replace("\\", "/")
         return None
 
-    out["pdf_cv"] = _find_best(ROOT / "cv", "main")
-    out["pdf_carta"] = _find_best(ROOT / "cover_letters", "cover")
-    out["pdf_entrevista"] = _find_best(ROOT / "documents" / "interview", "prep")
+    out["pdf_cv"] = _find_best(ROOT / "cv", "main", (".pdf",))
+    out["pdf_carta"] = _find_best(ROOT / "cover_letters", "cover", (".pdf",))
+    out["pdf_entrevista"] = _find_best(ROOT / "documents" / "interview", "prep", (".pdf", ".md"))
     return out
 
 

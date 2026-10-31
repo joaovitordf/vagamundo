@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
 import { Observable, of, throwError } from 'rxjs';
 import { map, catchError, switchMap, tap } from 'rxjs/operators';
-import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse } from '../models/vaga.model';
+import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent } from '../models/vaga.model';
 
 @Injectable({
   providedIn: 'root'
@@ -123,6 +123,12 @@ export class ApiService {
     return this.http.get<EvolutionResponse>(`${this.baseUrl}/evolucao`);
   }
 
+  updateEvolution(): Observable<{ ok: boolean; evolution: EvolutionResponse }> {
+    return this.postWithToken<{ ok: boolean; evolution: EvolutionResponse }>(`${this.baseUrl}/evolucao/atualizar`, {}).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
   getProfile(refresh = false): Observable<ProfileResponse> {
     return this.http.get<ProfileResponse>(`${this.baseUrl}/profile${refresh ? '?refresh=1' : ''}`);
   }
@@ -187,6 +193,37 @@ export class ApiService {
 
   markApplied(payload: { url: string; company?: string; role?: string; portal?: string }): Observable<any> {
     return this.postWithToken(`${this.baseUrl}/applied`, payload).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  removeApplication(payload: { url?: string; id?: number; job_id?: string }): Observable<any> {
+    return this.postWithToken(`${this.baseUrl}/applications/remove`, payload).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  getApplicationEvents(appId: number): Observable<{ events: ApplicationTimelineEvent[]; total: number }> {
+    return this.http.get<{ events: ApplicationTimelineEvent[]; total: number }>(`${this.baseUrl}/applications/${appId}/events`);
+  }
+
+  addApplicationEvent(payload: {
+    application_id?: number;
+    job_id?: string;
+    url?: string;
+    stage: string;
+    event_date?: string;
+    feedback?: string;
+    questions_and_answers?: string;
+    status?: string;
+  }): Observable<{ ok: boolean; event_id: number }> {
+    return this.postWithToken<{ ok: boolean; event_id: number }>(`${this.baseUrl}/applications/event`, payload).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  deleteApplicationEvent(eventId: number): Observable<{ ok: boolean; deleted: boolean }> {
+    return this.postWithToken<{ ok: boolean; deleted: boolean }>(`${this.baseUrl}/applications/event/${eventId}`, {}).pipe(
       tap(() => this.refreshCounts())
     );
   }

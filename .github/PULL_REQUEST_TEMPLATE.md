@@ -1,16 +1,15 @@
-<!-- Atenção antes de publicar: se você construiu isto num fork personalizado
-     (com os seus dados de perfil), saiba que o GitHub aponta PRs novos para o
-     repositório de ORIGEM por padrão. Confira a lista "base repository" acima
-     antes de continuar. Melhorias no núcleo do fluxo, que valem para qualquer
-     país, vão para o projeto original (MadsLorentzen/ai-job-search); a
-     adaptação para o Brasil fica aqui - veja o CONTRIBUTING.md. -->
+## Descrição das Alterações
 
-## O que mudou e por quê
+Explique de forma clara o que foi alterado e qual o objetivo deste Pull Request.
 
-## Caso de falha / como reproduzir (para correções)
+## Tipo de Mudança
+- [ ] Correção de bug (bug fix)
+- [ ] Nova funcionalidade (feature)
+- [ ] Melhoria de documentação / refatoração
+- [ ] Atualização de dependências ou portal scraper
 
-## Verificação
-<!-- O que você rodou, conforme o CONTRIBUTING: python tools/lint_skills.py,
-     python tools/check_framework_version.py, python tools/security_guards.py,
-     bun test / bun run typecheck nas CLIs alteradas,
-     python -m unittest discover -s tests -t . -->
+## Verificações Realizadas
+- [ ] `npm --prefix frontend run build` compilou sem erros
+- [ ] Testes do backend executados com sucesso (`python -m unittest discover -s backend/tests -p "test_*.py"`)
+- [ ] Validação de guards e segurança (`python -m unittest backend.tests.test_security_guards`)
+- [ ] Nenhum dado sensível ou chave de API adicionada ao controle de versão

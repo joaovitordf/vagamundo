@@ -65,7 +65,7 @@ gupy-search: -q "fora de seção"
 
 
 def job(id_, title, company, url, **extra):
-    return {"id": id_, "title": title, "company": company, "location": "Remoto", "date": "2026-10-19",
+    return {"id": id_, "title": title, "company": company, "location": "Remoto", "date": extra.pop("date", "2026-11-03"),
             "url": url, "description": extra.pop("description", ""), **extra}
 
 
@@ -229,7 +229,7 @@ class Record(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             seen = Path(tmp) / "job_scraper" / "seen_jobs.json"
             rows = [
-                {**job("1", "Product Manager", "Stone", "https://remotar.com.br/job/1"), "portal": "remotar-search", "fit": "high"},
+                {**job("1", "Product Manager", "Stone", "https://remotar.com.br/job/1", date="2026-10-19"), "portal": "remotar-search", "fit": "high"},
                 {**job("2", "Analista", "Kappa", "https://k/2"), "portal": "solides-search", "fit": "low"},
                 {**job("3", "Sem fit", "X", "https://x/3"), "fit": "talvez"},
             ]

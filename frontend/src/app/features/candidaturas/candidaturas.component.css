@@ -94,8 +94,29 @@
 
 .cell-date {
   white-space: nowrap;
-  color: var(--vc-muted);
   font-size: 0.85rem;
+}
+
+.cell-date .main-date {
+  color: var(--vc-text, #f8fafc);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cell-date .main-date i {
+  color: var(--vc-blue, #38bdf8);
+}
+
+.cell-date .sub-date {
+  color: #c084fc;
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .cell-company {
@@ -233,7 +254,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
+  white-space: nowrap;
 }
 
 .btn-action-icon {
@@ -313,41 +335,72 @@
   background: #0369a1 !important;
 }
 
+/* Botão: Descartar Candidatura */
+.btn-action-descartar,
 .btn-delete-action {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--vc-muted);
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
   border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.95rem;
-  line-height: 1;
-  transition: all 0.2s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-delete-action:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.35);
-  transform: scale(1.05);
-}
-
-.link-external {
-  color: var(--vc-blue);
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  line-height: 1.2;
 }
 
+.btn-action-descartar:hover,
+.btn-delete-action:hover {
+  background: rgba(239, 68, 68, 0.24);
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(239, 68, 68, 0.35);
+}
+
+.btn-action-descartar:active,
+.btn-delete-action:active {
+  transform: translateY(0);
+}
+
+/* Botão: Ver site da vaga */
+.btn-action-site-vaga,
+.link-external {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: var(--vc-blue, #38bdf8);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.btn-action-site-vaga:hover,
 .link-external:hover {
-  text-decoration: underline;
+  background: rgba(56, 189, 248, 0.24);
+  border-color: var(--vc-blue, #38bdf8);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(56, 189, 248, 0.3);
+  text-decoration: none;
+}
+
+.btn-action-site-vaga:active,
+.link-external:active {
+  transform: translateY(0);
 }
 
 
@@ -560,6 +613,13 @@ a.doc-pill:hover {
   margin: 4px 0 0;
   color: var(--vc-muted, #94a3b8);
   font-size: 0.88rem;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .btn-close-modal {
@@ -793,3 +853,188 @@ a.doc-pill:hover {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ==========================================================================
+   Barra de Filtro de Data, Status e Busca (Candidaturas)
+   ========================================================================== */
+
+.date-filter-section {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: var(--vc-bg-2, #0f172a);
+  border: 1px solid var(--vc-border, rgba(148, 163, 184, 0.15));
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.date-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.filter-group.search-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.filter-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--vc-muted, #94a3b8);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.date-type-toggle {
+  display: inline-flex;
+  background: var(--vc-surface, #0f172a);
+  border: 1px solid var(--vc-border, rgba(148, 163, 184, 0.2));
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--vc-muted, #94a3b8);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease-in-out;
+}
+
+.toggle-btn:hover {
+  color: var(--vc-text, #f8fafc);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.toggle-btn.active {
+  background: var(--vc-blue, #38bdf8);
+  color: #0b1020;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(56, 189, 248, 0.3);
+}
+
+.vc-select {
+  background: var(--vc-surface, #0f172a);
+  color: var(--vc-text, #f8fafc);
+  border: 1px solid var(--vc-border, rgba(148, 163, 184, 0.2));
+  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.vc-select:focus {
+  border-color: var(--vc-blue, #38bdf8);
+}
+
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrap .vc-input {
+  width: 100%;
+  padding-right: 2rem;
+}
+
+.btn-clear-search {
+  position: absolute;
+  right: 6px;
+  background: transparent;
+  border: none;
+  color: var(--vc-muted, #94a3b8);
+  cursor: pointer;
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-clear-search:hover {
+  color: var(--vc-text, #f8fafc);
+}
+
+.custom-date-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(56, 189, 248, 0.05);
+  border: 1px dashed rgba(56, 189, 248, 0.3);
+  border-radius: 6px;
+}
+
+.custom-date-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--vc-muted, #94a3b8);
+}
+
+.custom-date-field .vc-input {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.filter-active-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: rgba(56, 189, 248, 0.08);
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.filter-status-text {
+  color: var(--vc-text, #f8fafc);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.btn-clear-filters {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.15s;
+}
+
+.btn-clear-filters:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+}
+

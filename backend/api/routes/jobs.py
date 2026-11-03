@@ -48,9 +48,42 @@ async def get_saved_jobs(
         except Exception:
             pass
 
+    # Pre-fetch saved_at timestamps from status_log for interested jobs
+    job_ids = [s.get("id") for s in raw_saved if s.get("id")]
+    saved_at_map = {}
+    if job_ids:
+        try:
+            placeholders = ",".join("?" for _ in job_ids)
+            cur = tracker.repo.conn.execute(
+                f"""
+                SELECT job_id, created_at
+                FROM status_log
+                WHERE to_status = 'interested' AND job_id IN ({placeholders})
+                ORDER BY id ASC
+                """,
+                job_ids,
+            )
+            for r in cur.fetchall():
+                saved_at_map[r["job_id"]] = r["created_at"]
+        except Exception:
+            pass
+
     rows = []
     for s in raw_saved:
         u = s.get("url")
+        jid = s.get("id")
+        date_val = s.get("date") or s.get("posted_date") or s.get("first_seen")
+        saved_at_val = (
+            saved_at_map.get(jid)
+            or s.get("saved_at")
+            or s.get("updated_at")
+            or s.get("created_at")
+            or s.get("first_seen")
+            or date_val
+        )
+        saved_at_str = str(saved_at_val) if saved_at_val else date_val
+        saved_date = saved_at_str[:10] if len(saved_at_str) >= 10 else saved_at_str
+
         if u:
             try:
                 answers = painel.claude_answers(u)
@@ -73,7 +106,6 @@ async def get_saved_jobs(
                 }
 
             workplace_type = s.get("workplace_type") or s.get("work_model")
-            date_val = s.get("date") or s.get("posted_date") or s.get("first_seen")
             contract_val = s.get("contract") or s.get("contract_type")
 
             rows.append({
@@ -82,6 +114,8 @@ async def get_saved_jobs(
                 "work_model": workplace_type,
                 "date": date_val,
                 "posted_date": date_val,
+                "saved_at": saved_date,
+                "saved_at_full": saved_at_str,
                 "contract": contract_val,
                 "contract_type": contract_val,
                 "claude": answers,
@@ -89,7 +123,13 @@ async def get_saved_jobs(
                 "screening": screening,
             })
         else:
-            rows.append(s)
+            rows.append({
+                **s,
+                "date": date_val,
+                "posted_date": date_val,
+                "saved_at": saved_date,
+                "saved_at_full": saved_at_str,
+            })
 
     def sort_key(r):
         sc = r.get("screening")

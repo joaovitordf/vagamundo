@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
@@ -27,6 +27,98 @@ export class CandidaturasComponent implements OnInit {
   private readonly api = inject(ApiService);
   applications = signal<any[]>([]);
   loading = signal<boolean>(true);
+
+  // Filtros de Data, Status e Busca
+  dateCriterion = signal<'applied' | 'posted'>('applied'); // 'applied' = quando candidatei; 'posted' = data da vaga
+  dateRange = signal<string>('all'); // 'all', 'today', '3d', '7d', '15d', '30d', 'custom'
+  customStartDate = signal<string>('');
+  customEndDate = signal<string>('');
+  sortOrder = signal<'recent' | 'oldest'>('recent');
+  statusFilter = signal<string>('all');
+  searchTerm = signal<string>('');
+
+  // Indicador de filtros ativos
+  hasActiveFilters = computed(() => {
+    return this.dateRange() !== 'all' ||
+      this.statusFilter() !== 'all' ||
+      this.searchTerm().trim().length > 0 ||
+      (this.dateRange() === 'custom' && (!!this.customStartDate() || !!this.customEndDate())) ||
+      this.sortOrder() !== 'recent';
+  });
+
+  // Lista filtrada e ordenada reativamente
+  filteredApplications = computed(() => {
+    let list = this.applications();
+    const search = this.searchTerm().trim().toLowerCase();
+    const statusF = this.statusFilter();
+    const criterion = this.dateCriterion();
+    const range = this.dateRange();
+    const start = this.customStartDate();
+    const end = this.customEndDate();
+    const order = this.sortOrder();
+
+    // 1. Filtro textual
+    if (search) {
+      list = list.filter(a =>
+        (a.company || a.job_company || '').toLowerCase().includes(search) ||
+        (a.role || a.title || a.job_title || '').toLowerCase().includes(search) ||
+        (a.channel || a.portal || '').toLowerCase().includes(search) ||
+        (a.notes || '').toLowerCase().includes(search)
+      );
+    }
+
+    // 2. Filtro por status
+    if (statusF !== 'all') {
+      list = list.filter(a => (a.status || 'applied').toLowerCase() === statusF.toLowerCase());
+    }
+
+    // 3. Filtro de data
+    if (range !== 'all') {
+      const now = new Date();
+      now.setHours(23, 59, 59, 999);
+
+      list = list.filter(a => {
+        const rawDate = criterion === 'applied'
+          ? (a.applied_date || a.date || a.created_at)
+          : (a.job_posted_date || a.posted_date || a.date || a.applied_date);
+
+        if (!rawDate) return false;
+        const dateStr = String(rawDate).substring(0, 10);
+        const itemDate = new Date(dateStr + 'T12:00:00');
+        if (isNaN(itemDate.getTime())) return false;
+
+        if (range === 'custom') {
+          if (start && dateStr < start) return false;
+          if (end && dateStr > end) return false;
+          return true;
+        }
+
+        const days = range === 'today' ? 1 : (range === '3d' ? 3 : (range === '7d' ? 7 : (range === '15d' ? 15 : 30)));
+        const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        cutoff.setHours(0, 0, 0, 0);
+
+        return itemDate >= cutoff;
+      });
+    }
+
+    // 4. Ordenação
+    return [...list].sort((a, b) => {
+      const dateA = criterion === 'applied'
+        ? (a.applied_date || a.date || a.created_at || '')
+        : (a.job_posted_date || a.posted_date || a.date || a.applied_date || '');
+      const dateB = criterion === 'applied'
+        ? (b.applied_date || b.date || b.created_at || '')
+        : (b.job_posted_date || b.posted_date || b.date || b.applied_date || '');
+
+      const strA = String(dateA).substring(0, 10);
+      const strB = String(dateB).substring(0, 10);
+
+      if (order === 'oldest') {
+        return strA.localeCompare(strB);
+      }
+      return strB.localeCompare(strA);
+    });
+  });
 
   // Modal de Histórico de Entrevistas
   selectedApp = signal<any | null>(null);
@@ -61,9 +153,19 @@ export class CandidaturasComponent implements OnInit {
     });
   }
 
+  clearFilters(): void {
+    this.dateRange.set('all');
+    this.customStartDate.set('');
+    this.customEndDate.set('');
+    this.searchTerm.set('');
+    this.statusFilter.set('all');
+    this.sortOrder.set('recent');
+  }
+
   formatDate(d: string): string {
     if (!d) return '-';
-    const parts = d.split('-');
+    const datePart = String(d).substring(0, 10);
+    const parts = datePart.split('-');
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return d;
   }

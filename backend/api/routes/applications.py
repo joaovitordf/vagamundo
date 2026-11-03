@@ -107,6 +107,9 @@ async def list_applications(
         pdf_carta = pdfs.get("pdf_carta") or (cover_file if cover_file.endswith(".pdf") else None)
         pdf_entrevista = pdfs.get("pdf_entrevista")
 
+        job_posted_date = a.get("job_posted_date") or a.get("posted_date") or a.get("job_date") or ""
+        applied_date_clean = date_val or (a.get("created_at") or "")[:10]
+
         normalized.append({
             **a,
             "company": company,
@@ -114,8 +117,10 @@ async def list_applications(
             "role": role,
             "title": role,
             "job_title": role,
-            "date": date_val,
-            "applied_date": date_val,
+            "date": applied_date_clean,
+            "applied_date": applied_date_clean,
+            "job_posted_date": job_posted_date,
+            "created_at": a.get("created_at") or applied_date_clean,
             "channel": channel_val,
             "portal": channel_val,
             "job_portal": channel_val,

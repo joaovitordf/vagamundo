@@ -79,8 +79,8 @@ class Repository:
         company = job.get("company", "")
         url = job.get("url", "")
 
-        # Generate canonical slug key if id is missing or numeric portal ID
-        if not job_id or (isinstance(job_id, str) and (job_id.isdigit() or not ("-" in job_id or "_" in job_id))):
+        # Generate canonical slug key if id is missing or purely numeric portal ID
+        if not job_id or (isinstance(job_id, str) and job_id.isdigit()):
             try:
                 from backend.tools.job_key import make_key
                 job_id = make_key(company, title, url)
@@ -519,6 +519,7 @@ class Repository:
         query = """
             SELECT a.*, j.title as job_title, j.company as job_company, j.url as job_url,
                    j.portal as job_portal, j.location as job_location,
+                   j.posted_date as job_posted_date, j.created_at as job_created_at,
                    (SELECT COUNT(*) FROM application_events WHERE application_id = a.id) as event_count,
                    (SELECT stage FROM application_events WHERE application_id = a.id ORDER BY event_date DESC, id DESC LIMIT 1) as latest_event_stage
             FROM applications a

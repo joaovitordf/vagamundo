@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 
 const PORTAIS: Record<string, string> = {
@@ -30,7 +31,7 @@ const PORTAIS: Record<string, string> = {
 @Component({
   selector: 'app-me-interessam',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './me-interessam.component.html',
   styleUrl: './me-interessam.component.css'
 })
@@ -40,6 +41,96 @@ export class MeInteressamComponent implements OnInit {
   savedJobs = signal<any[]>([]);
   loading = signal<boolean>(true);
   actionStatus = signal<string>('');
+
+  // Filtros de Data e Busca
+  dateCriterion = signal<'saved' | 'posted'>('saved'); // 'saved' = quando adicionei; 'posted' = data da vaga
+  dateRange = signal<string>('all'); // 'all', 'today', '3d', '7d', '15d', '30d', 'custom'
+  customStartDate = signal<string>('');
+  customEndDate = signal<string>('');
+  sortOrder = signal<'recent' | 'oldest' | 'score'>('recent');
+  searchTerm = signal<string>('');
+
+  // Indicador de filtros ativos
+  hasActiveFilters = computed(() => {
+    return this.dateRange() !== 'all' ||
+      this.searchTerm().trim().length > 0 ||
+      (this.dateRange() === 'custom' && (!!this.customStartDate() || !!this.customEndDate())) ||
+      this.sortOrder() !== 'recent';
+  });
+
+  // Lista filtrada e ordenada reativamente
+  filteredJobs = computed(() => {
+    let list = this.savedJobs();
+    const search = this.searchTerm().trim().toLowerCase();
+    const criterion = this.dateCriterion();
+    const range = this.dateRange();
+    const start = this.customStartDate();
+    const end = this.customEndDate();
+    const order = this.sortOrder();
+
+    // 1. Filtro textual
+    if (search) {
+      list = list.filter(j =>
+        (j.title || '').toLowerCase().includes(search) ||
+        (j.company || '').toLowerCase().includes(search) ||
+        (j.location || '').toLowerCase().includes(search) ||
+        (j.portal || '').toLowerCase().includes(search)
+      );
+    }
+
+    // 2. Filtro de data
+    if (range !== 'all') {
+      const now = new Date();
+      now.setHours(23, 59, 59, 999);
+
+      list = list.filter(j => {
+        const rawDate = criterion === 'saved'
+          ? (j.saved_at || j.updated_at || j.created_at || j.first_seen || j.date || j.posted_date)
+          : (j.posted_date || j.date || j.first_seen);
+
+        if (!rawDate) return false;
+        const dateStr = String(rawDate).substring(0, 10);
+        const itemDate = new Date(dateStr + 'T12:00:00');
+        if (isNaN(itemDate.getTime())) return false;
+
+        if (range === 'custom') {
+          if (start && dateStr < start) return false;
+          if (end && dateStr > end) return false;
+          return true;
+        }
+
+        const days = range === 'today' ? 1 : (range === '3d' ? 3 : (range === '7d' ? 7 : (range === '15d' ? 15 : 30)));
+        const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        cutoff.setHours(0, 0, 0, 0);
+
+        return itemDate >= cutoff;
+      });
+    }
+
+    // 3. Ordenação
+    return [...list].sort((a, b) => {
+      if (order === 'score') {
+        const scA = a.screening?.score ?? -1;
+        const scB = b.screening?.score ?? -1;
+        if (scB !== scA) return scB - scA;
+      }
+
+      const dateA = criterion === 'saved'
+        ? (a.saved_at || a.updated_at || a.created_at || a.first_seen || a.date || a.posted_date || '')
+        : (a.posted_date || a.date || a.first_seen || '');
+      const dateB = criterion === 'saved'
+        ? (b.saved_at || b.updated_at || b.created_at || b.first_seen || b.date || b.posted_date || '')
+        : (b.posted_date || b.date || b.first_seen || '');
+
+      const strA = String(dateA).substring(0, 10);
+      const strB = String(dateB).substring(0, 10);
+
+      if (order === 'oldest') {
+        return strA.localeCompare(strB);
+      }
+      return strB.localeCompare(strA);
+    });
+  });
 
   hasDoc(job: any, type: 'avaliar' | 'curriculo' | 'carta' | 'entrevista'): boolean {
     if (!job) return false;
@@ -66,6 +157,22 @@ export class MeInteressamComponent implements OnInit {
         this.loading.set(false);
       }
     });
+  }
+
+  clearFilters(): void {
+    this.dateRange.set('all');
+    this.customStartDate.set('');
+    this.customEndDate.set('');
+    this.searchTerm.set('');
+    this.sortOrder.set('recent');
+  }
+
+  formatDateDisplay(d?: string): string {
+    if (!d) return '-';
+    const datePart = String(d).substring(0, 10);
+    const parts = datePart.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return d;
   }
 
   getPortalName(portal?: string): string {

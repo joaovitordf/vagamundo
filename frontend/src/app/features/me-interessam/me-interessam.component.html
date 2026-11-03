@@ -1,7 +1,7 @@
 <div class="vc-panel info-panel">
   <div class="title-with-badge">
     <h2>Vagas que Me Interessam</h2>
-    <span class="badge-total">{{ savedJobs().length }} {{ savedJobs().length === 1 ? 'vaga salva' : 'vagas salvas' }}</span>
+    <span class="badge-total">{{ filteredJobs().length }} de {{ savedJobs().length }} {{ savedJobs().length === 1 ? 'vaga' : 'vagas' }}</span>
   </div>
   <p class="panel-desc">
     <strong>Avaliar</strong> analisa a vaga completa em relação ao seu currículo (em português para vagas no Brasil e em inglês para vagas internacionais).
@@ -14,6 +14,130 @@
       <span class="vc-spinner"></span> {{ actionStatus() }}
     </p>
   }
+
+  <!-- BARRA DE FILTRO DE DATA E BUSCA -->
+  <div class="date-filter-section">
+    <div class="date-filter-row">
+      <!-- Seletor do Tipo de Data -->
+      <div class="filter-group">
+        <label class="filter-label">
+          <i class="bi bi-funnel"></i> Filtrar por data:
+        </label>
+        <div class="date-type-toggle">
+          <button type="button"
+            class="toggle-btn"
+            [class.active]="dateCriterion() === 'saved'"
+            (click)="dateCriterion.set('saved')"
+            title="Filtrar pela data em que você adicionou a vaga a esta lista">
+            <i class="bi bi-bookmark-star"></i> Quando adicionei à lista
+          </button>
+          <button type="button"
+            class="toggle-btn"
+            [class.active]="dateCriterion() === 'posted'"
+            (click)="dateCriterion.set('posted')"
+            title="Filtrar pela data em que a vaga foi anunciada pela empresa">
+            <i class="bi bi-calendar-event"></i> Data de publicação da vaga
+          </button>
+        </div>
+      </div>
+
+      <!-- Seletor de Intervalo de Tempo -->
+      <div class="filter-group">
+        <label class="filter-label" for="mi-date-range">
+          <i class="bi bi-clock-history"></i> Período:
+        </label>
+        <select id="mi-date-range"
+          class="vc-select"
+          [ngModel]="dateRange()"
+          (ngModelChange)="dateRange.set($event)">
+          <option value="all">Todas as datas</option>
+          <option value="today">Últimas 24 horas (Hoje)</option>
+          <option value="3d">Últimos 3 dias</option>
+          <option value="7d">Últimos 7 dias (1 semana)</option>
+          <option value="15d">Últimos 15 dias</option>
+          <option value="30d">Últimos 30 dias (1 mês)</option>
+          <option value="custom">Data personalizada…</option>
+        </select>
+      </div>
+
+      <!-- Seletor de Ordenação -->
+      <div class="filter-group">
+        <label class="filter-label" for="mi-sort-order">
+          <i class="bi bi-sort-down"></i> Ordenar:
+        </label>
+        <select id="mi-sort-order"
+          class="vc-select"
+          [ngModel]="sortOrder()"
+          (ngModelChange)="sortOrder.set($event)">
+          <option value="recent">Mais recentes primeiro</option>
+          <option value="oldest">Mais antigas primeiro</option>
+          <option value="score">Maior nota de afinidade (IA)</option>
+        </select>
+      </div>
+
+      <!-- Busca textual -->
+      <div class="filter-group search-group">
+        <label class="filter-label" for="mi-search-text">
+          <i class="bi bi-search"></i> Buscar na lista:
+        </label>
+        <div class="search-input-wrap">
+          <input type="text"
+            id="mi-search-text"
+            class="vc-input"
+            placeholder="Cargo, empresa ou cidade..."
+            [ngModel]="searchTerm()"
+            (ngModelChange)="searchTerm.set($event)">
+          @if (searchTerm()) {
+            <button type="button" class="btn-clear-search" (click)="searchTerm.set('')" title="Limpar busca">
+              <i class="bi bi-x"></i>
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Inputs de Data Personalizada (quando selecionado 'custom') -->
+    @if (dateRange() === 'custom') {
+      <div class="custom-date-row">
+        <div class="custom-date-field">
+          <label for="mi-date-start">De:</label>
+          <input type="date"
+            id="mi-date-start"
+            class="vc-input"
+            [ngModel]="customStartDate()"
+            (ngModelChange)="customStartDate.set($event)">
+        </div>
+        <div class="custom-date-field">
+          <label for="mi-date-end">Até:</label>
+          <input type="date"
+            id="mi-date-end"
+            class="vc-input"
+            [ngModel]="customEndDate()"
+            (ngModelChange)="customEndDate.set($event)">
+        </div>
+      </div>
+    }
+
+    <!-- Barra de Feedback de Filtros Ativos -->
+    @if (hasActiveFilters()) {
+      <div class="filter-active-bar">
+        <span class="filter-status-text">
+          <i class="bi bi-info-circle"></i>
+          Filtros ativos:
+          @if (dateRange() !== 'all') {
+            <strong>{{ dateCriterion() === 'saved' ? 'Adicionada em' : 'Publicada em' }} ({{ dateRange() === 'custom' ? ((customStartDate() || '...') + ' até ' + (customEndDate() || '...')) : dateRange() }})</strong>
+          }
+          @if (searchTerm()) {
+            &bull; Busca: "<strong>{{ searchTerm() }}</strong>"
+          }
+          &bull; Exibindo <strong>{{ filteredJobs().length }}</strong> de {{ savedJobs().length }} vagas
+        </span>
+        <button type="button" class="btn-clear-filters" (click)="clearFilters()">
+          <i class="bi bi-x-circle"></i> Limpar filtros
+        </button>
+      </div>
+    }
+  </div>
 </div>
 
 @if (loading()) {
@@ -23,9 +147,17 @@
     <i class="bi bi-star empty-icon"></i>
     <p>Nenhuma vaga marcada ainda. Na aba <strong>Buscar e Vagas</strong>, clique em "Me interessa" para salvá-las aqui.</p>
   </div>
+} @else if (filteredJobs().length === 0) {
+  <div class="vc-panel empty-state">
+    <i class="bi bi-funnel empty-icon"></i>
+    <p>Nenhuma vaga encontrada para os filtros de data e busca selecionados.</p>
+    <button type="button" class="btn-clear-filters" (click)="clearFilters()">
+      <i class="bi bi-arrow-counterclockwise"></i> Redefinir filtros de data
+    </button>
+  </div>
 } @else {
   <div class="cards-grid">
-    @for (job of savedJobs(); track job.url) {
+    @for (job of filteredJobs(); track job.url) {
       <article class="job-card">
         <div class="job-card__header">
           <div>
@@ -55,8 +187,15 @@
           @if (job.workplace_type) {
             <span class="chip"><i class="bi bi-briefcase"></i> {{ job.workplace_type }}</span>
           }
-          @if (job.date) {
-            <span class="chip"><i class="bi bi-calendar3"></i> {{ job.date }}</span>
+          @if (job.posted_date || job.date) {
+            <span class="chip chip-date-posted" title="Data em que a vaga foi anunciada pela empresa">
+              <i class="bi bi-calendar3"></i> Vaga: {{ formatDateDisplay(job.posted_date || job.date) }}
+            </span>
+          }
+          @if (job.saved_at) {
+            <span class="chip chip-date-saved" title="Data em que você adicionou esta vaga na lista de Me Interessam">
+              <i class="bi bi-bookmark-star-fill"></i> Salva em: {{ formatDateDisplay(job.saved_at) }}
+            </span>
           }
         </div>
 
@@ -98,16 +237,16 @@
 
         <div class="job-card__footer">
           <div class="footer-buttons">
-            <button type="button" class="btn-primary-small" (click)="markApplied(job)" title="Registrar que você já se candidatou nesta vaga">
+            <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="btn-view-job" title="Abrir página oficial da vaga no portal">
+              <i class="bi bi-box-arrow-up-right"></i> Ver site da vaga
+            </a>
+            <button type="button" class="btn-apply-direct" (click)="markApplied(job)" title="Mover para a aba Candidaturas">
               <i class="bi bi-send-check"></i> Já me candidatei
             </button>
-            <button type="button" class="btn-secondary-small" (click)="discardJob(job)" title="Mover vaga para descartadas">
-              <i class="bi bi-trash"></i> Descartar
-            </button>
           </div>
-          <a [href]="job.url || job.apply_url" target="_blank" rel="noopener noreferrer" class="link-external" title="Abrir vaga no portal de origem">
-            Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
-          </a>
+          <button type="button" class="btn-discard" (click)="discardJob(job)" title="Mover para Descartadas">
+            <i class="bi bi-trash3"></i> Descartar
+          </button>
         </div>
       </article>
     }

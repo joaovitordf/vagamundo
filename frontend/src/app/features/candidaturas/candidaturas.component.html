@@ -1,7 +1,7 @@
 <div class="vc-panel">
   <div class="candidaturas-header">
     <div>
-      <h2>Minhas Candidaturas ({{ applications().length }} Ativas)</h2>
+      <h2>Minhas Candidaturas ({{ filteredApplications().length }} de {{ applications().length }} Ativas)</h2>
       <p class="candidaturas-desc">
         Acompanhamento completo de candidaturas, entrevistas e feedbacks sincronizados no SQLite e histórico local.
       </p>
@@ -9,6 +9,151 @@
     <button type="button" class="btn-refresh" (click)="loadApplications()">
       <i class="bi bi-arrow-repeat"></i> Atualizar
     </button>
+  </div>
+
+  <!-- BARRA DE FILTRO DE DATA, STATUS E BUSCA -->
+  <div class="date-filter-section">
+    <div class="date-filter-row">
+      <!-- Seletor do Tipo de Data -->
+      <div class="filter-group">
+        <label class="filter-label">
+          <i class="bi bi-funnel"></i> Filtrar por data:
+        </label>
+        <div class="date-type-toggle">
+          <button type="button"
+            class="toggle-btn"
+            [class.active]="dateCriterion() === 'applied'"
+            (click)="dateCriterion.set('applied')"
+            title="Filtrar pela data em que você se candidatou ou registrou a vaga">
+            <i class="bi bi-send-check"></i> Data da Candidatura
+          </button>
+          <button type="button"
+            class="toggle-btn"
+            [class.active]="dateCriterion() === 'posted'"
+            (click)="dateCriterion.set('posted')"
+            title="Filtrar pela data original em que a vaga foi anunciada">
+            <i class="bi bi-calendar-event"></i> Data da Vaga
+          </button>
+        </div>
+      </div>
+
+      <!-- Seletor de Intervalo de Tempo -->
+      <div class="filter-group">
+        <label class="filter-label" for="cand-date-range">
+          <i class="bi bi-clock-history"></i> Período:
+        </label>
+        <select id="cand-date-range"
+          class="vc-select"
+          [ngModel]="dateRange()"
+          (ngModelChange)="dateRange.set($event)">
+          <option value="all">Todas as datas</option>
+          <option value="today">Últimas 24 horas (Hoje)</option>
+          <option value="3d">Últimos 3 dias</option>
+          <option value="7d">Últimos 7 dias (1 semana)</option>
+          <option value="15d">Últimos 15 dias</option>
+          <option value="30d">Últimos 30 dias (1 mês)</option>
+          <option value="custom">Data personalizada…</option>
+        </select>
+      </div>
+
+      <!-- Filtro por Status da Candidatura -->
+      <div class="filter-group">
+        <label class="filter-label" for="cand-status-filter">
+          <i class="bi bi-flag"></i> Status:
+        </label>
+        <select id="cand-status-filter"
+          class="vc-select"
+          [ngModel]="statusFilter()"
+          (ngModelChange)="statusFilter.set($event)">
+          <option value="all">Todos os status</option>
+          <option value="applied">Enviada</option>
+          <option value="screening">Triagem</option>
+          <option value="interview">Entrevista</option>
+          <option value="offer">Proposta</option>
+          <option value="hired">Contratação</option>
+          <option value="rejected">Não seguiu</option>
+        </select>
+      </div>
+
+      <!-- Seletor de Ordenação -->
+      <div class="filter-group">
+        <label class="filter-label" for="cand-sort-order">
+          <i class="bi bi-sort-down"></i> Ordenar:
+        </label>
+        <select id="cand-sort-order"
+          class="vc-select"
+          [ngModel]="sortOrder()"
+          (ngModelChange)="sortOrder.set($event)">
+          <option value="recent">Mais recentes primeiro</option>
+          <option value="oldest">Mais antigas primeiro</option>
+        </select>
+      </div>
+
+      <!-- Busca textual -->
+      <div class="filter-group search-group">
+        <label class="filter-label" for="cand-search-text">
+          <i class="bi bi-search"></i> Buscar:
+        </label>
+        <div class="search-input-wrap">
+          <input type="text"
+            id="cand-search-text"
+            class="vc-input"
+            placeholder="Empresa, cargo ou canal..."
+            [ngModel]="searchTerm()"
+            (ngModelChange)="searchTerm.set($event)">
+          @if (searchTerm()) {
+            <button type="button" class="btn-clear-search" (click)="searchTerm.set('')" title="Limpar busca">
+              <i class="bi bi-x"></i>
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Inputs de Data Personalizada -->
+    @if (dateRange() === 'custom') {
+      <div class="custom-date-row">
+        <div class="custom-date-field">
+          <label for="cand-date-start">De:</label>
+          <input type="date"
+            id="cand-date-start"
+            class="vc-input"
+            [ngModel]="customStartDate()"
+            (ngModelChange)="customStartDate.set($event)">
+        </div>
+        <div class="custom-date-field">
+          <label for="cand-date-end">Até:</label>
+          <input type="date"
+            id="cand-date-end"
+            class="vc-input"
+            [ngModel]="customEndDate()"
+            (ngModelChange)="customEndDate.set($event)">
+        </div>
+      </div>
+    }
+
+    <!-- Barra de Feedback de Filtros Ativos -->
+    @if (hasActiveFilters()) {
+      <div class="filter-active-bar">
+        <span class="filter-status-text">
+          <i class="bi bi-info-circle"></i>
+          Filtros ativos:
+          @if (dateRange() !== 'all') {
+            <strong>{{ dateCriterion() === 'applied' ? 'Candidatura em' : 'Vaga anunciada em' }} ({{ dateRange() === 'custom' ? ((customStartDate() || '...') + ' até ' + (customEndDate() || '...')) : dateRange() }})</strong>
+          }
+          @if (statusFilter() !== 'all') {
+            &bull; Status: "<strong>{{ getStatusLabel(statusFilter()) }}</strong>"
+          }
+          @if (searchTerm()) {
+            &bull; Busca: "<strong>{{ searchTerm() }}</strong>"
+          }
+          &bull; Exibindo <strong>{{ filteredApplications().length }}</strong> de {{ applications().length }} candidaturas
+        </span>
+        <button type="button" class="btn-clear-filters" (click)="clearFilters()">
+          <i class="bi bi-x-circle"></i> Limpar filtros
+        </button>
+      </div>
+    }
   </div>
 
   @if (loading()) {
@@ -19,6 +164,14 @@
     <div class="empty-state">
       <i class="bi bi-folder2-open empty-icon"></i>
       <p>Nenhuma candidatura registrada ainda. Marque "Já me candidatei" nas vagas de Me interessam para acompanhar aqui.</p>
+    </div>
+  } @else if (filteredApplications().length === 0) {
+    <div class="empty-state">
+      <i class="bi bi-funnel empty-icon"></i>
+      <p>Nenhuma candidatura encontrada para os filtros de data e status selecionados.</p>
+      <button type="button" class="btn-clear-filters" (click)="clearFilters()">
+        <i class="bi bi-arrow-counterclockwise"></i> Redefinir filtros de data
+      </button>
     </div>
   } @else {
     <div class="table-responsive">
@@ -35,9 +188,18 @@
           </tr>
         </thead>
         <tbody>
-          @for (app of applications(); track app.url || app.source || app.company + app.date) {
+          @for (app of filteredApplications(); track app.url || app.source || app.company + app.date) {
             <tr>
-              <td class="cell-date">{{ formatDate(app.date || app.applied_date) }}</td>
+              <td class="cell-date">
+                <div class="main-date" title="Data da Candidatura">
+                  <i class="bi bi-send-check"></i> {{ formatDate(app.applied_date || app.date) }}
+                </div>
+                @if (app.job_posted_date) {
+                  <div class="sub-date" title="Data de publicação da vaga original">
+                    <i class="bi bi-calendar3"></i> Vaga: {{ formatDate(app.job_posted_date) }}
+                  </div>
+                }
+              </td>
               <td class="cell-company">
                 <strong>{{ app.company || app.job_company || '-' }}</strong>
                 @if (app.notes && app.notes !== 'Registrado pelo painel' && app.notes !== 'Gerado pelo painel') {
@@ -109,13 +271,13 @@
                   </button>
 
                   @if (app.source || app.url || app.job_url) {
-                    <a [href]="app.source || app.url || app.job_url" target="_blank" rel="noopener noreferrer" class="link-external" title="Ver vaga no portal">
-                      Ver vaga <i class="bi bi-box-arrow-up-right"></i>
+                    <a [href]="app.source || app.url || app.job_url" target="_blank" rel="noopener noreferrer" class="btn-action-site-vaga" title="Ver site da vaga no portal">
+                      <i class="bi bi-box-arrow-up-right"></i> Ver site da vaga
                     </a>
                   }
 
-                  <button type="button" class="btn-delete-action" (click)="deleteApplication(app)" title="Remover candidatura da lista">
-                    <i class="bi bi-trash3"></i>
+                  <button type="button" class="btn-action-descartar" (click)="deleteApplication(app)" title="Descartar candidatura da lista">
+                    <i class="bi bi-trash3"></i> Descartar
                   </button>
                 </div>
               </td>
@@ -138,9 +300,16 @@
             <strong>{{ selectedApp().company || selectedApp().job_company }}</strong> — {{ selectedApp().role || selectedApp().job_title }}
           </p>
         </div>
-        <button type="button" class="btn-close-modal" (click)="closeHistoryModal()">
-          <i class="bi bi-x-lg"></i>
-        </button>
+        <div class="modal-header-actions">
+          @if (selectedApp().source || selectedApp().url || selectedApp().job_url) {
+            <a [href]="selectedApp().source || selectedApp().url || selectedApp().job_url" target="_blank" rel="noopener noreferrer" class="btn-action-site-vaga" title="Abrir página oficial da vaga no portal">
+              <i class="bi bi-box-arrow-up-right"></i> Ver site da vaga
+            </a>
+          }
+          <button type="button" class="btn-close-modal" (click)="closeHistoryModal()" title="Fechar janela">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
       </div>
 
       <div class="modal-body">

@@ -1,0 +1,330 @@
+<div class="dashboard-container">
+  <!-- Cabeçalho do Dashboard -->
+  <div class="vc-panel dashboard-header-panel">
+    <div class="header-main-row">
+      <div class="header-title-box">
+        <div class="title-badge-wrap">
+          <h2>Dashboard</h2>
+          <span class="badge-private"><i class="bi bi-shield-lock-fill"></i> Local & Privado</span>
+        </div>
+        <p class="header-subtitle">
+          Uma visão real da sua busca pelo próximo passo profissional.
+        </p>
+      </div>
+
+      <div class="header-actions">
+        <!-- Seletor de Período Histórico -->
+        <div class="period-toggle-group" role="group" aria-label="Período do Histórico">
+          <button type="button" 
+            class="btn-period" 
+            [class.active]="selectedPeriod() === '1m'"
+            (click)="setPeriod('1m')"
+            title="Exibir evolução detalhada dos últimos 30 dias">
+            Últimos 30 dias (1 mês)
+          </button>
+          <button type="button" 
+            class="btn-period" 
+            [class.active]="selectedPeriod() === '6m'"
+            (click)="setPeriod('6m')"
+            title="Exibir evolução mensal dos últimos 6 meses">
+            Últimos 6 meses
+          </button>
+          <button type="button" 
+            class="btn-period" 
+            [class.active]="selectedPeriod() === '12m'"
+            (click)="setPeriod('12m')"
+            title="Exibir evolução anual completa">
+            12 meses
+          </button>
+        </div>
+
+        <button type="button" class="btn-refresh" (click)="loadStats()" [disabled]="loading()" title="Recarregar dados do dashboard">
+          <i class="bi bi-arrow-repeat" [class.spin]="loading()"></i>
+        </button>
+
+        <a routerLink="/buscar-vagas" class="btn-new-job">
+          <i class="bi bi-plus-lg"></i> Nova vaga
+        </a>
+      </div>
+    </div>
+
+    <!-- Banner Informativo de Preservação Contínua de Histórico -->
+    <div class="ledger-banner">
+      <div class="ledger-banner-content">
+        <i class="bi bi-journal-bookmark-fill ledger-icon"></i>
+        <span>
+          <strong>Livro-Razão Ativo:</strong> Mesmo se você limpar ou descartar vagas na aba <em>Candidaturas</em> para manter sua mesa organizada, o registro numérico e as datas de aplicação continuam preservados aqui de forma perpétua.
+        </span>
+      </div>
+      @if (stats()?.kpis?.conversion_rate) {
+        <div class="conversion-pill" title="Taxa de conversão de candidaturas para entrevistas">
+          <i class="bi bi-graph-up-arrow"></i>
+          <span>Taxa de entrevista: <strong>{{ stats()?.kpis?.conversion_rate }}</strong></span>
+        </div>
+      }
+    </div>
+  </div>
+
+  @if (loading() && !stats()) {
+    <div class="loading-state">
+      <div class="vc-spinner"></div>
+      <p>Carregando métricas e histórico de candidaturas…</p>
+    </div>
+  } @else if (errorMsg()) {
+    <div class="alert-box alert-danger">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>{{ errorMsg() }}</span>
+      <button type="button" class="btn-retry" (click)="loadStats()">Tentar novamente</button>
+    </div>
+  } @else if (stats()) {
+    <!-- 1. Grid Superior de KPIs (Cards Principais) -->
+    <div class="kpi-grid">
+      <!-- Vagas salvas -->
+      <a routerLink="/me-interessam" class="kpi-card kpi-saved" title="Ver vagas que você marcou com interesse">
+        <div class="kpi-card__top">
+          <span class="kpi-label">Vagas salvas</span>
+          <span class="kpi-icon-wrap"><i class="bi bi-star-fill"></i></span>
+        </div>
+        <div class="kpi-value">{{ stats()?.kpis?.saved_jobs ?? 0 }}</div>
+        <div class="kpi-footer-note">Na lista Me Interessam</div>
+      </a>
+
+      <!-- Candidaturas ativas -->
+      <a routerLink="/candidaturas" class="kpi-card kpi-active" title="Ver candidaturas ativas no rastreador">
+        <div class="kpi-card__top">
+          <span class="kpi-label">Candidaturas ativas</span>
+          <span class="kpi-icon-wrap"><i class="bi bi-send-check-fill"></i></span>
+        </div>
+        <div class="kpi-value">{{ stats()?.kpis?.active_applications ?? 0 }}</div>
+        <div class="kpi-footer-note">Em acompanhamento na lista</div>
+      </a>
+
+      <!-- Processos ativos -->
+      <div class="kpi-card kpi-processes" title="Candidaturas em andamento sem desfecho negativo">
+        <div class="kpi-card__top">
+          <span class="kpi-label">Processos ativos</span>
+          <span class="kpi-icon-wrap"><i class="bi bi-briefcase-fill"></i></span>
+        </div>
+        <div class="kpi-value">{{ stats()?.kpis?.active_processes ?? 0 }}</div>
+        <div class="kpi-footer-note">Triagem, testes e entrevistas</div>
+      </div>
+
+      <!-- Entrevistas -->
+      <div class="kpi-card kpi-interviews" title="Processos que avançaram para fase de entrevista ou coding">
+        <div class="kpi-card__top">
+          <span class="kpi-label">Entrevistas</span>
+          <span class="kpi-icon-wrap"><i class="bi bi-person-video3"></i></span>
+        </div>
+        <div class="kpi-value">{{ stats()?.kpis?.interviews ?? 0 }}</div>
+        <div class="kpi-footer-note">Etapas avançadas</div>
+      </div>
+
+      <!-- Propostas -->
+      <div class="kpi-card kpi-offers" title="Propostas de contratação recebidas">
+        <div class="kpi-card__top">
+          <span class="kpi-label">Propostas</span>
+          <span class="kpi-icon-wrap"><i class="bi bi-trophy-fill"></i></span>
+        </div>
+        <div class="kpi-value">{{ stats()?.kpis?.offers ?? 0 }}</div>
+        <div class="kpi-footer-note">Ofertas recebidas</div>
+      </div>
+
+      <!-- Total Histórico de Candidaturas -->
+      <div class="kpi-card kpi-lifetime" title="Total perpétuo de candidaturas realizadas na história deste projeto">
+        <div class="kpi-card__top">
+          <span class="kpi-label">Total histórico</span>
+          <span class="kpi-icon-wrap"><i class="bi bi-clock-history"></i></span>
+        </div>
+        <div class="kpi-value">{{ stats()?.kpis?.lifetime_applications ?? 0 }}</div>
+        <div class="kpi-footer-note">
+          @if ((stats()?.kpis?.lifetime_applications || 0) > (stats()?.kpis?.active_applications || 0)) {
+            <span class="tag-archived-count">+{{ (stats()?.kpis?.lifetime_applications || 0) - (stats()?.kpis?.active_applications || 0) }} arquivadas</span>
+          } @else {
+            <span>100% preservado</span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Seção de Gráficos Centrais (2 Colunas) -->
+    <div class="charts-grid">
+      <!-- Coluna 1: Gráfico de Linha do Tempo de Candidaturas -->
+      <div class="vc-panel chart-panel">
+        <div class="chart-header">
+          <div class="chart-title-wrap">
+            <i class="bi bi-calendar-range chart-header-icon icon-blue"></i>
+            <div>
+              <h3>
+                @if (selectedPeriod() === '1m') {
+                  Candidaturas nos últimos 30 dias
+                } @else if (selectedPeriod() === '6m') {
+                  Candidaturas nos últimos 6 meses
+                } @else {
+                  Candidaturas nos últimos 12 meses
+                }
+              </h3>
+              <p class="chart-subtitle">
+                Volume temporal consolidado ({{ sortDirection() === 'desc' ? 'mais recentes primeiro' : 'mais antigos primeiro' }})
+              </p>
+            </div>
+          </div>
+          <button type="button" 
+            class="btn-sort-toggle" 
+            (click)="toggleSortDirection()" 
+            [title]="sortDirection() === 'desc' ? 'Ordem decrescente (clique para inverter para crescente)' : 'Ordem crescente (clique para inverter para decrescente)'">
+            <i [class]="sortDirection() === 'desc' ? 'bi bi-sort-down' : 'bi bi-sort-up'"></i>
+            <span>{{ sortDirection() === 'desc' ? 'Recentes 1º' : 'Antigos 1º' }}</span>
+          </button>
+        </div>
+
+        <div class="chart-content">
+          @if (selectedPeriod() === '1m') {
+            <!-- Visão Diária dos Últimos 30 Dias (Decrescente) -->
+            <div class="timeline-bars-list daily-view">
+              @for (day of displayDailyTimeline(); track day.date) {
+                <div class="bar-row" [class.has-count]="day.count > 0" [class.is-today-row]="day.is_today">
+                  <span class="bar-label">
+                    {{ day.label }}
+                    @if (day.is_today) {
+                      <span class="day-badge-today">Hoje</span>
+                    } @else if (day.is_yesterday) {
+                      <span class="day-badge-yesterday">Ontem</span>
+                    }
+                  </span>
+                  <div class="bar-track">
+                    <div class="bar-fill blue-fill" [style.width.%]="getDailyPercent(day.count)"></div>
+                  </div>
+                  <span class="bar-count" [class.highlight]="day.count > 0">{{ day.count }}</span>
+                </div>
+              }
+            </div>
+          } @else {
+            <!-- Visão Mensal (6 ou 12 meses, conforme benchmark da imagem) -->
+            <div class="timeline-bars-list">
+              @for (m of displayMonthlyTimeline(); track m.month_key) {
+                <div class="bar-row" [class.has-count]="m.count > 0" [class.is-current-row]="m.is_current">
+                  <span class="bar-label">
+                    {{ m.label }}
+                    @if (m.is_current) {
+                      <span class="month-badge-current">Atual</span>
+                    }
+                  </span>
+                  <div class="bar-track">
+                    <div class="bar-fill blue-fill" [style.width.%]="getMonthlyPercent(m.count)"></div>
+                  </div>
+                  <div class="bar-count-box">
+                    <span class="bar-count" [class.highlight]="m.count > 0">{{ m.count }}</span>
+                    @if (m.archived > 0) {
+                      <span class="bar-detail-pill" title="Candidaturas que já foram limpas da lista ativa, mas preservadas no histórico">
+                        {{ m.archived }} limpas
+                      </span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Coluna 2: Distribuição por Status (Funil de Vagas) -->
+      <div class="vc-panel chart-panel">
+        <div class="chart-header">
+          <div class="chart-title-wrap">
+            <i class="bi bi-funnel chart-header-icon icon-purple"></i>
+            <div>
+              <h3>Distribuição por status</h3>
+              <p class="chart-subtitle">Estágios atuais das oportunidades no funil de seleção</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-content">
+          <div class="status-funnel-list">
+            @for (st of stats()?.status_distribution; track st.status) {
+              <div class="bar-row status-row" [class.has-count]="st.count > 0">
+                <span class="bar-label">{{ st.label }}</span>
+                <div class="bar-track">
+                  <div class="bar-fill" [style.background-color]="st.color" [style.width.%]="st.percentage"></div>
+                </div>
+                <div class="status-value-box">
+                  <span class="bar-count" [class.highlight]="st.count > 0">{{ st.count }}</span>
+                  <span class="bar-pct">({{ st.percentage }}%)</span>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Seção Inferior: Portais & Últimas Candidaturas -->
+    <div class="bottom-grid">
+      <!-- Distribuição por Portal -->
+      <div class="vc-panel sub-panel">
+        <div class="chart-header">
+          <div class="chart-title-wrap">
+            <i class="bi bi-diagram-3 chart-header-icon icon-green"></i>
+            <div>
+              <h3>Canais de candidatura</h3>
+              <p class="chart-subtitle">De onde vieram suas aplicações registradas</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="portals-list">
+          @if ((stats()?.portal_distribution?.length || 0) === 0) {
+            <p class="empty-subtext">Nenhum canal registrado ainda.</p>
+          } @else {
+            @for (p of stats()?.portal_distribution; track p.portal) {
+              <div class="portal-item">
+                <div class="portal-info">
+                  <span class="portal-dot"></span>
+                  <strong>{{ p.label }}</strong>
+                </div>
+                <span class="portal-badge-count">{{ p.count }} {{ p.count === 1 ? 'vaga' : 'vagas' }}</span>
+              </div>
+            }
+          }
+        </div>
+      </div>
+
+      <!-- Atividade Recente -->
+      <div class="vc-panel sub-panel">
+        <div class="chart-header">
+          <div class="chart-title-wrap">
+            <i class="bi bi-clock-history chart-header-icon icon-orange"></i>
+            <div>
+              <h3>Candidaturas recentes</h3>
+              <p class="chart-subtitle">Últimas movimentações no seu livro-razão</p>
+            </div>
+          </div>
+          <a routerLink="/candidaturas" class="link-view-all">Ver todas <i class="bi bi-chevron-right"></i></a>
+        </div>
+
+        <div class="recent-list">
+          @if ((stats()?.recent_activity?.length || 0) === 0) {
+            <p class="empty-subtext">Nenhuma candidatura recente registrada.</p>
+          } @else {
+            @for (item of stats()?.recent_activity; track item.id || item.company + item.applied_date) {
+              <div class="recent-item">
+                <div class="recent-main">
+                  <strong class="recent-role">{{ item.role }}</strong>
+                  <span class="recent-company">{{ item.company }}</span>
+                </div>
+                <div class="recent-meta">
+                  <span class="recent-date"><i class="bi bi-calendar3"></i> {{ formatDate(item.applied_date) }}</span>
+                  @if (item.active_in_list === 1) {
+                    <span class="badge-status-active">Ativa</span>
+                  } @else {
+                    <span class="badge-status-archived" title="Candidatura limpa da lista ativa de acompanhamento, preservada no histórico analítico">Arquivada</span>
+                  }
+                </div>
+              </div>
+            }
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

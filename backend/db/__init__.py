@@ -13,7 +13,11 @@ DEFAULT_DB_PATH = ROOT / "data" / "vagamundo.db"
 
 def get_db(db_path: str | Path | None = None) -> sqlite3.Connection:
     """Connect to SQLite with WAL mode, foreign keys, and busy timeout enabled."""
-    target_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+    if not db_path:
+        env_db = os.environ.get("VAGAMUNDO_DB_PATH")
+        target_path = Path(env_db) if env_db else DEFAULT_DB_PATH
+    else:
+        target_path = Path(db_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(

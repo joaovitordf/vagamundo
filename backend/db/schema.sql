@@ -114,3 +114,21 @@ CREATE TABLE IF NOT EXISTS application_events (
 
 CREATE INDEX IF NOT EXISTS idx_application_events_app_id ON application_events(application_id);
 
+CREATE TABLE IF NOT EXISTS application_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT,
+    company TEXT NOT NULL,
+    role TEXT NOT NULL,
+    portal TEXT,
+    job_url TEXT,
+    applied_date TEXT NOT NULL,
+    applied_at TEXT NOT NULL,
+    active_in_list INTEGER DEFAULT 1,
+    archived_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ledger_applied_date ON application_ledger(applied_date);
+CREATE INDEX IF NOT EXISTS idx_ledger_company_role ON application_ledger(company, role);
+CREATE INDEX IF NOT EXISTS idx_ledger_active ON application_ledger(active_in_list);
+
+

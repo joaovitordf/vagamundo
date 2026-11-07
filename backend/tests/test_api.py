@@ -1,17 +1,42 @@
 """Integration tests for FastAPI gateway endpoints."""
 
 from __future__ import annotations
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.api.app import app
+from backend.api.deps import get_tracker
 from backend.api.security import get_token
+from backend.db.repository import Repository
+from backend.core.tracker import TrackerService
 
 
 class TestFastAPI(unittest.TestCase):
     def setUp(self):
+        import os
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.db_path = Path(self.tmp.name) / "test_api.db"
+        os.environ["VAGAMUNDO_DB_PATH"] = str(self.db_path)
+        self.repo = Repository(self.db_path)
+        self.tracker = TrackerService(self.repo)
+        app.dependency_overrides[get_tracker] = lambda: self.tracker
         self.client = TestClient(app)
         self.token = get_token()
+
+    def tearDown(self):
+        import os
+        import gc
+        app.dependency_overrides.clear()
+        os.environ.pop("VAGAMUNDO_DB_PATH", None)
+        self.repo.close()
+        gc.collect()
+        try:
+            self.tmp.cleanup()
+        except Exception:
+            pass
 
     def test_token_endpoint(self):
         resp = self.client.get("/api/token")
@@ -78,11 +103,12 @@ class TestFastAPI(unittest.TestCase):
         self.assertEqual(resp_blocked.status_code, 403)
 
         # With token in header -> 200 OK
-        resp_ok = self.client.post(
-            "/api/mark",
-            json={"urls": [], "decision": "interesse"},
-            headers={"X-Painel-Token": self.token},
-        )
+        with patch("backend.tools.painel.mark"):
+            resp_ok = self.client.post(
+                "/api/mark",
+                json={"urls": [], "decision": "interesse"},
+                headers={"X-Painel-Token": self.token},
+            )
         self.assertEqual(resp_ok.status_code, 200)
         self.assertTrue(resp_ok.json().get("ok"))
 
@@ -131,15 +157,16 @@ class TestFastAPI(unittest.TestCase):
         }
 
         # 1. Mark as interest
-        mark_resp = self.client.post(
-            "/api/mark",
-            json={
-                "urls": [sample_url],
-                "decision": "interesse",
-                "job_data": job_payload
-            },
-            headers={"X-Painel-Token": self.token},
-        )
+        with patch("backend.tools.painel.mark"):
+            mark_resp = self.client.post(
+                "/api/mark",
+                json={
+                    "urls": [sample_url],
+                    "decision": "interesse",
+                    "job_data": job_payload
+                },
+                headers={"X-Painel-Token": self.token},
+            )
         self.assertEqual(mark_resp.status_code, 200)
 
         # 2. Check /api/saved returns all normalized fields
@@ -215,9 +242,8 @@ class TestFastAPI(unittest.TestCase):
     def test_auto_discard_low_score_jobs(self):
         from unittest.mock import patch
         from backend.core.evaluator import EvaluatorService
-        from backend.db.repository import Repository
 
-        repo = Repository()
+        repo = self.repo
         test_url = "https://example.com/job-auto-discard-test-low"
         test_job = {
             "title": "Low Score Job Test",
@@ -257,11 +283,6 @@ class TestFastAPI(unittest.TestCase):
         self.assertIn("screening", found)
         self.assertEqual(found["screening"]["score"], 25)
         self.assertEqual(found["screening"]["verdict"], "Poor Fit")
-
-        # Cleanup
-        repo.delete_application(job_id=j["id"])
-        repo.conn.execute("DELETE FROM jobs WHERE id = ?", (j["id"],))
-        repo.conn.commit()
 
     def test_application_event_lifecycle_and_evolution_sync(self):
         # 1. Apply to a job
@@ -307,14 +328,15 @@ class TestFastAPI(unittest.TestCase):
         self.assertEqual(events_list[0]["feedback"], "Excelente domínio de Angular Signals e RxJS.")
 
         # 5. Call update evolution endpoint
-        evo_resp = self.client.post("/api/evolucao/atualizar", headers={"X-Painel-Token": self.token})
-        self.assertEqual(evo_resp.status_code, 200)
-        evo_data = evo_resp.json()
-        self.assertTrue(evo_data.get("ok"))
-        metrics = evo_data["evolution"]["evolution"]["metrics"]
-        self.assertGreaterEqual(metrics["applications"], 1)
-        self.assertGreaterEqual(metrics["applications_with_feedback"], 1)
-        self.assertGreaterEqual(metrics["applications_with_questions"], 1)
+        with patch("backend.tools.painel.save_evolution"):
+            evo_resp = self.client.post("/api/evolucao/atualizar", headers={"X-Painel-Token": self.token})
+            self.assertEqual(evo_resp.status_code, 200)
+            evo_data = evo_resp.json()
+            self.assertTrue(evo_data.get("ok"))
+            metrics = evo_data["evolution"]["evolution"]["metrics"]
+            self.assertGreaterEqual(metrics["applications"], 1)
+            self.assertGreaterEqual(metrics["applications_with_feedback"], 1)
+            self.assertGreaterEqual(metrics["applications_with_questions"], 1)
 
         # 6. Delete event and cleanup application
         del_ev_resp = self.client.delete(f"/api/applications/event/{event_id}", headers={"X-Painel-Token": self.token})

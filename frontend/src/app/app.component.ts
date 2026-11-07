@@ -7,6 +7,7 @@ import { SidebarComponent } from './core/components/sidebar/sidebar.component';
 import { FooterComponent } from './core/components/footer/footer.component';
 
 const ROUTE_META: Record<string, { title: string; icon: string }> = {
+  '/dashboard': { title: 'Dashboard', icon: 'bi-speedometer2' },
   '/buscar-vagas': { title: 'Buscar e Vagas', icon: 'bi-search' },
   '/me-interessam': { title: 'Vagas que Me Interessam', icon: 'bi-star' },
   '/candidaturas': { title: 'Minhas Candidaturas', icon: 'bi-send-check' },
@@ -29,8 +30,8 @@ export class AppComponent {
 
   isCollapsed = false;
   mobileOpen = false;
-  pageTitle = 'Buscar e Vagas';
-  pageIcon = 'bi-search';
+  pageTitle = 'Dashboard';
+  pageIcon = 'bi-speedometer2';
 
   constructor() {
     this.router.events.pipe(

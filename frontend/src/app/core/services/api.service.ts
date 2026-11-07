@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
 import { Observable, of, throwError } from 'rxjs';
 import { map, catchError, switchMap, tap } from 'rxjs/operators';
-import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent } from '../models/vaga.model';
+import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, DashboardStats } from '../models/vaga.model';
 
 @Injectable({
   providedIn: 'root'
@@ -117,6 +117,10 @@ export class ApiService {
     return this.http.get<any>(`${this.baseUrl}/discarded`).pipe(
       map(res => (res && Array.isArray(res.discarded) ? res.discarded : []))
     );
+  }
+
+  getDashboardStats(periodMonths = 6): Observable<DashboardStats> {
+    return this.http.get<DashboardStats>(`${this.baseUrl}/dashboard/stats?period_months=${periodMonths}`);
   }
 
   getEvolution(): Observable<EvolutionResponse> {

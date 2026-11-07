@@ -3,7 +3,7 @@
 from __future__ import annotations
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -46,6 +46,62 @@ class Repository:
         if SCHEMA_PATH.exists():
             schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
             self.conn.executescript(schema_sql)
+        self._backfill_ledger()
+
+    def _backfill_ledger(self) -> None:
+        """Ensure all current and historic applied jobs are recorded in application_ledger."""
+        try:
+            with self.conn:
+                # 1. Backfill from applications table
+                self.conn.execute("""
+                    INSERT INTO application_ledger (job_id, company, role, portal, job_url, applied_date, applied_at, active_in_list)
+                    SELECT 
+                        a.job_id,
+                        COALESCE(j.company, 'Empresa'),
+                        COALESCE(j.title, 'Cargo'),
+                        COALESCE(j.portal, 'portal'),
+                        COALESCE(j.url, ''),
+                        COALESCE(a.applied_date, substr(a.created_at, 1, 10)),
+                        a.created_at,
+                        1
+                    FROM applications a
+                    LEFT JOIN jobs j ON a.job_id = j.id
+                    WHERE j.id IS NOT NULL
+                      AND j.company IS NOT NULL AND TRIM(j.company) != ''
+                      AND NOT EXISTS (
+                        SELECT 1 FROM application_ledger l 
+                        WHERE (l.job_id IS NOT NULL AND l.job_id = a.job_id)
+                           OR (l.company = j.company AND l.role = j.title AND l.applied_date = COALESCE(a.applied_date, substr(a.created_at, 1, 10)))
+                    )
+                """)
+
+                # 2. Backfill from status_log for past applications
+                self.conn.execute("""
+                    INSERT INTO application_ledger (job_id, company, role, portal, job_url, applied_date, applied_at, active_in_list, archived_at)
+                    SELECT 
+                        sl.job_id,
+                        COALESCE(j.company, 'Empresa'),
+                        COALESCE(j.title, 'Cargo'),
+                        COALESCE(j.portal, 'portal'),
+                        COALESCE(j.url, ''),
+                        substr(sl.created_at, 1, 10),
+                        sl.created_at,
+                        CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END,
+                        CASE WHEN a.id IS NULL THEN sl.created_at ELSE NULL END
+                    FROM status_log sl
+                    LEFT JOIN jobs j ON sl.job_id = j.id
+                    LEFT JOIN applications a ON sl.job_id = a.job_id
+                    WHERE sl.to_status = 'applied'
+                      AND j.id IS NOT NULL
+                      AND j.company IS NOT NULL AND TRIM(j.company) != ''
+                      AND NOT EXISTS (
+                          SELECT 1 FROM application_ledger l 
+                          WHERE (l.job_id IS NOT NULL AND l.job_id = sl.job_id)
+                             OR (l.company = j.company AND l.role = j.title AND l.applied_date = substr(sl.created_at, 1, 10))
+                      )
+                """)
+        except Exception:
+            pass
 
     def close(self) -> None:
         if self.conn:
@@ -641,4 +697,290 @@ class Repository:
                 """,
                 (key, value, now),
             )
+
+    # -------------------------------------------------------------------------
+    # Application Ledger & Dashboard Analytics
+    # -------------------------------------------------------------------------
+
+    def record_application_ledger(
+        self,
+        company: str,
+        role: str,
+        portal: str = "",
+        job_url: str = "",
+        job_id: str | None = None,
+        applied_date: str = "",
+        applied_at: str = "",
+    ) -> int:
+        """Record or update an immutable application entry in application_ledger."""
+        now = _now_iso()
+        applied_date = applied_date or now[:10]
+        applied_at = applied_at or now
+
+        # Reject records with missing required fields
+        if not (company and company.strip()) or not (role and role.strip()) or not (job_url and job_url.strip()):
+            return 0
+
+        with self.conn:
+            # Check if matching record exists
+            cur = self.conn.execute(
+                """
+                SELECT id FROM application_ledger
+                WHERE (job_id IS NOT NULL AND job_id != '' AND job_id = ?)
+                   OR (job_url IS NOT NULL AND job_url != '' AND job_url = ?)
+                   OR (LOWER(TRIM(company)) = LOWER(TRIM(?)) AND LOWER(TRIM(role)) = LOWER(TRIM(?)) AND applied_date = ?)
+                LIMIT 1
+                """,
+                (job_id or "", job_url or "", company, role, applied_date),
+            )
+            row = cur.fetchone()
+            if row:
+                self.conn.execute(
+                    """
+                    UPDATE application_ledger
+                    SET active_in_list = 1, archived_at = NULL,
+                        company = COALESCE(NULLIF(?, ''), company),
+                        role = COALESCE(NULLIF(?, ''), role),
+                        portal = COALESCE(NULLIF(?, ''), portal)
+                    WHERE id = ?
+                    """,
+                    (company, role, portal, row["id"]),
+                )
+                return row["id"]
+            else:
+                cur = self.conn.execute(
+                    """
+                    INSERT INTO application_ledger (
+                        job_id, company, role, portal, job_url, applied_date, applied_at, active_in_list
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    (job_id, company, role, portal, job_url, applied_date, applied_at),
+                )
+                return cur.lastrowid
+
+    def archive_application_ledger(
+        self,
+        job_id: str | None = None,
+        job_url: str | None = None,
+        app_id: int | None = None,
+    ) -> int:
+        """Mark an application as archived/removed from active list without deleting its historical ledger record."""
+        now = _now_iso()
+        updated = 0
+        with self.conn:
+            if app_id:
+                app = self.get_application(app_id)
+                if app:
+                    job_id = job_id or app.get("job_id")
+            if job_id or job_url:
+                cur = self.conn.execute(
+                    """
+                    UPDATE application_ledger
+                    SET active_in_list = 0, archived_at = ?
+                    WHERE (job_id IS NOT NULL AND job_id != '' AND job_id = ?) 
+                       OR (job_url IS NOT NULL AND job_url != '' AND job_url = ?)
+                    """,
+                    (now, job_id or "", job_url or ""),
+                )
+                updated += cur.rowcount
+        return updated
+
+    def get_dashboard_stats(self, period_months: int = 6) -> dict:
+        """Compile complete analytics dashboard metrics and timelines."""
+        self._backfill_ledger()
+
+        # 1. KPIs
+        cur = self.conn.execute("SELECT COUNT(*) FROM jobs WHERE status = 'interested'")
+        saved_jobs = cur.fetchone()[0]
+
+        cur = self.conn.execute("SELECT COUNT(*) FROM applications")
+        active_applications = cur.fetchone()[0]
+
+        cur = self.conn.execute("SELECT COUNT(*) FROM application_ledger")
+        lifetime_applications = cur.fetchone()[0]
+
+        cur = self.conn.execute("SELECT COUNT(*) FROM applications WHERE status IN ('applied', 'screening', 'interview', 'offer')")
+        active_processes = cur.fetchone()[0]
+
+        cur = self.conn.execute("""
+            SELECT COUNT(DISTINCT a.id) FROM applications a
+            LEFT JOIN application_events ae ON a.id = ae.application_id
+            WHERE a.status = 'interview' 
+               OR ae.stage LIKE '%entrevista%' 
+               OR ae.stage LIKE '%interview%' 
+               OR ae.stage LIKE '%coding%'
+        """)
+        interviews = cur.fetchone()[0]
+
+        cur = self.conn.execute("SELECT COUNT(*) FROM applications WHERE status = 'offer'")
+        offers = cur.fetchone()[0]
+
+        cur = self.conn.execute("SELECT COUNT(*) FROM applications WHERE status = 'rejected'")
+        rejected = cur.fetchone()[0]
+
+        cur = self.conn.execute("SELECT COUNT(*) FROM jobs WHERE status = 'discarded'")
+        discarded_jobs = cur.fetchone()[0]
+
+        conversion_rate = f"{round((interviews / lifetime_applications) * 100, 1)}%" if lifetime_applications > 0 else "0.0%"
+
+        # 2. Monthly Timeline (Descending: most recent month first)
+        today = date.today()
+        month_names = {
+            1: "jan.", 2: "fev.", 3: "mar.", 4: "abr.", 5: "mai.", 6: "jun.",
+            7: "jul.", 8: "ago.", 9: "set.", 10: "out.", 11: "nov.", 12: "dez."
+        }
+
+        months_list = []
+        year = today.year
+        month = today.month
+        current_ym = f"{year:04d}-{month:02d}"
+        for _ in range(period_months):
+            key = f"{year:04d}-{month:02d}"
+            label = f"{month_names[month]}/{str(year)[2:]}"
+            months_list.append((key, label))
+            month -= 1
+            if month == 0:
+                month = 12
+                year -= 1
+
+        cur = self.conn.execute("""
+            SELECT substr(applied_date, 1, 7) as ym,
+                   COUNT(*) as total,
+                   SUM(active_in_list) as active,
+                   SUM(CASE WHEN active_in_list = 0 THEN 1 ELSE 0 END) as archived
+            FROM application_ledger
+            GROUP BY ym
+        """)
+        monthly_map = {row["ym"]: dict(row) for row in cur.fetchall()}
+
+        monthly_timeline = []
+        for key, label in months_list:
+            m_data = monthly_map.get(key, {})
+            monthly_timeline.append({
+                "month_key": key,
+                "label": label,
+                "count": m_data.get("total", 0),
+                "active": m_data.get("active", 0) or 0,
+                "archived": m_data.get("archived", 0) or 0,
+                "is_current": key == current_ym,
+            })
+
+        # 3. Daily Timeline (Last 30 days in descending order - most recent first)
+        start_date = today - timedelta(days=29)
+        daily_list = []
+        cur_day = today
+        while cur_day >= start_date:
+            d_str = cur_day.isoformat()
+            daily_list.append(d_str)
+            cur_day -= timedelta(days=1)
+
+        cur = self.conn.execute("""
+            SELECT applied_date, COUNT(*) as total
+            FROM application_ledger
+            WHERE applied_date >= ?
+            GROUP BY applied_date
+        """, (start_date.isoformat(),))
+        daily_map = {row["applied_date"]: row["total"] for row in cur.fetchall()}
+
+        today_str = today.isoformat()
+        yesterday_str = (today - timedelta(days=1)).isoformat()
+        daily_timeline = []
+        for d_str in daily_list:
+            parts = d_str.split("-")
+            short_label = f"{parts[2]}/{parts[1]}"
+            daily_timeline.append({
+                "date": d_str,
+                "label": short_label,
+                "count": daily_map.get(d_str, 0),
+                "is_today": d_str == today_str,
+                "is_yesterday": d_str == yesterday_str,
+            })
+
+        # 4. Status Distribution (Funnel)
+        cur = self.conn.execute("""
+            SELECT status, COUNT(*) as count FROM applications GROUP BY status
+        """)
+        app_status_counts = {row["status"]: row["count"] for row in cur.fetchall()}
+
+        cur = self.conn.execute("SELECT COUNT(*) FROM application_ledger WHERE active_in_list = 0")
+        archived_count = cur.fetchone()[0]
+
+        total_funnel = saved_jobs + lifetime_applications
+        def calc_pct(c):
+            return round((c / total_funnel) * 100, 1) if total_funnel > 0 else 0.0
+
+        status_distribution = [
+            {"status": "saved", "label": "Salva (Interesse)", "count": saved_jobs, "percentage": calc_pct(saved_jobs), "color": "#38bdf8"},
+            {"status": "applied", "label": "Candidatura enviada", "count": app_status_counts.get("applied", 0), "percentage": calc_pct(app_status_counts.get("applied", 0)), "color": "#60a5fa"},
+            {"status": "screening", "label": "Triagem RH", "count": app_status_counts.get("screening", 0), "percentage": calc_pct(app_status_counts.get("screening", 0)), "color": "#818cf8"},
+            {"status": "interview", "label": "Entrevista", "count": app_status_counts.get("interview", 0), "percentage": calc_pct(app_status_counts.get("interview", 0)), "color": "#a855f7"},
+            {"status": "offer", "label": "Proposta Recebida", "count": app_status_counts.get("offer", 0), "percentage": calc_pct(app_status_counts.get("offer", 0)), "color": "#34d399"},
+            {"status": "rejected", "label": "Recusada / Não seguiu", "count": app_status_counts.get("rejected", 0), "percentage": calc_pct(app_status_counts.get("rejected", 0)), "color": "#f87171"},
+            {"status": "archived", "label": "Limpa da Lista (Histórico)", "count": archived_count, "percentage": calc_pct(archived_count), "color": "#94a3b8"},
+        ]
+
+        # 5. Portal Distribution
+        portal_labels = {
+            "gupy-search": "Gupy",
+            "linkedin-search": "LinkedIn",
+            "remotar-search": "Remotar",
+            "greenhouse-search": "Greenhouse",
+            "vagas-search": "Vagas.com",
+            "solides-search": "Sólides",
+            "programathor-search": "Programathor",
+            "infojobs-search": "InfoJobs",
+            "geekhunter-search": "GeekHunter",
+            "trampos-search": "Trampos",
+            "michaelpage-search": "Michael Page",
+            "roberthalf-search": "Robert Half",
+            "pcd-search": "PCD Online",
+            "digai-search": "DigAÍ",
+            "empregos-search": "Empregos.com.br",
+            "freehire-search": "FreeHire",
+        }
+        cur = self.conn.execute("""
+            SELECT COALESCE(NULLIF(portal, ''), 'manual') as portal_code, COUNT(*) as count
+            FROM application_ledger
+            GROUP BY portal_code
+            ORDER BY count DESC
+            LIMIT 8
+        """)
+        portal_distribution = []
+        for r in cur.fetchall():
+            code = r["portal_code"]
+            label = portal_labels.get(code, code.replace("-search", "").capitalize() if code else "Outro")
+            portal_distribution.append({
+                "portal": code,
+                "label": label,
+                "count": r["count"],
+            })
+
+        # 6. Recent Activity
+        cur = self.conn.execute("""
+            SELECT id, company, role, portal, job_url, applied_date, active_in_list
+            FROM application_ledger
+            ORDER BY applied_date DESC, id DESC
+            LIMIT 5
+        """)
+        recent_activity = [dict(r) for r in cur.fetchall()]
+
+        return {
+            "kpis": {
+                "saved_jobs": saved_jobs,
+                "active_applications": active_applications,
+                "lifetime_applications": lifetime_applications,
+                "active_processes": active_processes,
+                "interviews": interviews,
+                "offers": offers,
+                "rejected": rejected,
+                "discarded_jobs": discarded_jobs,
+                "conversion_rate": conversion_rate,
+            },
+            "monthly_timeline": monthly_timeline,
+            "daily_timeline": daily_timeline,
+            "status_distribution": status_distribution,
+            "portal_distribution": portal_distribution,
+            "recent_activity": recent_activity,
+        }
+
 

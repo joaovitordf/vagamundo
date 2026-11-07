@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.routes import applications, documents, jobs, profile, search, settings
+from backend.api.routes import applications, dashboard, documents, jobs, profile, search, settings
 from backend.api.security import HostCheckMiddleware, get_token
 
 _here = Path(__file__).resolve()
@@ -40,6 +40,7 @@ app.include_router(settings.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(applications.router, prefix="/api")
+app.include_router(dashboard.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 

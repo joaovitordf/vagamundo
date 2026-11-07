@@ -25,6 +25,7 @@ export class SidebarComponent implements OnInit {
   private readonly api = inject(ApiService);
 
   navItems: NavItem[] = [
+    { label: 'Dashboard', route: '/dashboard', icon: 'bi-speedometer2' },
     { label: 'Meu Perfil', route: '/meu-perfil', icon: 'bi-person-badge' },
     { label: 'Buscar e Vagas', route: '/buscar-vagas', icon: 'bi-search' },
     { label: 'Me Interessam', route: '/me-interessam', icon: 'bi-star' },

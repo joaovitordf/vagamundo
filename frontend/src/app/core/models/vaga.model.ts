@@ -120,3 +120,65 @@ export interface SearchStatusState {
   summary?: string;
   progress?: SearchProgressInfo;
 }
+
+export interface DashboardKpis {
+  saved_jobs: number;
+  active_applications: number;
+  lifetime_applications: number;
+  active_processes: number;
+  interviews: number;
+  offers: number;
+  rejected: number;
+  discarded_jobs: number;
+  conversion_rate: string;
+}
+
+export interface DashboardMonthlyPoint {
+  month_key: string;
+  label: string;
+  count: number;
+  active: number;
+  archived: number;
+  is_current?: boolean;
+}
+
+export interface DashboardDailyPoint {
+  date: string;
+  label: string;
+  count: number;
+  is_today?: boolean;
+  is_yesterday?: boolean;
+}
+
+export interface DashboardStatusPoint {
+  status: string;
+  label: string;
+  count: number;
+  percentage: number;
+  color: string;
+}
+
+export interface DashboardPortalPoint {
+  portal: string;
+  label: string;
+  count: number;
+}
+
+export interface DashboardActivityPoint {
+  id?: number;
+  company: string;
+  role: string;
+  portal?: string;
+  job_url?: string;
+  applied_date: string;
+  active_in_list: number;
+}
+
+export interface DashboardStats {
+  kpis: DashboardKpis;
+  monthly_timeline: DashboardMonthlyPoint[];
+  daily_timeline: DashboardDailyPoint[];
+  status_distribution: DashboardStatusPoint[];
+  portal_distribution: DashboardPortalPoint[];
+  recent_activity: DashboardActivityPoint[];
+}

@@ -101,3 +101,35 @@ class TrackerService:
     def record_scan_run(self, run_data: dict) -> int:
         return self.repo.insert_scan_run(run_data)
 
+    def record_application_ledger(
+        self,
+        company: str,
+        role: str,
+        portal: str = "",
+        job_url: str = "",
+        job_id: str | None = None,
+        applied_date: str = "",
+        applied_at: str = "",
+    ) -> int:
+        return self.repo.record_application_ledger(
+            company=company,
+            role=role,
+            portal=portal,
+            job_url=job_url,
+            job_id=job_id,
+            applied_date=applied_date,
+            applied_at=applied_at,
+        )
+
+    def archive_application_ledger(
+        self,
+        job_id: str | None = None,
+        job_url: str | None = None,
+        app_id: int | None = None,
+    ) -> int:
+        return self.repo.archive_application_ledger(job_id=job_id, job_url=job_url, app_id=app_id)
+
+    def get_dashboard_stats(self, period_months: int = 6) -> dict:
+        return self.repo.get_dashboard_stats(period_months=period_months)
+
+

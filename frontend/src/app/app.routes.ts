@@ -3,8 +3,12 @@ import { Routes } from '@angular/router';
 export const routes: Routes = [
   {
     path: '',
-    redirectTo: 'buscar-vagas',
+    redirectTo: 'dashboard',
     pathMatch: 'full'
+  },
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent)
   },
   {
     path: 'buscar-vagas',
@@ -40,6 +44,6 @@ export const routes: Routes = [
   },
   {
     path: '**',
-    redirectTo: 'buscar-vagas'
+    redirectTo: 'dashboard'
   }
 ];

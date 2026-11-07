@@ -170,6 +170,14 @@ async def save_application(
             "notes": req.notes,
         })
         tracker.mark_jobs([job_id], decision="applied", source="painel")
+        tracker.record_application_ledger(
+            company=req.company or (job.get("company") if job else "") or "Empresa",
+            role=req.title or req.role or (job.get("title") if job else "") or "Cargo",
+            portal=req.portal or (job.get("portal") if job else "") or "portal",
+            job_url=req.url or "",
+            job_id=job_id,
+            applied_date=req.applied_date or req.date or painel.date.today().isoformat(),
+        )
 
     # 2. Update legacy evolution and tracker.csv
     try:
@@ -221,11 +229,24 @@ async def mark_applied(
             "notes": "Registrado pelo painel",
         })
 
+    # Record in immutable ledger to preserve historical data even if removed from active list
+    company_name = req.company or (job.get("company") if job else "") or ""
+    role_title = req.role or (job.get("title") if job else "") or ""
+    portal_name = req.portal or (job.get("portal") if job else "") or ""
+    tracker.record_application_ledger(
+        company=company_name or "Empresa",
+        role=role_title or "Cargo",
+        portal=portal_name or "portal",
+        job_url=req.url,
+        job_id=job["id"] if job else None,
+        applied_date=painel.date.today().isoformat(),
+    )
+
     res = painel.record_applied(
         url=req.url,
-        company=req.company or (job.get("company") if job else "") or "",
-        role=req.role or (job.get("title") if job else "") or "",
-        portal=req.portal or (job.get("portal") if job else "") or "",
+        company=company_name,
+        role=role_title,
+        portal=portal_name,
     )
     return res
 
@@ -236,7 +257,7 @@ async def remove_application(
     tracker: TrackerService = Depends(get_tracker),
     _csrf: str = Depends(verify_csrf_token),
 ) -> Dict[str, Any]:
-    """Remove application record from SQLite and tracker.csv."""
+    """Remove application record from SQLite and tracker.csv while preserving ledger history."""
     target_job_id = req.job_id
     url_to_clean = (req.url or "").strip()
 
@@ -258,6 +279,13 @@ async def remove_application(
                 url_to_clean = job.get("url") or ""
         tracker.repo.delete_application(job_id=target_job_id)
         tracker.mark_jobs([target_job_id], decision="discarded", source="painel")
+
+    # Mark as archived in ledger (preserves date and historical count)
+    tracker.archive_application_ledger(
+        job_id=target_job_id,
+        job_url=url_to_clean,
+        app_id=req.id,
+    )
 
     if url_to_clean:
         painel.remove_application(url_to_clean)

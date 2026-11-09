@@ -131,4 +131,26 @@ CREATE INDEX IF NOT EXISTS idx_ledger_applied_date ON application_ledger(applied
 CREATE INDEX IF NOT EXISTS idx_ledger_company_role ON application_ledger(company, role);
 CREATE INDEX IF NOT EXISTS idx_ledger_active ON application_ledger(active_in_list);
 
+CREATE TABLE IF NOT EXISTS recruiter_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    emails TEXT NOT NULL,
+    email_context TEXT,
+    title TEXT NOT NULL,
+    company TEXT NOT NULL,
+    portal TEXT NOT NULL,
+    url TEXT,
+    location TEXT,
+    work_model TEXT,
+    published_date TEXT,
+    description TEXT NOT NULL,
+    matched_keywords TEXT,
+    match_score INTEGER DEFAULT 0,
+    job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
+    dismissed INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_recruiter_posts_url ON recruiter_posts(url) WHERE url IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_recruiter_posts_dismissed ON recruiter_posts(dismissed);
+
 

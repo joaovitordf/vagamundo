@@ -182,3 +182,22 @@ export interface DashboardStats {
   portal_distribution: DashboardPortalPoint[];
   recent_activity: DashboardActivityPoint[];
 }
+
+export interface RecruiterPost {
+  id: number;
+  emails: string[];
+  email_context?: string;
+  title: string;
+  company: string;
+  portal: string;
+  url?: string;
+  location?: string;
+  work_model?: string;
+  published_date?: string;
+  description: string;
+  matched_keywords: string[];
+  match_score: number;
+  job_id?: string;
+  dismissed?: number;
+  created_at: string;
+}

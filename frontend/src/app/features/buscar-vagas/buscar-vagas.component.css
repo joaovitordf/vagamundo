@@ -67,7 +67,7 @@
   border: 1px solid var(--vc-border);
   color: var(--vc-text);
   padding: 0.65rem 0.85rem;
-  padding-right: 180px;
+  padding-right: 200px;
   border-radius: 8px;
   font-size: 0.9rem;
   outline: none;
@@ -76,6 +76,15 @@
 
 .vc-input:focus {
   border-color: var(--vc-blue);
+}
+
+.input-actions-cluster {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
 }
 
 .vc-select {
@@ -94,15 +103,17 @@
 }
 
 .btn-clear-input {
-  position: absolute;
-  right: 145px;
   background: transparent;
   border: none;
   color: var(--vc-muted);
-  font-size: 1.2rem;
+  font-size: 1.35rem;
   cursor: pointer;
   padding: 0 4px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
 }
 
 .btn-clear-input:hover {
@@ -110,8 +121,6 @@
 }
 
 .btn-random-cv {
-  position: absolute;
-  right: 6px;
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.3);
   color: var(--vc-blue);
@@ -124,6 +133,7 @@
   align-items: center;
   gap: 5px;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .btn-random-cv:hover {

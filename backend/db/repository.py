@@ -983,4 +983,108 @@ class Repository:
             "recent_activity": recent_activity,
         }
 
+    # -----------------------------------------------------------------------
+    # Recruiter Posts / Radar de Recrutadores
+    # -----------------------------------------------------------------------
+    def upsert_recruiter_post(self, post: dict) -> int:
+        """Insert or update a recruiter post identified with emails."""
+        emails_json = _serialize(post.get("emails", []))
+        matched_kw_json = _serialize(post.get("matched_keywords", []))
+        now = _now_iso()
+
+        url = post.get("url")
+        if url:
+            cur = self.conn.execute("SELECT id FROM recruiter_posts WHERE url = ?", (url,))
+            row = cur.fetchone()
+            if row:
+                post_id = row["id"]
+                self.conn.execute("""
+                    UPDATE recruiter_posts
+                    SET emails = ?, email_context = ?, title = ?, company = ?,
+                        portal = ?, location = ?, work_model = ?, published_date = ?,
+                        description = ?, matched_keywords = ?, match_score = ?,
+                        job_id = COALESCE(?, job_id)
+                    WHERE id = ?
+                """, (
+                    emails_json, post.get("email_context"), post.get("title", "Oportunidade"),
+                    post.get("company", "Empresa"), post.get("portal", "outros"),
+                    post.get("location"), post.get("work_model"), post.get("published_date"),
+                    post.get("description", ""), matched_kw_json, post.get("match_score", 0),
+                    post.get("job_id"), post_id
+                ))
+                self.conn.commit()
+                return post_id
+
+        cur = self.conn.execute("""
+            INSERT INTO recruiter_posts (
+                emails, email_context, title, company, portal, url, location,
+                work_model, published_date, description, matched_keywords, match_score,
+                job_id, dismissed, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        """, (
+            emails_json, post.get("email_context"), post.get("title", "Oportunidade"),
+            post.get("company", "Empresa"), post.get("portal", "outros"),
+            url, post.get("location"), post.get("work_model"), post.get("published_date"),
+            post.get("description", ""), matched_kw_json, post.get("match_score", 0),
+            post.get("job_id"), now
+        ))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def list_recruiter_posts(
+        self,
+        query: str | None = None,
+        only_cv: bool = False,
+        portal: str | None = None
+    ) -> list[dict]:
+        """List recruiter posts with optional keyword filtering and CV match."""
+        sql = "SELECT * FROM recruiter_posts WHERE dismissed = 0"
+        params: list[Any] = []
+
+        if only_cv:
+            sql += " AND match_score > 0"
+
+        if portal:
+            sql += " AND portal = ?"
+            params.append(portal)
+
+        if query and query.strip():
+            terms = [t.strip() for t in query.split(",") if t.strip()]
+            if terms:
+                clauses = []
+                for t in terms:
+                    pattern = f"%{t}%"
+                    clauses.append("(title LIKE ? OR company LIKE ? OR description LIKE ? OR emails LIKE ? OR matched_keywords LIKE ?)")
+                    params.extend([pattern, pattern, pattern, pattern, pattern])
+                sql += " AND (" + " OR ".join(clauses) + ")"
+
+        sql += " ORDER BY match_score DESC, published_date DESC, id DESC"
+
+        cur = self.conn.execute(sql, params)
+        posts = []
+        for r in cur.fetchall():
+            d = dict(r)
+            d["emails"] = _deserialize(d.get("emails")) or []
+            d["matched_keywords"] = _deserialize(d.get("matched_keywords")) or []
+            posts.append(d)
+        return posts
+
+    def dismiss_recruiter_post(self, post_id: int) -> bool:
+        """Soft delete a recruiter post by setting dismissed = 1."""
+        cur = self.conn.execute(
+            "UPDATE recruiter_posts SET dismissed = 1 WHERE id = ?",
+            (post_id,)
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def get_jobs_with_potential_emails(self) -> list[dict]:
+        """Fetch all jobs from DB whose description mentions an email symbol (@)."""
+        cur = self.conn.execute("""
+            SELECT id, title, company, portal, url, location, work_model, posted_date, description
+            FROM jobs
+            WHERE description IS NOT NULL AND description LIKE '%@%'
+        """)
+        return [dict(r) for r in cur.fetchall()]
+
 

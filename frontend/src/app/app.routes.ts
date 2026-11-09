@@ -15,6 +15,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/buscar-vagas/buscar-vagas.component').then(m => m.BuscarVagasComponent)
   },
   {
+    path: 'recrutadores',
+    loadComponent: () => import('./features/recrutadores/recrutadores.component').then(m => m.RecrutadoresComponent)
+  },
+  {
     path: 'me-interessam',
     loadComponent: () => import('./features/me-interessam/me-interessam.component').then(m => m.MeInteressamComponent)
   },

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.routes import applications, dashboard, documents, jobs, profile, search, settings
+from backend.api.routes import applications, dashboard, documents, jobs, profile, recruiters, search, settings
 from backend.api.security import HostCheckMiddleware, get_token
 
 _here = Path(__file__).resolve()
@@ -43,6 +43,7 @@ app.include_router(applications.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
+app.include_router(recruiters.router, prefix="/api")
 
 # SPA serving fallback for Angular
 if ANGULAR_DIST.is_dir():

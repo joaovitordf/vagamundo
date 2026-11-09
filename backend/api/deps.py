@@ -9,6 +9,7 @@ from backend.core.docgen import DocGenService
 from backend.core.profile import ProfileService
 from backend.core.ai_mux import AIMux
 from backend.core.liveness import LivenessService
+from backend.core.recruiter_service import RecruiterService
 
 _repo: Repository | None = None
 _tracker: TrackerService | None = None
@@ -18,6 +19,7 @@ _docgen: DocGenService | None = None
 _profile: ProfileService | None = None
 _ai_mux: AIMux | None = None
 _liveness: LivenessService | None = None
+_recruiter: RecruiterService | None = None
 
 
 def get_repository() -> Repository:
@@ -74,3 +76,10 @@ def get_liveness() -> LivenessService:
     if _liveness is None:
         _liveness = LivenessService(repo=get_repository())
     return _liveness
+
+
+def get_recruiter_service() -> RecruiterService:
+    global _recruiter
+    if _recruiter is None:
+        _recruiter = RecruiterService(repo=get_repository())
+    return _recruiter

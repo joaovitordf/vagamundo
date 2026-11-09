@@ -134,3 +134,12 @@ class ApplicationEventCreateRequest(BaseModel):
     feedback: Optional[str] = None
     questions_and_answers: Optional[str] = None
     status: Optional[str] = None
+
+
+class PasteRecruiterPostRequest(BaseModel):
+    raw_text: str
+    url: Optional[str] = None
+    title: Optional[str] = None
+    company: Optional[str] = None
+    location: Optional[str] = None
+    work_model: Optional[str] = None

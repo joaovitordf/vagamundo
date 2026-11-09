@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
 import { Observable, of, throwError } from 'rxjs';
 import { map, catchError, switchMap, tap } from 'rxjs/operators';
-import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, DashboardStats } from '../models/vaga.model';
+import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, DashboardStats, RecruiterPost } from '../models/vaga.model';
 
 @Injectable({
   providedIn: 'root'
@@ -15,9 +15,11 @@ export class ApiService {
   // Estado de busca da sessão atual: inicia vazio e só popula quando o usuário clica em "Buscar vagas"
   readonly hasSearchedInSession = signal<boolean>(false);
   readonly sessionVagas = signal<Vaga[]>([]);
+  readonly hasSearchedRecruitersInSession = signal<boolean>(false);
   readonly savedCount = signal<number>(0);
   readonly applicationsCount = signal<number>(0);
   readonly discardedCount = signal<number>(0);
+  readonly recruiterPostsCount = signal<number>(0);
 
   constructor() {
     this.initToken();
@@ -265,5 +267,73 @@ export class ApiService {
 
   getSearchStatus(): Observable<any> {
     return this.http.get(`${this.baseUrl}/status`);
+  }
+
+  getRecruiterPosts(query?: string, onlyCv = false, portal?: string): Observable<{ total: number; posts: RecruiterPost[] }> {
+    const params: string[] = [];
+    if (query && query.trim()) params.push(`q=${encodeURIComponent(query.trim())}`);
+    if (onlyCv) params.push('only_cv=true');
+    if (portal && portal.trim()) params.push(`portal=${encodeURIComponent(portal.trim())}`);
+    const qs = params.length > 0 ? `?${params.join('&')}` : '';
+    return this.http.get<{ total: number; posts: RecruiterPost[] }>(`${this.baseUrl}/recruiters${qs}`).pipe(
+      tap((res) => {
+        if (this.hasSearchedRecruitersInSession()) {
+          this.recruiterPostsCount.set(res?.total || 0);
+        }
+      })
+    );
+  }
+
+  syncRecruiterPosts(query?: string): Observable<{ ok: boolean; scanned: number; posts_with_email: number; synced: number; hn_synced?: number }> {
+    const qs = query && query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
+    return this.postWithToken<{ ok: boolean; scanned: number; posts_with_email: number; synced: number; hn_synced?: number }>(
+      `${this.baseUrl}/recruiters/sync${qs}`,
+      {}
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  pasteRecruiterPost(payload: {
+    raw_text: string;
+    url?: string;
+    title?: string;
+    company?: string;
+    location?: string;
+    work_model?: string;
+  }): Observable<{ ok: boolean; post: RecruiterPost }> {
+    return this.postWithToken<{ ok: boolean; post: RecruiterPost }>(
+      `${this.baseUrl}/recruiters/paste`,
+      payload
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  dismissRecruiterPost(postId: number): Observable<{ ok: boolean; id: number }> {
+    return this.deleteWithToken<{ ok: boolean; id: number }>(
+      `${this.baseUrl}/recruiters/${postId}`
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  private deleteWithToken<T>(url: string): Observable<T> {
+    const doDelete = (token: string) =>
+      this.http.delete<T>(url, {
+        headers: new HttpHeaders({ 'X-Painel-Token': token }),
+      });
+
+    if (this.token) {
+      return doDelete(this.token).pipe(
+        catchError((err: HttpErrorResponse) => {
+          if (err.status === 403) {
+            return this.fetchToken().pipe(switchMap((newToken) => doDelete(newToken)));
+          }
+          return throwError(() => err);
+        })
+      );
+    }
+    return this.fetchToken().pipe(switchMap((token) => doDelete(token)));
   }
 }

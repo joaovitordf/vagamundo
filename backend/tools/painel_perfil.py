@@ -272,86 +272,33 @@ def extract_cv_areas(
             "keywords": clean_kws,
         })
 
-    # 1. Injeta a grade completa de eixos especializados quando o perfil abrange tecnologias de engenharia/software
-    has_tech_profile = any(tok in raw_md.lower() for tok in ("angular", "python", "java", "visao computacional", "opencv", "flutter", "frontend", "backend"))
-    if has_tech_profile:
-        joao_curated = [
-            # Front-end & Angular
-            ("fe-angular", "Desenvolvedor Front-end Angular", ["Angular", "TypeScript", "Frontend"]),
-            ("fe-angular-ts", "Angular & TypeScript", ["Angular", "TypeScript"]),
-            ("fe-angular-rxjs", "Angular & RxJS", ["Angular", "RxJS", "Web"]),
-            ("fe-dev", "Desenvolvedor Front-end", ["Frontend", "TypeScript", "HTML"]),
-            ("fe-angular-pleno", "Angular Pleno", ["Angular", "Pleno"]),
-            ("fe-angular-junior", "Angular Júnior", ["Angular", "Júnior"]),
-            ("fe-ui-comp", "UI & Componentes Reutilizáveis", ["Angular", "Bootstrap", "CSS"]),
-            ("fe-realtime", "Interfaces em Tempo Real", ["Angular", "WebSockets"]),
-            ("fe-web", "Desenvolvimento Web Front-end", ["Angular", "JavaScript", "HTML5"]),
+    # 1. Extrai dos dados configurados no perfil (respostas.json / formulário local)
+    answers = {}
+    try:
+        if answers_path and answers_path.exists():
+            answers = json.loads(answers_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
 
-            # Java & Spring Boot
-            ("be-java-spring", "Desenvolvedor Java / Spring Boot", ["Java", "Spring Boot"]),
-            ("be-java-backend", "Backend Java", ["Java", "Spring Boot", "Backend"]),
-            ("be-java-api", "Java & APIs REST", ["Java", "REST API", "Spring Boot"]),
-            ("be-java-corp", "Java Corporativo (Hibernate / JPA)", ["Java", "Hibernate", "JPA"]),
-            ("be-java-oracle", "Java & Oracle Database", ["Java", "Oracle", "SQL"]),
-            ("be-java-jsf", "Java & PrimeFaces / JSF", ["Java", "JSF", "Spring"]),
-            ("be-java-dev", "Java Developer", ["Java Developer", "Spring Boot"]),
-            ("be-java-geral", "Desenvolvedor Java", ["Desenvolvedor Java"]),
+    cargos = answers.get("cargos") or []
+    comp_busca = answers.get("competencias_busca") or []
 
-            # Python & FastAPI
-            ("be-python-fastapi", "Desenvolvedor Python / FastAPI", ["Python", "FastAPI"]),
-            ("be-python-backend", "Backend Python", ["Python", "FastAPI", "Backend"]),
-            ("be-python-api", "Python & APIs REST", ["Python", "REST API", "Docker"]),
-            ("be-python-postgres", "Python & PostgreSQL", ["Python", "PostgreSQL"]),
-            ("be-python-scraping", "Web Scraping & Automação", ["Python", "Web Scraping", "Automação"]),
-            ("be-python-dev", "Python Developer", ["Python Developer", "FastAPI"]),
-            ("be-python-geral", "Desenvolvedor Python", ["Desenvolvedor Python"]),
+    for idx, cargo in enumerate(cargos):
+        matched_kws = [k for k in comp_busca if k.lower() in cargo.lower()]
+        if not matched_kws:
+            matched_kws = [cargo.split()[0]] + comp_busca[:2]
+        slug = f"cargo-{idx+1}"
+        add_area(slug, cargo, matched_kws)
 
-            # Visão Computacional, OCR & IA
-            ("ai-cv", "Visão Computacional", ["Visão Computacional", "OpenCV"]),
-            ("ai-cv-en", "Computer Vision", ["Computer Vision", "Python"]),
-            ("ai-yolo", "YOLOv8 & Detecção de Objetos", ["YOLO", "Python", "Visão Computacional"]),
-            ("ai-ocr", "OCR & Extração de Documentos", ["OCR", "Python", "OpenCV"]),
-            ("ai-applied", "Inteligência Artificial Aplicada", ["Inteligência Artificial", "Python"]),
-            ("ai-cv-eng", "Computer Vision Engineer", ["Computer Vision Engineer"]),
-            ("ai-mediapipe", "Estimativa de Pose & Rastreamento", ["MediaPipe", "OpenCV", "Python"]),
-            ("ai-img-proc", "Processamento de Imagens", ["Processamento de Imagens", "Python"]),
-            ("ai-deep-learning", "Deep Learning & Percepção", ["Deep Learning", "Python", "IA"]),
+    # Agrupamentos de competências da busca (em pares de 2)
+    for i in range(0, len(comp_busca), 2):
+        pair = comp_busca[i:i+2]
+        if len(pair) == 2:
+            add_area(f"comp-{i+1}", f"{pair[0]} & {pair[1]}", pair)
+        elif len(pair) == 1:
+            add_area(f"comp-{i+1}", pair[0], pair)
 
-            # Full Stack
-            ("fs-angular-java", "Full Stack (Angular & Java)", ["Full Stack", "Angular", "Java"]),
-            ("fs-angular-python", "Full Stack (Angular & Python)", ["Full Stack", "Angular", "Python"]),
-            ("fs-dev", "Desenvolvedor Full Stack", ["Fullstack", "TypeScript", "Java"]),
-            ("fs-dev-en", "Full Stack Developer", ["Full Stack Developer", "Angular"]),
-            ("fs-spring", "Full Stack (Angular & Spring Boot)", ["Full Stack", "Angular", "Spring Boot"]),
-
-            # Mobile & Flutter
-            ("mob-flutter", "Desenvolvedor Flutter", ["Flutter", "Dart"]),
-            ("mob-dev", "Desenvolvedor Mobile", ["Mobile", "Flutter", "Dart"]),
-            ("mob-dev-en", "Mobile Developer", ["Mobile Developer", "Flutter"]),
-
-            # PHP & Laravel
-            ("php-laravel", "Desenvolvedor PHP & Laravel", ["PHP", "Laravel"]),
-            ("laravel-mysql", "Laravel & MySQL", ["Laravel", "MySQL"]),
-
-            # Bancos de Dados & DevOps
-            ("db-sql", "Bancos de Dados & SQL", ["PostgreSQL", "SQL"]),
-            ("db-oracle", "Oracle Database & SQL", ["Oracle", "SQL", "Database"]),
-            ("devops-docker", "DevOps & Docker", ["Docker", "DevOps"]),
-            ("devops-telemetry", "DevOps & Monitoramento", ["Docker", "Grafana"]),
-
-            # Engenharia de Software & Sistemas Corporativos
-            ("se-frontend", "Software Engineer Frontend", ["Software Engineer", "Frontend"]),
-            ("se-backend", "Software Engineer Backend", ["Software Engineer", "Java"]),
-            ("se-geral", "Engenheiro de Software", ["Engenheiro de Software", "Angular"]),
-            ("corp-erp", "Sistemas ERP Corporativos", ["ERP", "Java", "SQL"]),
-            ("corp-gestao", "Sistemas de Gestão Empresarial", ["ERP", "Full Stack"]),
-            ("corp-fintech", "FinTech & Automação de Crédito", ["Fintech", "Java", "Python"]),
-            ("corp-iot", "Monitoramento Industrial & IoT", ["IoT", "Monitoramento", "Frontend"]),
-        ]
-        for aid, lbl, kws in joao_curated:
-            add_area(aid, lbl, kws)
-
-    # 2. Extrai tópicos explícitos de competências: "- **Categoria**: item1, item2, item3"
+    # 2. Extrai tópicos explícitos de competências e cargos do markdown: "- **Categoria**: item1, item2, item3"
     current_section = ""
     for line in raw_md.splitlines():
         if line.startswith("#"):
@@ -359,7 +306,7 @@ def extract_cv_areas(
             continue
         if any(skip in current_section for skip in ("projeto", "checklist", "deal-breakers", "filtro", "estrutura", "fluxo", "privacidade", "identidade", "documento", "diretriz", "publica", "premio", "referencia")):
             continue
-        m = re.match(r"^\s*-\s*\*\*([^*]{2,55})\*\*[^:]*:\s*(.+)$", line)
+        m = re.match(r"^\s*-\s*\*\*([^*:]{2,55})[:*]*\s*(.+)$", line)
         if not m:
             continue
         cat_label = m.group(1).strip()
@@ -371,7 +318,7 @@ def extract_cv_areas(
             "foco", "orientação", "pontos", "rende", "português", "inglês", "espanhol", "deal",
         )):
             continue
-        raw_items = [re.sub(r"\([^)]*\)", "", x).strip(" .;:") for x in re.split(r"[,;]", m.group(2))]
+        raw_items = [re.sub(r"\([^)]*\)", "", x).strip(" .;:") for x in re.split(r"[,;/]", m.group(2))]
         items = [x for x in raw_items if 2 <= len(x) <= 35 and not x.endswith(")")]
 
         # Subtermos da própria categoria (ex: Java, Python, TypeScript)

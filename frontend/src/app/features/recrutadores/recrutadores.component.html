@@ -1,0 +1,242 @@
+<div class="recruiters-view-container">
+
+  <!-- CABEÇALHO & CONSOLE DE FILTRO -->
+  <section class="vc-panel filter-console">
+    <div class="filter-header">
+      <div class="title-row">
+        <div class="title-with-badge">
+          <h2><i class="bi bi-envelope-at title-icon"></i> Recrutadores</h2>
+          @if (hasSearched()) {
+            <span class="badge-total">{{ filteredPosts().length }} de {{ allPosts().length }} {{ allPosts().length === 1 ? 'publicação' : 'publicações' }}</span>
+          }
+        </div>
+      </div>
+      <p class="panel-desc">
+        Oportunidades e contatos com <strong>e-mail direto (&#64;)</strong> do recrutador ou da empresa.
+        Os dados são minerados a partir das vagas salvas no banco local (coletadas de portais como Remotar, FreeHire, Gupy, etc.) e threads públicas de contratação direta.
+      </p>
+    </div>
+
+    <!-- GRID DE FILTROS -->
+    <div class="filter-grid">
+
+      <!-- Campo 1: Palavras-Chave com Sorteador do CV -->
+      <div class="filter-field wide">
+        <div class="filter-label-row">
+          <label for="f-recruiter-text">Palavras-chave ou Tecnologia (até 3, separadas por vírgula)</label>
+          @if (cvAreaBadge()) {
+            <span class="cv-area-badge">{{ cvAreaBadge() }}</span>
+          }
+        </div>
+        <div class="input-with-action">
+          <input type="text"
+                 id="f-recruiter-text"
+                 class="vc-input"
+                 placeholder="Filtrar por cargo, tecnologia ou competência (separe por vírgula)..."
+                 [(ngModel)]="filterText"
+                 (keyup.enter)="onSearch()">
+
+          <div class="input-actions-cluster">
+            @if (filterText) {
+              <button type="button" class="btn-clear-input" (click)="clearTextFilter()" title="Limpar palavras-chave">×</button>
+            }
+
+            <button type="button" class="btn-random-cv" (click)="pickRandomCvArea()" title="Sortear área do seu currículo">
+              <i class="bi bi-dice-5"></i>
+              <span>Sortear área CV</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Campo 2: Portal de Origem -->
+      <div class="filter-field">
+        <label for="f-recruiter-portal">Portal de Origem</label>
+        <select id="f-recruiter-portal" class="vc-select" [(ngModel)]="portalFilter">
+          <option value="">Todos os portais</option>
+          @for (portal of availablePortals(); track portal) {
+            <option [value]="portal">{{ getPortalLabel(portal) }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- Campo 3: Checkbox Compatibilidade CV -->
+      <div class="filter-field checkbox-field">
+        <label class="filter-checkbox-label">
+          <input type="checkbox" [ngModel]="onlyCvMatch()" (ngModelChange)="onlyCvMatch.set($event)">
+          <span><i class="bi bi-stars"></i> Apenas compatíveis com meu CV</span>
+        </label>
+      </div>
+
+    </div>
+
+    <!-- BARRA DE AÇÕES (SIMPLIFICADA: APENAS BUSCAR) -->
+    <div class="actions-bar">
+      <div class="actions-left">
+        <button type="button"
+                class="btn-action primary"
+                (click)="onSearch()"
+                [disabled]="loading()"
+                title="Buscar oportunidades e publicações com e-mail">
+          @if (loading()) {
+            <span class="vc-spinner"></span> Buscando...
+          } @else {
+            <i class="bi bi-search"></i> Buscar
+          }
+        </button>
+
+        <button type="button"
+                class="btn-action linkedin-btn"
+                (click)="openLinkedInContentSearch()"
+                title="Buscar publicações com e-mail diretamente no feed do LinkedIn">
+          <i class="bi bi-linkedin"></i> Buscar no LinkedIn ↗
+        </button>
+      </div>
+
+      <div class="actions-right">
+        @if (statusMessage()) {
+          <span class="status-badge success"><i class="bi bi-check-circle"></i> {{ statusMessage() }}</span>
+        }
+        @if (errorMessage()) {
+          <span class="status-badge error"><i class="bi bi-exclamation-triangle"></i> {{ errorMessage() }}</span>
+        }
+      </div>
+    </div>
+
+  </section>
+
+  <!-- LISTA DE PUBLICAÇÕES (APENAS EXIBE APÓS CLICAR EM BUSCAR) -->
+  <section class="posts-list-section">
+
+    @if (!hasSearched()) {
+      <div class="initial-search-prompt">
+        <i class="bi bi-search prompt-icon"></i>
+        <h3>Buscar Oportunidades com E-mail Direto</h3>
+        <p>Informe palavras-chave no campo acima (ou clique em <strong>Sortear área CV</strong>) e clique no botão <strong>Buscar</strong> para encontrar publicações e vagas com o e-mail de contato de recrutadores.</p>
+      </div>
+    } @else if (loading()) {
+      <div class="loading-state">
+        <span class="vc-spinner large"></span>
+        <p>Buscando publicações com e-mail de recrutadores...</p>
+      </div>
+    } @else if (filteredPosts().length === 0) {
+      <div class="empty-state">
+        <i class="bi bi-inbox empty-icon"></i>
+        <h3>Nenhuma publicação encontrada</h3>
+        <p>Nenhuma oportunidade com e-mail correspondeu às palavras-chave informadas. Tente outros termos, limpe os filtros ou busque diretamente no LinkedIn.</p>
+        <button type="button" class="btn-action linkedin-btn mt-3" (click)="openLinkedInContentSearch()">
+          <i class="bi bi-linkedin"></i> Buscar no LinkedIn ↗
+        </button>
+      </div>
+    } @else {
+      <div class="posts-grid">
+        @for (post of filteredPosts(); track post.id) {
+          <article class="post-card">
+
+            <!-- BLOCO DE DESTAQUE: E-MAIL E CONTEXTO -->
+            <div class="email-highlight-banner">
+              <div class="emails-row">
+                <span class="email-label"><i class="bi bi-envelope-check"></i> E-mail(s) para contato:</span>
+                <div class="emails-chips">
+                  @for (email of post.emails; track email) {
+                    <button type="button"
+                            class="email-chip"
+                            (click)="copyEmail(email)"
+                            title="Clique para copiar o e-mail">
+                      <span class="email-text">{{ email }}</span>
+                      @if (copiedEmail() === email) {
+                        <span class="copy-badge copied"><i class="bi bi-check"></i> Copiado!</span>
+                      } @else {
+                        <span class="copy-badge"><i class="bi bi-clipboard"></i> Copiar</span>
+                      }
+                    </button>
+                  }
+                </div>
+              </div>
+
+              @if (post.email_context) {
+                <div class="context-snippet" title="Trecho da publicação onde o e-mail é citado">
+                  <i class="bi bi-quote quote-icon"></i>
+                  <span class="snippet-text">{{ post.email_context }}</span>
+                </div>
+              }
+            </div>
+
+            <!-- CABEÇALHO DO CARD -->
+            <div class="post-header">
+              <div class="post-title-group">
+                <h3 class="post-title">{{ post.title }}</h3>
+                <span class="post-company"><i class="bi bi-building"></i> {{ post.company }}</span>
+              </div>
+
+              <div class="post-badges">
+                <span class="portal-badge" [attr.data-portal]="post.portal">{{ getPortalLabel(post.portal) }}</span>
+                @if (post.match_score && post.match_score > 0) {
+                  <span class="match-score-badge" title="Score de compatibilidade com palavras-chave do seu CV">
+                    <i class="bi bi-stars"></i> {{ post.match_score }}% match
+                  </span>
+                }
+              </div>
+            </div>
+
+            <!-- METADADOS COMPLEMENTARES -->
+            <div class="post-meta-row">
+              <span class="meta-item origin-meta">
+                <i class="bi bi-diagram-3"></i> Origem: {{ getPortalOriginInfo(post) }}
+              </span>
+              @if (post.location) {
+                <span class="meta-item"><i class="bi bi-geo-alt"></i> {{ post.location }}</span>
+              }
+              @if (post.work_model) {
+                <span class="meta-item"><i class="bi bi-laptop"></i> {{ post.work_model }}</span>
+              }
+              @if (post.published_date) {
+                <span class="meta-item"><i class="bi bi-calendar3"></i> {{ post.published_date }}</span>
+              }
+              @if (post.url) {
+                <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
+                  <i class="bi bi-box-arrow-up-right"></i> Ver post original
+                </a>
+              }
+            </div>
+
+            <!-- TAGS DO CURRÍCULO ENCONTRADAS -->
+            @if (post.matched_keywords && post.matched_keywords.length > 0) {
+              <div class="matched-tags-row">
+                <span class="tags-label">Tags do CV:</span>
+                <div class="tags-list">
+                  @for (tag of post.matched_keywords; track tag) {
+                    <span class="kw-tag">{{ tag }}</span>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- TEXTO COMPLETO EXPANSÍVEL -->
+            <div class="post-body">
+              <div class="post-description" [class.expanded]="isExpanded(post.id)">
+                {{ post.description }}
+              </div>
+              <div class="post-footer-actions">
+                <button type="button" class="btn-toggle-expand" (click)="toggleExpand(post.id)">
+                  <i class="bi" [class.bi-chevron-down]="!isExpanded(post.id)" [class.bi-chevron-up]="isExpanded(post.id)"></i>
+                  <span>{{ isExpanded(post.id) ? 'Recolher texto' : 'Ver publicação completa' }}</span>
+                </button>
+
+                <button type="button"
+                        class="btn-dismiss"
+                        (click)="dismissPost(post.id)"
+                        title="Ocultar esta publicação do radar">
+                  <i class="bi bi-eye-slash"></i> Ocultar
+                </button>
+              </div>
+            </div>
+
+          </article>
+        }
+      </div>
+    }
+
+  </section>
+
+</div>

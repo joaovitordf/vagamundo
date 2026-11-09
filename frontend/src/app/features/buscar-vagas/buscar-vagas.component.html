@@ -44,23 +44,16 @@
 
             (ngModelChange)="onFilterChange()">
 
+          <div class="input-actions-cluster">
+            @if (filterText) {
+              <button type="button" class="btn-clear-input" (click)="clearTextFilter()" title="Limpar palavras-chave">×</button>
+            }
 
-
-          @if (filterText) {
-
-            <button type="button" class="btn-clear-input" (click)="clearTextFilter()" title="Limpar palavras-chave">×</button>
-
-          }
-
-
-
-          <button type="button" class="btn-random-cv" (click)="pickRandomCvArea()" title="Sortear área do seu currículo">
-
-            <i class="bi bi-dice-5"></i>
-
-            <span>Sortear área CV</span>
-
-          </button>
+            <button type="button" class="btn-random-cv" (click)="pickRandomCvArea()" title="Sortear área do seu currículo">
+              <i class="bi bi-dice-5"></i>
+              <span>Sortear área CV</span>
+            </button>
+          </div>
 
         </div>
 

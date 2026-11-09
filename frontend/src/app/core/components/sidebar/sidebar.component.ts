@@ -28,6 +28,7 @@ export class SidebarComponent implements OnInit {
     { label: 'Dashboard', route: '/dashboard', icon: 'bi-speedometer2' },
     { label: 'Meu Perfil', route: '/meu-perfil', icon: 'bi-person-badge' },
     { label: 'Buscar e Vagas', route: '/buscar-vagas', icon: 'bi-search' },
+    { label: 'Recrutadores', route: '/recrutadores', icon: 'bi-envelope-at' },
     { label: 'Me Interessam', route: '/me-interessam', icon: 'bi-star' },
     { label: 'Candidaturas', route: '/candidaturas', icon: 'bi-send-check' },
     { label: 'Evolução', route: '/evolucao', icon: 'bi-graph-up' },
@@ -40,6 +41,12 @@ export class SidebarComponent implements OnInit {
     effect(() => {
       const vagas = this.api.sessionVagas();
       this.updateCount('/buscar-vagas', this.api.hasSearchedInSession() ? vagas.length : 0);
+    });
+    effect(() => {
+      this.updateCount(
+        '/recrutadores',
+        this.api.hasSearchedRecruitersInSession() ? this.api.recruiterPostsCount() : 0
+      );
     });
     effect(() => {
       this.updateCount('/me-interessam', this.api.savedCount());

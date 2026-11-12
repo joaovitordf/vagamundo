@@ -10,6 +10,7 @@ from backend.api.models import (
     ApplicationRemoveRequest,
     ApplicationSaveRequest,
     AppliedRequest,
+    ReopenRecruiterRequest,
     SingleUrlRequest,
 )
 from backend.api.security import verify_csrf_token
@@ -71,6 +72,17 @@ async def list_applications(
         except Exception:
             pass
 
+    job_ids = [a.get("job_id") for a in raw_apps if a.get("job_id")]
+    job_urls = [
+        (a.get("job_url") or a.get("url") or a.get("source"))
+        for a in raw_apps
+        if (a.get("job_url") or a.get("url") or a.get("source"))
+    ]
+    try:
+        recruiter_ctx_map = tracker.repo.get_recruiter_context_for_jobs(job_ids, job_urls)
+    except Exception:
+        recruiter_ctx_map = {}
+
     normalized = []
     for a in raw_apps:
         company = a.get("job_company") or a.get("company") or ""
@@ -78,6 +90,21 @@ async def list_applications(
         url = a.get("job_url") or a.get("url") or a.get("source") or ""
         date_val = a.get("applied_date") or a.get("date") or ""
         channel_val = a.get("job_portal") or a.get("channel") or a.get("portal") or "portal"
+        jid = a.get("job_id")
+        ctx = recruiter_ctx_map.get(f"id:{jid}") or recruiter_ctx_map.get(f"url:{url}") or {}
+        rec_emails = ctx.get("emails") or []
+        contacted_email = (a.get("contacted_email") or ctx.get("contacted_email") or "").strip() or None
+        contacted_at = a.get("contacted_at") or ctx.get("contacted_at")
+        recruiter_post_id = a.get("recruiter_post_id") or ctx.get("post_id")
+        is_direct = bool(
+            contacted_email
+            or a.get("contact_channel") == "recruiter_email"
+            or str(url).startswith("recruiter://")
+        )
+        contact_channel = "recruiter_email" if is_direct else (a.get("contact_channel") or "portal")
+        if is_direct and not contacted_email and rec_emails:
+            contacted_email = rec_emails[0]
+        job_description = a.get("job_description") or ctx.get("description") or ""
 
         # Resolve PDF materials
         pdfs = {}
@@ -134,6 +161,12 @@ async def list_applications(
             "pdf_cv": pdf_cv,
             "pdf_carta": pdf_carta,
             "pdf_entrevista": pdf_entrevista,
+            "recruiter_emails": rec_emails,
+            "recruiter_post_id": recruiter_post_id,
+            "contacted_email": contacted_email,
+            "contacted_at": contacted_at,
+            "contact_channel": contact_channel,
+            "job_description": job_description,
         })
 
     return {"applications": normalized, "total": len(normalized)}
@@ -221,13 +254,38 @@ async def mark_applied(
             tracker.upsert_job(updates)
 
     if job:
+        ctx_map = tracker.repo.get_recruiter_context_for_jobs([job["id"]], [req.url])
+        ctx = ctx_map.get(f"id:{job['id']}") or ctx_map.get(f"url:{req.url}") or {}
+        rec_emails = ctx.get("emails") or []
+        recruiter_post_id = ctx.get("post_id")
+        contacted_email = (req.contacted_email or "").strip().lower() or None
+        is_direct = bool(
+            req.contact_channel == "recruiter_email"
+            or contacted_email
+            or str(req.url).startswith("recruiter://")
+        )
+        contact_channel = "recruiter_email" if is_direct else (req.contact_channel or "portal")
+        if is_direct and not contacted_email and rec_emails:
+            contacted_email = rec_emails[0].strip().lower()
+
+        notes_val = f"E-mail direto: {contacted_email}" if contacted_email else "Registrado pelo painel"
         tracker.mark_jobs([job["id"]], decision="applied", source="painel")
         tracker.record_application({
             "job_id": job["id"],
             "status": "applied",
             "applied_date": painel.date.today().isoformat(),
-            "notes": "Registrado pelo painel",
+            "notes": notes_val,
+            "contact_channel": contact_channel,
+            "contacted_email": contacted_email,
+            "recruiter_post_id": recruiter_post_id,
         })
+        if recruiter_post_id and contacted_email and is_direct:
+            tracker.repo.mark_recruiter_post_contacted(
+                post_id=recruiter_post_id,
+                job_id=job["id"],
+                contacted_email=contacted_email,
+                contacted_at=painel.date.today().isoformat(),
+            )
 
     # Record in immutable ledger to preserve historical data even if removed from active list
     company_name = req.company or (job.get("company") if job else "") or ""
@@ -291,6 +349,35 @@ async def remove_application(
         painel.remove_application(url_to_clean)
 
     return {"ok": True, "removed": True, "url": url_to_clean}
+
+
+@router.post("/applications/reopen-recruiter")
+async def reopen_recruiter_application(
+    req: ReopenRecruiterRequest,
+    tracker: TrackerService = Depends(get_tracker),
+    _csrf: str = Depends(verify_csrf_token),
+) -> Dict[str, Any]:
+    """Undo a direct recruiter outreach application and restore the post to Recrutadores."""
+    reopened = tracker.repo.reopen_recruiter_post_from_application(
+        app_id=req.id,
+        job_id=req.job_id,
+        job_url=req.url,
+        recruiter_post_id=req.recruiter_post_id,
+    )
+    if not reopened:
+        raise HTTPException(
+            status_code=404,
+            detail="Candidatura de recrutador não encontrada para reabrir.",
+        )
+
+    url_to_clean = reopened.get("url") or (req.url or "").strip()
+    if url_to_clean:
+        try:
+            painel.remove_application(url_to_clean)
+        except Exception:
+            pass
+
+    return {"ok": True, "reopened": True, **reopened}
 
 
 @router.get("/applications/{app_id}/events")

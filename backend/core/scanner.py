@@ -42,6 +42,18 @@ class ScannerService:
             "portals": {},
         }
         self.subscribers: List[Any] = []
+        self._proc: Optional[subprocess.Popen] = None
+
+    def cancel(self) -> bool:
+        with self.lock:
+            proc = self._proc
+            if not self.running or proc is None:
+                return False
+        try:
+            proc.terminate()
+            return True
+        except Exception:
+            return False
 
     def subscribe(self, q: Any) -> None:
         with self.lock:
@@ -149,6 +161,8 @@ class ScannerService:
                 cwd=ROOT,
                 env={**os.environ, "PYTHONIOENCODING": "utf-8"},
             )
+            with self.lock:
+                self._proc = proc
 
             for line in iter(proc.stdout.readline, ""):
                 line_str = line.strip()
@@ -210,9 +224,44 @@ class ScannerService:
                 self.error = str(exc)
         finally:
             with self.lock:
+                self._proc = None
                 self.running = False
                 copy_prog = dict(self.progress)
             self._notify({"type": "done", "status": "completed", **copy_prog})
+
+    @staticmethod
+    def _norm_text(value: Any) -> str:
+        return " ".join(str(value or "").lower().split())
+
+    @staticmethod
+    def _norm_url(value: Any) -> str:
+        """URL sem query string, fragmento e barra final, para comparar a mesma vaga com variações de tracking."""
+        s = str(value or "").strip().lower()
+        if not s:
+            return ""
+        s = s.split("#", 1)[0].split("?", 1)[0]
+        return s.rstrip("/")
+
+    def _load_applied_index(self) -> tuple:
+        """URLs e pares (empresa, cargo) de vagas já candidatadas, vindos do ledger de candidaturas e da tabela jobs."""
+        urls: set = set()
+        pairs: set = set()
+        queries = (
+            "SELECT job_url AS url, company, role AS title FROM application_ledger",
+            "SELECT url, company, title FROM jobs WHERE status = 'applied'",
+        )
+        for sql in queries:
+            try:
+                for row in self.repo.conn.execute(sql).fetchall():
+                    u = self._norm_url(row["url"])
+                    if u:
+                        urls.add(u)
+                    c, t = self._norm_text(row["company"]), self._norm_text(row["title"])
+                    if c and t:
+                        pairs.add((c, t))
+            except Exception:
+                continue
+        return urls, pairs
 
     def load_results(self) -> Dict[str, Any]:
         """Load currently available results, filtering already-seen jobs."""
@@ -225,11 +274,16 @@ class ScannerService:
 
         # Filter against SQLite jobs marked as discarded or interested
         all_new = data.get("new", [])
+        applied_urls, applied_pairs = self._load_applied_index()
         filtered = []
         for j in all_new:
             url = j.get("url")
             company = j.get("company")
             title = j.get("title")
+            if (self._norm_url(url) in applied_urls) or (
+                (self._norm_text(company), self._norm_text(title)) in applied_pairs
+            ):
+                continue
             cur = self.repo.conn.execute(
                 "SELECT id, status, fit FROM jobs WHERE url = ? OR (LOWER(TRIM(company)) = LOWER(TRIM(?)) AND LOWER(TRIM(title)) = LOWER(TRIM(?)))",
                 (url, company or "", title or ""),

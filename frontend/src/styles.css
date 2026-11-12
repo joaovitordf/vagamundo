@@ -468,3 +468,176 @@ html, body {
   color: var(--vc-muted);
   border: 1px solid rgba(148, 163, 184, 0.3);
 }
+
+/* Modo Automático em Buscar Vagas e Recrutadores */
+.auto-mode-trigger-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 3px 8px 3px 3px;
+  border-radius: 9px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.btn-auto-mode {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  color: #fff;
+  border: none;
+  padding: 0.58rem 1.05rem;
+  border-radius: 7px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: opacity 0.2s ease;
+}
+
+.btn-auto-mode.is-running {
+  background: #dc2626;
+}
+
+.btn-auto-mode:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.btn-auto-mode:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auto-score-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fbbf24;
+  padding-right: 4px;
+}
+
+.auto-score-field input {
+  width: 52px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(15, 23, 42, 0.75);
+  color: #fef3c7;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.auto-continuous-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fde68a;
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-continuous-toggle input[type="checkbox"] {
+  accent-color: #f59e0b;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.auto-cooldown-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #fde68a;
+}
+
+.auto-cooldown-field input {
+  width: 48px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(15, 23, 42, 0.75);
+  color: #fef3c7;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.auto-cooldown-field input:disabled,
+.auto-score-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Banner compartilhado de filtros ativos e chip "Sem data" */
+.active-filters-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+
+.active-filters-banner__text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #93c5fd;
+}
+
+.active-filters-banner__text i {
+  color: #60a5fa;
+}
+
+.active-filters-banner__reason {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  opacity: 0.92;
+}
+
+.btn-clear-all-filters {
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #bfdbfe;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-clear-all-filters:hover {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(96, 165, 250, 0.65);
+  color: #ffffff;
+}
+
+.chip-undated {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

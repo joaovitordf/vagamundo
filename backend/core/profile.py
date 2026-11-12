@@ -9,7 +9,7 @@ from backend.tools import painel, painel_perfil
 
 _here = Path(__file__).resolve()
 ROOT = _here.parent.parent.parent if _here.parent.parent.name == "backend" else _here.parent.parent
-GEO_PATH = ROOT / "backend" / "tools" / "painel" / "geo_data.json"
+GEO_PATH = ROOT / "frontend" / "src" / "assets" / "geo_data.json"
 
 
 class ProfileService:

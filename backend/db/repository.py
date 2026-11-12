@@ -3,6 +3,7 @@
 from __future__ import annotations
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -39,14 +40,102 @@ class Repository:
     """Manages SQLite queries, transactions, and object mapping."""
 
     def __init__(self, db_path: str | Path | None = None):
-        self.conn = get_db(db_path)
+        self._db_path = db_path
+        self._is_memory = str(db_path or "") == ":memory:" or "mode=memory" in str(db_path or "")
+        self._main_thread_id = threading.get_ident()
+        self._local = threading.local()
+        self._thread_conns: dict[int, sqlite3.Connection] = {}
+        self._conn_lock = threading.Lock()
+        self._main_conn = get_db(db_path)
         self._init_schema()
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        tid = threading.get_ident()
+        if self._is_memory or tid == self._main_thread_id:
+            return self._main_conn
+        c = getattr(self._local, "conn", None)
+        if c is None:
+            c = get_db(self._db_path)
+            self._local.conn = c
+            with self._conn_lock:
+                alive = {t.ident for t in threading.enumerate() if t.ident is not None}
+                for old_tid in list(self._thread_conns.keys()):
+                    if old_tid not in alive:
+                        old_conn = self._thread_conns.pop(old_tid, None)
+                        if old_conn is not None:
+                            try:
+                                old_conn.close()
+                            except Exception:
+                                pass
+                self._thread_conns[tid] = c
+        return c
+
+    @conn.setter
+    def conn(self, value: sqlite3.Connection) -> None:
+        self._main_conn = value
 
     def _init_schema(self) -> None:
         if SCHEMA_PATH.exists():
             schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
             self.conn.executescript(schema_sql)
+        self._migrate_recruiter_posts()
+        self._migrate_applications()
         self._backfill_ledger()
+
+    def _migrate_recruiter_posts(self) -> None:
+        """Idempotently add AI triage, auto-mode & outreach columns to existing recruiter_posts tables."""
+        try:
+            cur = self.conn.execute("PRAGMA table_info(recruiter_posts)")
+            existing = {r["name"] for r in cur.fetchall()}
+            if not existing:
+                return
+            columns = {
+                "ai_classification": "TEXT",
+                "ai_score": "INTEGER",
+                "ai_verdict": "TEXT",
+                "ai_summary": "TEXT",
+                "ai_best_email": "TEXT",
+                "ai_evaluated_at": "TEXT",
+                "auto_promoted": "INTEGER DEFAULT 0",
+                "auto_run_id": "TEXT",
+                "contacted_email": "TEXT",
+                "contacted_at": "TEXT",
+            }
+            with self.conn:
+                for col, ddl in columns.items():
+                    if col not in existing:
+                        self.conn.execute(f"ALTER TABLE recruiter_posts ADD COLUMN {col} {ddl}")
+                self.conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_recruiter_posts_ai_class ON recruiter_posts(ai_classification)"
+                )
+                self.conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_recruiter_posts_auto_run ON recruiter_posts(auto_run_id)"
+                )
+        except Exception:
+            pass
+
+    def _migrate_applications(self) -> None:
+        """Idempotently add direct recruiter outreach tracking columns to existing applications tables."""
+        try:
+            cur = self.conn.execute("PRAGMA table_info(applications)")
+            existing = {r["name"] for r in cur.fetchall()}
+            if not existing:
+                return
+            columns = {
+                "contact_channel": "TEXT DEFAULT 'portal'",
+                "contacted_email": "TEXT",
+                "recruiter_post_id": "INTEGER",
+            }
+            with self.conn:
+                for col, ddl in columns.items():
+                    if col not in existing:
+                        self.conn.execute(f"ALTER TABLE applications ADD COLUMN {col} {ddl}")
+                self.conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_applications_contacted_email ON applications(contacted_email)"
+                )
+        except Exception:
+            pass
 
     def _backfill_ledger(self) -> None:
         """Ensure all current and historic applied jobs are recorded in application_ledger."""
@@ -104,8 +193,19 @@ class Repository:
             pass
 
     def close(self) -> None:
-        if self.conn:
-            self.conn.close()
+        with self._conn_lock:
+            conns = list(self._thread_conns.values())
+            self._thread_conns.clear()
+        for c in conns:
+            try:
+                c.close()
+            except Exception:
+                pass
+        if getattr(self, "_main_conn", None):
+            try:
+                self._main_conn.close()
+            except Exception:
+                pass
 
     def __enter__(self) -> Repository:
         return self
@@ -515,6 +615,9 @@ class Repository:
                         interview_notes_path = COALESCE(?, interview_notes_path),
                         applied_date = COALESCE(?, applied_date),
                         notes = COALESCE(?, notes),
+                        contact_channel = COALESCE(?, contact_channel),
+                        contacted_email = COALESCE(?, contacted_email),
+                        recruiter_post_id = COALESCE(?, recruiter_post_id),
                         updated_at = ?
                     WHERE id = ?
                     """,
@@ -525,6 +628,9 @@ class Repository:
                         app.get("interview_notes_path"),
                         app.get("applied_date"),
                         app.get("notes"),
+                        app.get("contact_channel"),
+                        app.get("contacted_email"),
+                        app.get("recruiter_post_id"),
                         now,
                         app_id,
                     ),
@@ -536,8 +642,9 @@ class Repository:
                     INSERT INTO applications (
                         job_id, status, cv_path, cover_letter_path,
                         interview_notes_path, applied_date, notes,
+                        contact_channel, contacted_email, recruiter_post_id,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         job_id,
@@ -547,6 +654,9 @@ class Repository:
                         app.get("interview_notes_path"),
                         app.get("applied_date", now[:10]),
                         app.get("notes"),
+                        app.get("contact_channel") or "portal",
+                        app.get("contacted_email"),
+                        app.get("recruiter_post_id"),
                         now,
                         now,
                     ),
@@ -575,6 +685,7 @@ class Repository:
         query = """
             SELECT a.*, j.title as job_title, j.company as job_company, j.url as job_url,
                    j.portal as job_portal, j.location as job_location,
+                   j.description as job_description,
                    j.posted_date as job_posted_date, j.created_at as job_created_at,
                    (SELECT COUNT(*) FROM application_events WHERE application_id = a.id) as event_count,
                    (SELECT stage FROM application_events WHERE application_id = a.id ORDER BY event_date DESC, id DESC LIMIT 1) as latest_event_stage
@@ -937,6 +1048,9 @@ class Repository:
             "digai-search": "DigAÍ",
             "empregos-search": "Empregos.com.br",
             "freehire-search": "FreeHire",
+            "linkedin_post": "LinkedIn (Post)",
+            "hn-search": "Hacker News",
+            "recruiter_radar": "Recrutadores",
         }
         cur = self.conn.execute("""
             SELECT COALESCE(NULLIF(portal, ''), 'manual') as portal_code, COUNT(*) as count
@@ -993,27 +1107,32 @@ class Repository:
         now = _now_iso()
 
         url = post.get("url")
+        job_id = post.get("job_id")
+        existing_row = None
         if url:
             cur = self.conn.execute("SELECT id FROM recruiter_posts WHERE url = ?", (url,))
-            row = cur.fetchone()
-            if row:
-                post_id = row["id"]
-                self.conn.execute("""
-                    UPDATE recruiter_posts
-                    SET emails = ?, email_context = ?, title = ?, company = ?,
-                        portal = ?, location = ?, work_model = ?, published_date = ?,
-                        description = ?, matched_keywords = ?, match_score = ?,
-                        job_id = COALESCE(?, job_id)
-                    WHERE id = ?
-                """, (
-                    emails_json, post.get("email_context"), post.get("title", "Oportunidade"),
-                    post.get("company", "Empresa"), post.get("portal", "outros"),
-                    post.get("location"), post.get("work_model"), post.get("published_date"),
-                    post.get("description", ""), matched_kw_json, post.get("match_score", 0),
-                    post.get("job_id"), post_id
-                ))
-                self.conn.commit()
-                return post_id
+            existing_row = cur.fetchone()
+        if not existing_row and job_id:
+            cur = self.conn.execute("SELECT id FROM recruiter_posts WHERE job_id = ?", (job_id,))
+            existing_row = cur.fetchone()
+        if existing_row:
+            post_id = existing_row["id"]
+            self.conn.execute("""
+                UPDATE recruiter_posts
+                SET emails = ?, email_context = ?, title = ?, company = ?,
+                    portal = ?, location = ?, work_model = ?, published_date = ?,
+                    description = ?, matched_keywords = ?, match_score = ?,
+                    job_id = COALESCE(?, job_id)
+                WHERE id = ?
+            """, (
+                emails_json, post.get("email_context"), post.get("title", "Oportunidade"),
+                post.get("company", "Empresa"), post.get("portal", "outros"),
+                post.get("location"), post.get("work_model"), post.get("published_date"),
+                post.get("description", ""), matched_kw_json, post.get("match_score", 0),
+                job_id, post_id
+            ))
+            self.conn.commit()
+            return post_id
 
         cur = self.conn.execute("""
             INSERT INTO recruiter_posts (
@@ -1035,18 +1154,33 @@ class Repository:
         self,
         query: str | None = None,
         only_cv: bool = False,
-        portal: str | None = None
+        portal: str | None = None,
+        include_non_jobs: bool = True,
+        only_untriaged: bool = False,
     ) -> list[dict]:
-        """List recruiter posts with optional keyword filtering and CV match."""
-        sql = "SELECT * FROM recruiter_posts WHERE dismissed = 0"
+        """List active recruiter posts with optional keyword, CV match, portal and AI filters."""
+        sql = """
+            SELECT rp.*
+            FROM recruiter_posts rp
+            LEFT JOIN jobs j ON rp.job_id = j.id
+            WHERE rp.dismissed = 0
+              AND COALESCE(rp.auto_promoted, 0) = 0
+              AND (rp.job_id IS NULL OR j.status IS NULL OR j.status NOT IN ('interested', 'applied', 'discarded', 'skipped'))
+        """
         params: list[Any] = []
 
         if only_cv:
-            sql += " AND match_score > 0"
+            sql += " AND (rp.match_score > 0 OR (rp.ai_classification = 'vaga_ativa' AND COALESCE(rp.ai_score, 0) > 0))"
 
         if portal:
-            sql += " AND portal = ?"
+            sql += " AND rp.portal = ?"
             params.append(portal)
+
+        if not include_non_jobs:
+            sql += " AND COALESCE(rp.ai_classification, '') != 'nao_e_vaga'"
+
+        if only_untriaged:
+            sql += " AND rp.ai_evaluated_at IS NULL"
 
         if query and query.strip():
             terms = [t.strip() for t in query.split(",") if t.strip()]
@@ -1054,11 +1188,17 @@ class Repository:
                 clauses = []
                 for t in terms:
                     pattern = f"%{t}%"
-                    clauses.append("(title LIKE ? OR company LIKE ? OR description LIKE ? OR emails LIKE ? OR matched_keywords LIKE ?)")
+                    clauses.append("(rp.title LIKE ? OR rp.company LIKE ? OR rp.description LIKE ? OR rp.emails LIKE ? OR rp.matched_keywords LIKE ?)")
                     params.extend([pattern, pattern, pattern, pattern, pattern])
                 sql += " AND (" + " OR ".join(clauses) + ")"
 
-        sql += " ORDER BY match_score DESC, published_date DESC, id DESC"
+        sql += """
+            ORDER BY
+                CASE WHEN rp.ai_classification = 'nao_e_vaga' THEN 1 ELSE 0 END ASC,
+                COALESCE(rp.ai_score, rp.match_score) DESC,
+                rp.published_date DESC,
+                rp.id DESC
+        """
 
         cur = self.conn.execute(sql, params)
         posts = []
@@ -1068,6 +1208,360 @@ class Repository:
             d["matched_keywords"] = _deserialize(d.get("matched_keywords")) or []
             posts.append(d)
         return posts
+
+    def get_recruiter_post(self, post_id: int) -> dict | None:
+        """Fetch a single recruiter post by ID."""
+        cur = self.conn.execute("SELECT * FROM recruiter_posts WHERE id = ?", (post_id,))
+        r = cur.fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        d["emails"] = _deserialize(d.get("emails")) or []
+        d["matched_keywords"] = _deserialize(d.get("matched_keywords")) or []
+        return d
+
+    def update_recruiter_post_ai(
+        self,
+        post_id: int,
+        classification: str,
+        score: int | None,
+        verdict: str | None,
+        summary: str | None,
+        best_email: str | None = None,
+        auto_dismissed: bool = False,
+        evaluated_at: str | None = None,
+    ) -> bool:
+        """Persist AI triage metadata for a recruiter post (and optionally auto-dismiss)."""
+        ts = evaluated_at or _now_iso()
+        with self.conn:
+            cur = self.conn.execute(
+                """
+                UPDATE recruiter_posts
+                SET ai_classification = ?,
+                    ai_score = ?,
+                    ai_verdict = ?,
+                    ai_summary = ?,
+                    ai_best_email = ?,
+                    ai_evaluated_at = ?,
+                    dismissed = CASE WHEN ? THEN 1 ELSE dismissed END
+                WHERE id = ?
+                """,
+                (
+                    classification,
+                    score,
+                    verdict,
+                    summary,
+                    best_email or None,
+                    ts,
+                    1 if auto_dismissed else 0,
+                    post_id,
+                ),
+            )
+        return cur.rowcount > 0
+
+    def mark_recruiter_post_promoted(
+        self,
+        post_id: int,
+        job_id: str,
+        run_id: str | None = None,
+    ) -> bool:
+        """Link a recruiter post to its promoted job row and mark auto-promotion provenance."""
+        with self.conn:
+            cur = self.conn.execute(
+                """
+                UPDATE recruiter_posts
+                SET job_id = ?,
+                    auto_promoted = 1,
+                    auto_run_id = ?,
+                    dismissed = 0
+                WHERE id = ?
+                """,
+                (job_id, run_id, post_id),
+            )
+        return cur.rowcount > 0
+
+    def clear_recruiter_post_promotion(
+        self,
+        job_id: str | None = None,
+        run_id: str | None = None,
+    ) -> int:
+        """Revert auto-promotion flag on recruiter_posts while preserving AI triage cache."""
+        if not job_id and not run_id:
+            return 0
+        with self.conn:
+            if job_id:
+                cur = self.conn.execute(
+                    "UPDATE recruiter_posts SET auto_promoted = 0, auto_run_id = NULL WHERE job_id = ?",
+                    (job_id,),
+                )
+            else:
+                cur = self.conn.execute(
+                    "UPDATE recruiter_posts SET auto_promoted = 0, auto_run_id = NULL WHERE auto_run_id = ?",
+                    (run_id,),
+                )
+        return cur.rowcount
+
+    def get_recruiter_context_for_jobs(
+        self,
+        job_ids: list[str],
+        urls: list[str] | None = None,
+    ) -> dict[str, dict]:
+        """Map job_id / url -> recruiter context (ordered emails, post_id, contacted_email, contacted_at, description)."""
+        clean_ids = [jid for jid in job_ids if jid]
+        clean_urls = [u for u in (urls or []) if u]
+        if not clean_ids and not clean_urls:
+            return {}
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if clean_ids:
+            ph = ",".join("?" for _ in clean_ids)
+            clauses.append(f"job_id IN ({ph})")
+            params.extend(clean_ids)
+        if clean_urls:
+            ph = ",".join("?" for _ in clean_urls)
+            clauses.append(f"url IN ({ph})")
+            params.extend(clean_urls)
+
+        cur = self.conn.execute(
+            f"""
+            SELECT id, job_id, url, emails, ai_best_email, contacted_email, contacted_at, description
+            FROM recruiter_posts
+            WHERE {' OR '.join(clauses)}
+            """,
+            params,
+        )
+        mapping: dict[str, dict] = {}
+        for r in cur.fetchall():
+            emails = _deserialize(r["emails"]) or []
+            if not isinstance(emails, list):
+                emails = []
+            best = (r["ai_best_email"] or "").strip()
+            ordered: list[str] = []
+            if best:
+                ordered.append(best)
+            for em in emails:
+                em_s = str(em).strip()
+                if em_s and em_s not in ordered:
+                    ordered.append(em_s)
+            if not ordered and not r["contacted_email"]:
+                continue
+            ctx = {
+                "post_id": r["id"],
+                "emails": ordered,
+                "contacted_email": (r["contacted_email"] or "").strip() or None,
+                "contacted_at": r["contacted_at"],
+                "description": r["description"] or "",
+            }
+            if r["job_id"]:
+                mapping[f"id:{r['job_id']}"] = ctx
+            if r["url"]:
+                mapping[f"url:{r['url']}"] = ctx
+        return mapping
+
+    def get_recruiter_emails_for_jobs(
+        self,
+        job_ids: list[str],
+        urls: list[str] | None = None,
+    ) -> dict[str, list[str]]:
+        """Map job_id / url -> ordered direct recruiter email list (best email first)."""
+        contexts = self.get_recruiter_context_for_jobs(job_ids, urls)
+        return {
+            key: ctx["emails"]
+            for key, ctx in contexts.items()
+            if ctx.get("emails")
+        }
+
+    def get_contacted_recruiter_emails(self) -> dict[str, dict]:
+        """Return active contacted recruiter emails keyed by lowercase address."""
+        contacted: dict[str, dict] = {}
+
+        def _store(email_val: str | None, info: dict) -> None:
+            em = (email_val or "").strip().lower()
+            if not em:
+                return
+            existing = contacted.get(em)
+            if not existing or (info.get("contacted_at") or "") > (existing.get("contacted_at") or ""):
+                contacted[em] = info
+
+        cur = self.conn.execute("""
+            SELECT rp.id as post_id, rp.contacted_email, rp.contacted_at,
+                   COALESCE(NULLIF(rp.company, ''), j.company, '') as company,
+                   COALESCE(NULLIF(rp.title, ''), j.title, '') as title,
+                   rp.job_id,
+                   a.id as application_id,
+                   a.applied_date
+            FROM recruiter_posts rp
+            LEFT JOIN jobs j ON rp.job_id = j.id
+            LEFT JOIN applications a ON a.job_id = rp.job_id
+            WHERE rp.contacted_email IS NOT NULL AND TRIM(rp.contacted_email) != ''
+              AND (a.id IS NOT NULL OR COALESCE(j.status, '') = 'applied')
+        """)
+        for r in cur.fetchall():
+            ts = r["contacted_at"] or r["applied_date"] or ""
+            _store(r["contacted_email"], {
+                "email": (r["contacted_email"] or "").strip(),
+                "company": r["company"] or "",
+                "title": r["title"] or "",
+                "contacted_at": ts,
+                "job_id": r["job_id"],
+                "application_id": r["application_id"],
+            })
+
+        cur2 = self.conn.execute("""
+            SELECT a.id as application_id, a.contacted_email, a.applied_date, a.updated_at,
+                   a.job_id, j.company, j.title
+            FROM applications a
+            JOIN jobs j ON a.job_id = j.id
+            WHERE a.contacted_email IS NOT NULL AND TRIM(a.contacted_email) != ''
+        """)
+        for r in cur2.fetchall():
+            ts = r["applied_date"] or (r["updated_at"] or "")[:10]
+            _store(r["contacted_email"], {
+                "email": (r["contacted_email"] or "").strip(),
+                "company": r["company"] or "",
+                "title": r["title"] or "",
+                "contacted_at": ts,
+                "job_id": r["job_id"],
+                "application_id": r["application_id"],
+            })
+
+        return contacted
+
+    def mark_recruiter_post_contacted(
+        self,
+        post_id: int,
+        job_id: str,
+        contacted_email: str,
+        contacted_at: str | None = None,
+    ) -> bool:
+        """Link a recruiter post to its applied job and record contacted email/timestamp."""
+        ts = contacted_at or _now_iso()
+        with self.conn:
+            cur = self.conn.execute(
+                """
+                UPDATE recruiter_posts
+                SET job_id = ?,
+                    contacted_email = ?,
+                    contacted_at = ?,
+                    auto_promoted = 0,
+                    dismissed = 0
+                WHERE id = ?
+                """,
+                (job_id, contacted_email.strip().lower(), ts, post_id),
+            )
+        return cur.rowcount > 0
+
+    def reopen_recruiter_post_from_application(
+        self,
+        app_id: int | None = None,
+        job_id: str | None = None,
+        job_url: str | None = None,
+        recruiter_post_id: int | None = None,
+    ) -> dict | None:
+        """Delete application, archive ledger, reset job status to 'new' and restore recruiter post."""
+        now = _now_iso()
+        target_job_id = job_id
+        target_url = (job_url or "").strip()
+
+        if app_id:
+            app = self.get_application(app_id)
+            if app:
+                target_job_id = target_job_id or app.get("job_id")
+                if not recruiter_post_id:
+                    recruiter_post_id = app.get("recruiter_post_id")
+
+        if not target_job_id and target_url:
+            job = self.get_job_by_url(target_url)
+            if job:
+                target_job_id = job["id"]
+
+        if target_job_id and not target_url:
+            job = self.get_job(target_job_id)
+            if job:
+                target_url = job.get("url") or ""
+
+        # Locate matching recruiter_posts rows before deleting application
+        clauses: list[str] = []
+        params: list[Any] = []
+        if recruiter_post_id:
+            clauses.append("id = ?")
+            params.append(recruiter_post_id)
+        if target_job_id:
+            clauses.append("job_id = ?")
+            params.append(target_job_id)
+        if target_url:
+            clauses.append("url = ?")
+            params.append(target_url)
+
+        matched_posts: list[dict] = []
+        if clauses:
+            cur = self.conn.execute(
+                f"SELECT id, job_id, url FROM recruiter_posts WHERE {' OR '.join(clauses)}",
+                params,
+            )
+            matched_posts = [dict(r) for r in cur.fetchall()]
+            if matched_posts and not recruiter_post_id:
+                recruiter_post_id = matched_posts[0]["id"]
+            if matched_posts and not target_job_id:
+                target_job_id = matched_posts[0].get("job_id")
+
+        if not matched_posts and not recruiter_post_id and not target_url.startswith("recruiter://"):
+            return None
+
+        with self.conn:
+            if app_id:
+                self.conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+            if target_job_id:
+                self.conn.execute("DELETE FROM applications WHERE job_id = ?", (target_job_id,))
+
+            if target_job_id or target_url:
+                self.conn.execute(
+                    """
+                    UPDATE application_ledger
+                    SET active_in_list = 0, archived_at = ?
+                    WHERE (job_id IS NOT NULL AND job_id != '' AND job_id = ?)
+                       OR (job_url IS NOT NULL AND job_url != '' AND job_url = ?)
+                    """,
+                    (now, target_job_id or "", target_url or ""),
+                )
+
+            if target_job_id:
+                row = self.conn.execute(
+                    "SELECT status FROM jobs WHERE id = ?", (target_job_id,)
+                ).fetchone()
+                old_status = row["status"] if row else None
+                self.conn.execute(
+                    "UPDATE jobs SET status = 'new', updated_at = ? WHERE id = ?",
+                    (now, target_job_id),
+                )
+                self.conn.execute(
+                    """
+                    INSERT INTO status_log (job_id, from_status, to_status, source, note, created_at)
+                    VALUES (?, ?, 'new', 'reopen_recruiter', 'Reaberto para Recrutadores', ?)
+                    """,
+                    (target_job_id, old_status, now),
+                )
+
+            if clauses:
+                self.conn.execute(
+                    f"""
+                    UPDATE recruiter_posts
+                    SET contacted_email = NULL,
+                        contacted_at = NULL,
+                        dismissed = 0,
+                        auto_promoted = 0,
+                        auto_run_id = NULL
+                    WHERE {' OR '.join(clauses)}
+                    """,
+                    params,
+                )
+
+        return {
+            "post_id": recruiter_post_id,
+            "job_id": target_job_id,
+            "url": target_url,
+        }
 
     def dismiss_recruiter_post(self, post_id: int) -> bool:
         """Soft delete a recruiter post by setting dismissed = 1."""
@@ -1079,11 +1573,14 @@ class Repository:
         return cur.rowcount > 0
 
     def get_jobs_with_potential_emails(self) -> list[dict]:
-        """Fetch all jobs from DB whose description mentions an email symbol (@)."""
+        """Fetch active/pending jobs from DB whose description mentions an email symbol (@)."""
         cur = self.conn.execute("""
             SELECT id, title, company, portal, url, location, work_model, posted_date, description
             FROM jobs
-            WHERE description IS NOT NULL AND description LIKE '%@%'
+            WHERE description IS NOT NULL
+              AND description LIKE '%@%'
+              AND COALESCE(url, '') NOT LIKE 'recruiter://%'
+              AND COALESCE(status, 'new') NOT IN ('discarded', 'applied', 'skipped')
         """)
         return [dict(r) for r in cur.fetchall()]
 

@@ -75,6 +75,21 @@
         </select>
       </div>
 
+      <!-- Filtro por Canal de Contato -->
+      <div class="filter-group">
+        <label class="filter-label" for="cand-channel-filter">
+          <i class="bi bi-envelope-at"></i> Canal:
+        </label>
+        <select id="cand-channel-filter"
+          class="vc-select"
+          [ngModel]="channelFilter()"
+          (ngModelChange)="channelFilter.set($event)">
+          <option value="all">Todos os canais</option>
+          <option value="recruiter_email">E-mail direto (Recrutadores)</option>
+          <option value="portal">Somente portais</option>
+        </select>
+      </div>
+
       <!-- Seletor de Ordenação -->
       <div class="filter-group">
         <label class="filter-label" for="cand-sort-order">
@@ -98,7 +113,7 @@
           <input type="text"
             id="cand-search-text"
             class="vc-input"
-            placeholder="Empresa, cargo ou canal..."
+            placeholder="Empresa, cargo, canal ou e-mail..."
             [ngModel]="searchTerm()"
             (ngModelChange)="searchTerm.set($event)">
           @if (searchTerm()) {
@@ -143,6 +158,9 @@
           }
           @if (statusFilter() !== 'all') {
             &bull; Status: "<strong>{{ getStatusLabel(statusFilter()) }}</strong>"
+          }
+          @if (channelFilter() !== 'all') {
+            &bull; Canal: "<strong>{{ getChannelFilterLabel(channelFilter()) }}</strong>"
           }
           @if (searchTerm()) {
             &bull; Busca: "<strong>{{ searchTerm() }}</strong>"
@@ -207,8 +225,24 @@
                 }
               </td>
               <td class="cell-role">{{ app.role || app.title || app.job_title || '-' }}</td>
-              <td>
-                <span class="portal-badge">{{ app.channel || app.portal || 'portal' }}</span>
+              <td class="cell-channel">
+                <div class="channel-cell-wrap">
+                  <span class="portal-badge">{{ getPortalLabel(app.channel || app.portal) }}</span>
+                  @if (app.contact_channel === 'recruiter_email' || app.contacted_email) {
+                    <span class="direct-email-badge" title="Candidatura enviada por e-mail direto de recrutador">
+                      <i class="bi bi-envelope-at"></i> E-mail direto
+                    </span>
+                  }
+                  @if (getPrimaryEmail(app); as recEmail) {
+                    <button type="button"
+                            class="btn-cand-email-chip"
+                            (click)="copyRecruiterEmail(recEmail)"
+                            [title]="'Clique para copiar ' + recEmail">
+                      <i class="bi" [class.bi-check2]="copiedEmail() === recEmail" [class.bi-envelope]="copiedEmail() !== recEmail"></i>
+                      <span>{{ copiedEmail() === recEmail ? 'Copiado!' : recEmail }}</span>
+                    </button>
+                  }
+                </div>
               </td>
               <td>
                 <span class="status-badge" [class]="app.status || 'applied'">
@@ -270,10 +304,20 @@
                     }
                   </button>
 
-                  @if (app.source || app.url || app.job_url) {
+                  @if (isHttpUrl(app.source || app.url || app.job_url)) {
                     <a [href]="app.source || app.url || app.job_url" target="_blank" rel="noopener noreferrer" class="btn-action-site-vaga" title="Ver site da vaga no portal">
                       <i class="bi bi-box-arrow-up-right"></i> Ver site da vaga
                     </a>
+                  }
+
+                  @if (isRecruiterApplication(app)) {
+                    <button type="button"
+                            class="btn-action-reopen"
+                            (click)="reopenInRecruiters(app)"
+                            [disabled]="reopeningKey() === (app.url || app.job_url || app.id)"
+                            title="Desfazer registro e devolver para a aba Recrutadores">
+                      <i class="bi bi-arrow-counterclockwise"></i> Reabrir
+                    </button>
                   }
 
                   <button type="button" class="btn-action-descartar" (click)="deleteApplication(app)" title="Descartar candidatura da lista">
@@ -301,10 +345,19 @@
           </p>
         </div>
         <div class="modal-header-actions">
-          @if (selectedApp().source || selectedApp().url || selectedApp().job_url) {
+          @if (isHttpUrl(selectedApp().source || selectedApp().url || selectedApp().job_url)) {
             <a [href]="selectedApp().source || selectedApp().url || selectedApp().job_url" target="_blank" rel="noopener noreferrer" class="btn-action-site-vaga" title="Abrir página oficial da vaga no portal">
               <i class="bi bi-box-arrow-up-right"></i> Ver site da vaga
             </a>
+          }
+          @if (isRecruiterApplication(selectedApp())) {
+            <button type="button"
+                    class="btn-action-reopen"
+                    (click)="reopenInRecruiters(selectedApp())"
+                    [disabled]="reopeningKey() === (selectedApp().url || selectedApp().job_url || selectedApp().id)"
+                    title="Devolver esta oportunidade para a aba Recrutadores">
+              <i class="bi bi-arrow-counterclockwise"></i> Reabrir em Recrutadores
+            </button>
           }
           <button type="button" class="btn-close-modal" (click)="closeHistoryModal()" title="Fechar janela">
             <i class="bi bi-x-lg"></i>
@@ -313,6 +366,33 @@
       </div>
 
       <div class="modal-body">
+        @if (getPrimaryEmail(selectedApp()) || selectedApp().job_description) {
+          <div class="modal-recruiter-context">
+            <div class="modal-recruiter-context__top">
+              <div class="modal-recruiter-context__badges">
+                @if (selectedApp().contact_channel === 'recruiter_email' || selectedApp().contacted_email) {
+                  <span class="direct-email-badge"><i class="bi bi-envelope-at"></i> Contato direto</span>
+                }
+                @if (getPrimaryEmail(selectedApp()); as mEmail) {
+                  <button type="button" class="btn-cand-email-chip" (click)="copyRecruiterEmail(mEmail)">
+                    <i class="bi" [class.bi-check2]="copiedEmail() === mEmail" [class.bi-clipboard]="copiedEmail() !== mEmail"></i>
+                    <span>{{ copiedEmail() === mEmail ? 'Copiado!' : mEmail }}</span>
+                  </button>
+                }
+              </div>
+              @if (selectedApp().job_description) {
+                <button type="button" class="btn-toggle-post-desc" (click)="showModalPostText.set(!showModalPostText())">
+                  <i class="bi" [class.bi-chevron-down]="!showModalPostText()" [class.bi-chevron-up]="showModalPostText()"></i>
+                  {{ showModalPostText() ? 'Ocultar texto original' : 'Ver texto da publicação' }}
+                </button>
+              }
+            </div>
+            @if (showModalPostText() && selectedApp().job_description) {
+              <div class="modal-post-description">{{ selectedApp().job_description }}</div>
+            }
+          </div>
+        }
+
         <!-- Banners de IA: Carta, Currículo e Entrevista -->
         <div class="ai-docs-section">
           <!-- Banner Carta -->

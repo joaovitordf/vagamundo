@@ -582,4 +582,96 @@
   font-weight: 600;
 }
 
+.job-card__badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge-auto-promoted {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #34d399;
+}
+
+.footer-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-undo-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0.45rem 0.8rem;
+  border-radius: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  color: #fbbf24;
+  transition: all 0.2s ease;
+}
+
+.btn-undo-auto:hover {
+  background: rgba(245, 158, 11, 0.26);
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.recruiter-emails-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.recruiter-emails-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6ee7b7;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-recruiter-email-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: rgba(15, 23, 42, 0.65);
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-recruiter-email-chip:hover {
+  border-color: #34d399;
+  color: #ffffff;
+}
+
+.copied-icon {
+  color: #34d399;
+}
+
 

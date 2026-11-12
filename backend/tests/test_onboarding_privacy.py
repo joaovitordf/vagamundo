@@ -37,27 +37,29 @@ class TestForkWarningsAtTheDecisionPoint(unittest.TestCase):
         self.assertRegex(
             body,
             re.compile(r"public|públic", re.IGNORECASE),
-            f"{where}'s fork section must say the fork will be public",
+            f"{where}'s clone/fork section must warn against public forks",
         )
         self.assertIn(
             "dados pessoais",
             body,
-            f"{where}'s fork section must say /setup writes personal data into tracked files",
+            f"{where}'s clone/fork section must say /setup writes personal data",
         )
-        self.assertRegex(
+        self.assertIn(
+            "SECURITY.md",
             body,
-            re.compile(r"section 8|seção 8|§8|#8-", re.IGNORECASE),
-            f"{where}'s fork section must point at SETUP.md section 8's private-remote recipe",
+            f"{where}'s clone/fork section must point to SECURITY.md",
         )
 
     def test_readme_quick_start_warns_next_to_the_fork_command(self):
-        body = section(README.read_text(encoding="utf-8"), "### 1. Fork e clone")
-        self.assertIn("gh repo fork", body, "sanity: the fork command lives in this section")
+        body = section(README.read_text(encoding="utf-8"), "### 1. Clonar e Instalar Dependências")
+        self.assertIn("git clone", body, "sanity: the clone command lives in this section")
+        self.assertIn("gh repo fork", body, "sanity: the fork warning stays adjacent to clone/fork guidance")
         self.assert_warns(body, "README")
 
     def test_setup_guide_warns_next_to_the_fork_command(self):
-        body = section(SETUP_GUIDE.read_text(encoding="utf-8"), "## 2. Fork e clone")
-        self.assertIn("gh repo fork", body, "sanity: the fork command lives in this section")
+        body = section(SETUP_GUIDE.read_text(encoding="utf-8"), "### Passo 1: Clonar o Repositório")
+        self.assertIn("git clone", body, "sanity: the clone command lives in this section")
+        self.assertIn("gh repo fork", body, "sanity: the fork warning stays adjacent to clone/fork guidance")
         self.assert_warns(body, "SETUP.md")
 
 

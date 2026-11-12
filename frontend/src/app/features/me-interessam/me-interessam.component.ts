@@ -1,7 +1,8 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { AutoModeService } from '../../core/services/auto-mode.service';
 
 const PORTAIS: Record<string, string> = {
   'gupy-search': 'Gupy',
@@ -26,6 +27,12 @@ const PORTAIS: Record<string, string> = {
   'habrcareer-search': 'Habr Career',
   'google-careers': 'Google Careers',
   'eures': 'EURES (Europa)',
+  'hn-search': 'Hacker News',
+  'linkedin_post': 'LinkedIn (Post)',
+  'github-vagas': 'GitHub Vagas BR',
+  'remotive-search': 'Remotive',
+  'remoteok-search': 'RemoteOK',
+  'recruiter_radar': 'Recrutadores',
 };
 
 @Component({
@@ -37,10 +44,12 @@ const PORTAIS: Record<string, string> = {
 })
 export class MeInteressamComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly autoMode = inject(AutoModeService);
 
   savedJobs = signal<any[]>([]);
   loading = signal<boolean>(true);
   actionStatus = signal<string>('');
+  copiedRecruiterEmail = signal<string | null>(null);
 
   // Filtros de Data e Busca
   dateCriterion = signal<'saved' | 'posted'>('saved'); // 'saved' = quando adicionei; 'posted' = data da vaga
@@ -49,11 +58,25 @@ export class MeInteressamComponent implements OnInit {
   customEndDate = signal<string>('');
   sortOrder = signal<'recent' | 'oldest' | 'score'>('recent');
   searchTerm = signal<string>('');
+  onlyAuto = signal<boolean>(false);
+
+  private lastSeenAutoTick = 0;
+
+  constructor() {
+    effect(() => {
+      const tick = this.autoMode.resultsRefreshTick();
+      if (tick > 0 && tick !== this.lastSeenAutoTick) {
+        this.lastSeenAutoTick = tick;
+        this.loadSaved();
+      }
+    });
+  }
 
   // Indicador de filtros ativos
   hasActiveFilters = computed(() => {
     return this.dateRange() !== 'all' ||
       this.searchTerm().trim().length > 0 ||
+      this.onlyAuto() ||
       (this.dateRange() === 'custom' && (!!this.customStartDate() || !!this.customEndDate())) ||
       this.sortOrder() !== 'recent';
   });
@@ -67,6 +90,11 @@ export class MeInteressamComponent implements OnInit {
     const start = this.customStartDate();
     const end = this.customEndDate();
     const order = this.sortOrder();
+    const filterAuto = this.onlyAuto();
+
+    if (filterAuto) {
+      list = list.filter(j => Boolean(j.auto_promoted));
+    }
 
     // 1. Filtro textual
     if (search) {
@@ -164,6 +192,7 @@ export class MeInteressamComponent implements OnInit {
     this.customStartDate.set('');
     this.customEndDate.set('');
     this.searchTerm.set('');
+    this.onlyAuto.set(false);
     this.sortOrder.set('recent');
   }
 
@@ -205,11 +234,16 @@ export class MeInteressamComponent implements OnInit {
 
   markApplied(job: any): void {
     this.actionStatus.set(`Registrando candidatura para "${job.title || 'vaga'}"…`);
+    const isDirectRecruiter = typeof job?.url === 'string' && job.url.startsWith('recruiter://');
+    const firstEmail = Array.isArray(job?.recruiter_emails) && job.recruiter_emails.length > 0
+      ? job.recruiter_emails[0]
+      : undefined;
     this.api.markApplied({
       url: job.url,
       company: job.company,
       role: job.title || job.role,
       portal: job.portal,
+      ...(isDirectRecruiter ? { contact_channel: 'recruiter_email', contacted_email: firstEmail } : {}),
     }).subscribe({
       next: () => {
         this.actionStatus.set('');
@@ -227,5 +261,31 @@ export class MeInteressamComponent implements OnInit {
       next: () => this.loadSaved(),
       error: (err) => alert('Erro ao descartar: ' + (err.error?.detail || err.message))
     });
+  }
+
+  undoAutoJob(job: any): void {
+    this.actionStatus.set(`Revertendo "${job.title || 'vaga'}"…`);
+    this.autoMode.undoSingleJob({ url: job.url, job_id: job.id }).subscribe({
+      next: () => {
+        this.actionStatus.set('');
+        this.loadSaved();
+      },
+      error: (err) => {
+        this.actionStatus.set('');
+        alert('Erro ao desfazer promoção automática: ' + (err.error?.detail || err.message));
+      }
+    });
+  }
+
+  copyRecruiterEmail(email: string): void {
+    if (!email) return;
+    navigator.clipboard.writeText(email).then(() => {
+      this.copiedRecruiterEmail.set(email);
+      setTimeout(() => {
+        if (this.copiedRecruiterEmail() === email) {
+          this.copiedRecruiterEmail.set(null);
+        }
+      }, 2200);
+    }).catch(() => {});
   }
 }

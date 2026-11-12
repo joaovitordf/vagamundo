@@ -123,6 +123,20 @@ class AppliedRequest(BaseModel):
     company: Optional[str] = ''
     role: Optional[str] = ''
     portal: Optional[str] = ''
+    contact_channel: Optional[str] = None
+    contacted_email: Optional[str] = None
+
+
+class RecruiterContactedRequest(BaseModel):
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ReopenRecruiterRequest(BaseModel):
+    id: Optional[int] = None
+    job_id: Optional[str] = None
+    url: Optional[str] = None
+    recruiter_post_id: Optional[int] = None
 
 
 class ApplicationEventCreateRequest(BaseModel):
@@ -143,3 +157,44 @@ class PasteRecruiterPostRequest(BaseModel):
     company: Optional[str] = None
     location: Optional[str] = None
     work_model: Optional[str] = None
+
+
+class AutoModeStartRequest(BaseModel):
+    region: Optional[str] = None
+    portals: Optional[List[str]] = None
+    jobage: Optional[int] = None
+    min_score: Optional[int] = None
+    hide_undated: Optional[bool] = None
+    continuous: Optional[bool] = None
+    cooldown_seconds: Optional[int] = None
+
+
+class AutoModeConfigRequest(BaseModel):
+    region: Optional[str] = None
+    portals: Optional[List[str]] = None
+    jobage: Optional[int] = None
+    min_score: Optional[int] = None
+    hide_undated: Optional[bool] = None
+    continuous: Optional[bool] = None
+    cooldown_seconds: Optional[int] = None
+
+
+class AutoModeUndoRequest(BaseModel):
+    run_id: Optional[str] = None
+
+
+class AutoModeUndoJobRequest(BaseModel):
+    url: Optional[str] = None
+    job_id: Optional[str] = None
+
+
+class RecruiterAutoStartRequest(BaseModel):
+    min_score: Optional[int] = None
+    continuous: Optional[bool] = None
+    cooldown_seconds: Optional[int] = None
+
+
+class RecruiterAutoConfigRequest(BaseModel):
+    min_score: Optional[int] = None
+    continuous: Optional[bool] = None
+    cooldown_seconds: Optional[int] = None

@@ -75,6 +75,28 @@
         </select>
       </div>
 
+      <!-- Filtro rápido Modo Automático -->
+      <div class="filter-group">
+        <label class="filter-label">
+          <i class="bi bi-robot"></i> Origem:
+        </label>
+        <div class="date-type-toggle">
+          <button type="button"
+            class="toggle-btn"
+            [class.active]="!onlyAuto()"
+            (click)="onlyAuto.set(false)">
+            Todas
+          </button>
+          <button type="button"
+            class="toggle-btn"
+            [class.active]="onlyAuto()"
+            (click)="onlyAuto.set(true)"
+            title="Mostrar apenas vagas adicionadas pelo Modo Automático">
+            <i class="bi bi-robot"></i> Somente Auto
+          </button>
+        </div>
+      </div>
+
       <!-- Busca textual -->
       <div class="filter-group search-group">
         <label class="filter-label" for="mi-search-text">
@@ -166,15 +188,42 @@
               {{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}
             </p>
           </div>
-          @if (job.screening && job.screening.score !== undefined && job.screening.score !== null) {
-            <span class="vc-badge-fit"
-              [class.vc-badge-fit--high]="job.screening.score >= 75"
-              [class.vc-badge-fit--med]="job.screening.score >= 50 && job.screening.score < 75"
-              [class.vc-badge-fit--low]="job.screening.score < 50">
-              {{ job.screening.score }}/100 &bull; {{ job.screening.verdict || (job.screening.score >= 75 ? 'Alta Afinidade' : (job.screening.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
-            </span>
-          }
+          <div class="job-card__badges">
+            @if (job.auto_promoted) {
+              <span class="badge-auto-promoted"
+                    [title]="job.auto_origin === 'recruiter' ? 'Promovida automaticamente pelo Modo Automático (Recrutadores)' : 'Promovida automaticamente pelo Modo Automático'">
+                <i class="bi bi-robot"></i> Auto{{ job.auto_origin === 'recruiter' ? ' · Recrutador' : '' }}
+              </span>
+            }
+            @if (job.screening && job.screening.score !== undefined && job.screening.score !== null) {
+              <span class="vc-badge-fit"
+                [class.vc-badge-fit--high]="job.screening.score >= 75"
+                [class.vc-badge-fit--med]="job.screening.score >= 50 && job.screening.score < 75"
+                [class.vc-badge-fit--low]="job.screening.score < 50">
+                {{ job.screening.score }}/100 &bull; {{ job.screening.verdict || (job.screening.score >= 75 ? 'Alta Afinidade' : (job.screening.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
+              </span>
+            }
+          </div>
         </div>
+
+        @if (job.recruiter_emails?.length) {
+          <div class="recruiter-emails-banner">
+            <span class="recruiter-emails-label"><i class="bi bi-envelope-at"></i> E-mail direto:</span>
+            @for (email of job.recruiter_emails; track email) {
+              <button type="button"
+                      class="btn-recruiter-email-chip"
+                      (click)="copyRecruiterEmail(email)"
+                      title="Copiar e-mail direto do recrutador">
+                <span>{{ email }}</span>
+                @if (copiedRecruiterEmail() === email) {
+                  <i class="bi bi-check2 copied-icon"></i>
+                } @else {
+                  <i class="bi bi-clipboard"></i>
+                }
+              </button>
+            }
+          </div>
+        }
 
         @if (job.screening && job.screening.summary) {
           <p class="screening-summary-text">{{ job.screening.summary }}</p>
@@ -237,16 +286,25 @@
 
         <div class="job-card__footer">
           <div class="footer-buttons">
-            <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="btn-view-job" title="Abrir página oficial da vaga no portal">
-              <i class="bi bi-box-arrow-up-right"></i> Ver site da vaga
-            </a>
+            @if (job.url && (job.url.startsWith('http://') || job.url.startsWith('https://'))) {
+              <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="btn-view-job" title="Abrir página oficial da vaga no portal">
+                <i class="bi bi-box-arrow-up-right"></i> Ver site da vaga
+              </a>
+            }
             <button type="button" class="btn-apply-direct" (click)="markApplied(job)" title="Mover para a aba Candidaturas">
               <i class="bi bi-send-check"></i> Já me candidatei
             </button>
           </div>
-          <button type="button" class="btn-discard" (click)="discardJob(job)" title="Mover para Descartadas">
-            <i class="bi bi-trash3"></i> Descartar
-          </button>
+          <div class="footer-actions-right">
+            @if (job.auto_promoted) {
+              <button type="button" class="btn-undo-auto" (click)="undoAutoJob(job)" [title]="job.auto_origin === 'recruiter' ? 'Desfazer promoção automática e devolver para Recrutadores' : 'Desfazer promoção automática e devolver para Buscar Vagas (mantendo a nota já calculada)'">
+                <i class="bi bi-arrow-counterclockwise"></i> Desfazer Auto
+              </button>
+            }
+            <button type="button" class="btn-discard" (click)="discardJob(job)" title="Mover para Descartadas">
+              <i class="bi bi-trash3"></i> Descartar
+            </button>
+          </div>
         </div>
       </article>
     }

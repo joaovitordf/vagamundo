@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 import asyncio
+import ipaddress
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 import httpx
 
 from backend.db.repository import Repository
@@ -24,6 +26,26 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def validate_public_http_url(url: str) -> Tuple[bool, str]:
+    """Ensure URL is a public http/https target (SSRF protection against local/metadata targets)."""
+    raw = str(url or "").strip()
+    parsed = urlsplit(raw)
+    if parsed.scheme.lower() not in ("http", "https"):
+        return False, "invalid_scheme"
+    host = (parsed.hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return False, "missing_host"
+    if host in ("localhost", "ip6-localhost", "metadata.google.internal") or host.endswith((".localhost", ".local", ".internal")):
+        return False, "blocked_internal_host"
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            return False, "blocked_private_ip"
+    except ValueError:
+        pass
+    return True, "OK"
+
+
 class LivenessService:
     """Probes URLs and ATS endpoints to verify if postings are still live."""
 
@@ -35,6 +57,14 @@ class LivenessService:
     async def probe_url(self, client: httpx.AsyncClient, url: str) -> Dict[str, Any]:
         """Probe a single URL to check liveness."""
         now = _now_iso()
+        ok_url, url_reason = validate_public_http_url(url)
+        if not ok_url:
+            return {
+                "url": url,
+                "alive": None,
+                "reason": url_reason,
+                "checked_at": now,
+            }
         async with self.semaphore:
             try:
                 # 1. Try HEAD request first
@@ -109,7 +139,7 @@ class LivenessService:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
         }
-        async with httpx.AsyncClient(headers=headers, verify=False) as client:
+        async with httpx.AsyncClient(headers=headers, verify=True) as client:
             tasks = [self.probe_url(client, u) for u in urls]
             results = await asyncio.gather(*tasks, return_exceptions=False)
 
@@ -121,15 +151,4 @@ class LivenessService:
                     self.repo.mark_jobs([job["id"]], decision="expired", source="liveness", note=r.get("reason", ""))
 
         return results
-
-    async def sweep_expired(self, max_age_days: int = 30) -> int:
-        """Sweep older jobs from SQLite and check their liveness."""
-        cur = self.repo.conn.execute(
-            "SELECT url FROM jobs WHERE status IN ('new', 'ranked') LIMIT 100"
-        )
-        urls = [row["url"] for row in cur.fetchall() if row["url"]]
-        if not urls:
-            return 0
-        results = await self.check(urls)
-        return sum(1 for r in results if r.get("alive") is False)
 

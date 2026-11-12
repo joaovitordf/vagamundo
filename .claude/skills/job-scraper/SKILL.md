@@ -336,7 +336,7 @@ saúde: <portal> - quebrado (0 resultados para a busca de teste do SKILL.md e pa
 
 | # | Encaixe | Vaga | Empresa | Local | Regime | Prazo | URL |
 |---|---------|------|---------|-------|--------|-------|-----|
-| 1 | Alto | ... | ... | ... | CLT | ... | [Link](...) |
+| 1 | Alto | ... | ... | ... | CLT | ... | [Link](https://exemplo.com/vaga) |
 
 Se o Passo 2.5 sinalizou um padrão de vaga em massa, registre na célula Vaga (ex.: "Desenvolvedor Frontend (publicada em 6 cidades)") em vez de esconder. Faça o mesmo com um alerta de nível insuficiente num idioma declarado, do filtro de idioma (ex.: "Engenheiro Backend ⚠ exige inglês fluente") — os dois são sinais que a pessoa deve ver de relance, não só nos destaques abaixo.
 

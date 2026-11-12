@@ -1,15 +1,19 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { HeaderComponent } from './core/components/header/header.component';
 import { SidebarComponent } from './core/components/sidebar/sidebar.component';
 import { FooterComponent } from './core/components/footer/footer.component';
+import { AutoModeBannerComponent } from './core/components/auto-mode-banner/auto-mode-banner.component';
+import { AutoModeService } from './core/services/auto-mode.service';
+import { ApiService } from './core/services/api.service';
 
 const ROUTE_META: Record<string, { title: string; icon: string }> = {
   '/dashboard': { title: 'Dashboard', icon: 'bi-speedometer2' },
   '/buscar-vagas': { title: 'Buscar e Vagas', icon: 'bi-search' },
   '/me-interessam': { title: 'Vagas que Me Interessam', icon: 'bi-star' },
+  '/recrutadores': { title: 'Recrutadores', icon: 'bi-envelope-at' },
   '/candidaturas': { title: 'Minhas Candidaturas', icon: 'bi-send-check' },
   '/evolucao': { title: 'Evolução e Métricas', icon: 'bi-graph-up' },
   '/curriculos-cartas': { title: 'Currículos e Cartas Compilados', icon: 'bi-file-earmark-pdf' },
@@ -21,12 +25,14 @@ const ROUTE_META: Record<string, { title: string; icon: string }> = {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterModule, HeaderComponent, SidebarComponent, FooterComponent],
+  imports: [CommonModule, RouterModule, HeaderComponent, SidebarComponent, FooterComponent, AutoModeBannerComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   private readonly router = inject(Router);
+  private readonly autoMode = inject(AutoModeService);
+  private readonly api = inject(ApiService);
 
   isCollapsed = false;
   mobileOpen = false;
@@ -43,6 +49,11 @@ export class AppComponent {
       this.pageIcon = meta.icon;
       this.mobileOpen = false;
     });
+  }
+
+  ngOnInit(): void {
+    this.autoMode.init();
+    this.api.hydratePersistedSessions();
   }
 
   toggleSidebar(): void {

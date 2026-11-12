@@ -36,7 +36,6 @@ async def trigger_search(
 
 
 @router.get("/status", response_model=SearchStatusResponse)
-@router.get("/search/status", response_model=SearchStatusResponse)
 async def search_status(
     scanner: ScannerService = Depends(get_scanner),
     evaluator: EvaluatorService = Depends(get_evaluator),
@@ -46,7 +45,6 @@ async def search_status(
 
 
 @router.get("/stream")
-@router.get("/search/stream")
 async def search_stream(
     scanner: ScannerService = Depends(get_scanner),
 ) -> StreamingResponse:

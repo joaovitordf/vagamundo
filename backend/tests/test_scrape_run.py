@@ -273,5 +273,55 @@ class Cli(unittest.TestCase):
         self.assertIn("/setup", p.stderr.decode("utf-8"))
 
 
+class QueryAndRegionNormalization(unittest.TestCase):
+    def test_comma_separated_queries_split_and_deduplicate(self):
+        calls = [
+            (1, "gupy-search", ["-q", "antigo", "--remote"]),
+            (1, "gupy-search", ["-q", "outro", "--remote"]),
+            (2, "linkedin-search", ["-q", "antigo", "-l", "Brazil"]),
+        ]
+        updated = scrape_run._apply_query_terms(calls, "produto, dados, projetos, extra")
+        self.assertEqual(len(updated), 6)
+        self.assertEqual(updated[0][2], ["-q", "produto", "--remote"])
+        self.assertEqual(updated[1][2], ["-q", "produto", "-l", "Brazil"])
+        self.assertEqual(updated[2][2], ["-q", "dados", "--remote"])
+        self.assertEqual(updated[4][2], ["-q", "projetos", "--remote"])
+
+    def test_linkedin_location_normalized_for_brasil_and_remote(self):
+        self.assertEqual(
+            scrape_run._normalize_linkedin_location(["-q", "produto", "-l", "Remote"], "brasil"),
+            ["-q", "produto", "-l", "Brazil", "--remote", "remote"],
+        )
+        self.assertEqual(
+            scrape_run._normalize_linkedin_location(["-q", "produto"], "remote"),
+            ["-q", "produto", "-l", "Remote", "--remote", "remote"],
+        )
+        self.assertEqual(
+            scrape_run._normalize_linkedin_location(["-q", "produto", "-l", "Remote"], "global"),
+            ["-q", "produto", "-l", "Remote"],
+        )
+
+    def test_explicit_portal_with_mismatched_region_does_not_fallback_to_unrequested_portals(self):
+        calls = [(1, "gupy-search", ["-q", "produto"])]
+        out = scrape_run._filter_calls_by_region(
+            calls,
+            "europa",
+            has_explicit_portal=True,
+            installed={"gupy-search": True, "linkedin-search": True, "jobicy-search": True},
+            default_query="produto",
+        )
+        self.assertEqual(out, [])
+
+        # Sem --portal explícito, o fallback regional continua habilitado
+        out_fallback = scrape_run._filter_calls_by_region(
+            calls,
+            "europa",
+            has_explicit_portal=False,
+            installed={"gupy-search": True, "jobicy-search": True},
+            default_query="produto",
+        )
+        self.assertEqual([c[1] for c in out_fallback], ["jobicy-search"])
+
+
 if __name__ == "__main__":
     unittest.main()

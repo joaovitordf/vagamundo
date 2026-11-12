@@ -1,191 +1,28 @@
-import { Component, HostListener, OnInit, ElementRef, ViewChild, AfterViewInit, inject, signal, computed } from '@angular/core';
+import { Component, HostListener, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewInit, inject, signal, computed, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { AutoModeService } from '../../core/services/auto-mode.service';
+import { SearchStateService } from '../../core/services/search-state.service';
 import { Vaga } from '../../core/models/vaga.model';
-
-const PORTAIS: Record<string, string> = {
-  'gupy-search': 'Gupy',
-  'solides-search': 'Sólides',
-  'vagas-search': 'VAGAS.com',
-  'infojobs-search': 'InfoJobs',
-  'remotar-search': 'Remotar',
-  'greenhouse-search': 'Greenhouse',
-  'programathor-search': 'Programathor',
-  'geekhunter-search': 'GeekHunter',
-  'michaelpage-search': 'Michael Page',
-  'roberthalf-search': 'Robert Half',
-  'trampos-search': 'Trampos',
-  'pcd-search': 'PCD Online',
-  'agrobase-search': 'Agrobase',
-  'agrosearch-search': 'AGROSearch',
-  'digai-search': 'DigAÍ',
-  'empregos-search': 'Empregos.com.br',
-  'linkedin-search': 'LinkedIn',
-  'freehire-search': 'freehire',
-  'hh-search': 'HeadHunter (hh.ru)',
-  'habrcareer-search': 'Habr Career',
-  'google-careers': 'Google Careers',
-  'eures': 'EURES (Europa)',
-  'remoteok-search': 'RemoteOK',
-  'wwr-search': 'We Work Remotely',
-  'jobicy-search': 'Jobicy',
-  'hn-search': 'Hacker News',
-  'ashby-search': 'Ashby',
-  'lever-search': 'Lever',
-};
-
-const MODELOS: Record<string, string> = {
-  remote: 'Remoto',
-  hybrid: 'Híbrido',
-  'on-site': 'Presencial',
-  none: 'Não informado'
-};
-
-const BR_UF_WORDS = [
-  { uf: 'SP', name: 'São Paulo', words: ['são paulo', 'sao paulo', 'sp', 'campinas', 'santos', 'sorocaba', 'ribeirão preto', 'são josé dos campos', 'barueri', 'osasco', 'são bernardo', 'jundiaí'] },
-  { uf: 'MG', name: 'Minas Gerais', words: ['minas gerais', 'mg', 'belo horizonte', 'uberlândia', 'uberlandia', 'juiz de fora', 'contagem', 'betim'] },
-  { uf: 'RJ', name: 'Rio de Janeiro', words: ['rio de janeiro', 'rj', 'niterói', 'niteroi', 'petrópolis'] },
-  { uf: 'PR', name: 'Paraná', words: ['paraná', 'parana', 'pr', 'curitiba', 'maringá', 'londrina', 'cascavel'] },
-  { uf: 'SC', name: 'Santa Catarina', words: ['santa catarina', 'sc', 'florianópolis', 'florianopolis', 'joinville', 'blumenau', 'chapecó', 'itajai', 'itajaí'] },
-  { uf: 'RS', name: 'Rio Grande do Sul', words: ['rio grande do sul', 'rs', 'porto alegre', 'caxias do sul', 'canoas', 'são leopoldo', 'novo hamburgo'] },
-  { uf: 'BA', name: 'Bahia', words: ['bahia', 'ba', 'salvador', 'feira de santana', 'lauro de freitas'] },
-  { uf: 'PE', name: 'Pernambuco', words: ['pernambuco', 'pe', 'recife', 'olinda', 'jaboatao'] },
-  { uf: 'CE', name: 'Ceará', words: ['ceará', 'ceara', 'ce', 'fortaleza'] },
-  { uf: 'DF', name: 'Distrito Federal', words: ['distrito federal', 'df', 'brasília', 'brasilia'] },
-  { uf: 'GO', name: 'Goiás', words: ['goiás', 'goias', 'go', 'goiânia', 'goiania', 'anápolis'] },
-  { uf: 'ES', name: 'Espírito Santo', words: ['espírito santo', 'espirito santo', 'es', 'vitória', 'vitoria', 'vila velha', 'serra'] },
-  { uf: 'MT', name: 'Mato Grosso', words: ['mato grosso', 'mt', 'cuiabá', 'cuiaba'] },
-  { uf: 'MS', name: 'Mato Grosso do Sul', words: ['mato grosso do sul', 'ms', 'campo grande', 'dourados'] },
-  { uf: 'AM', name: 'Amazonas', words: ['amazonas', 'am', 'manaus'] },
-  { uf: 'PA', name: 'Pará', words: ['pará', 'belem', 'belém'] },
-  { uf: 'RN', name: 'Rio Grande do Norte', words: ['rio grande do norte', 'rn', 'natal'] },
-  { uf: 'PB', name: 'Paraíba', words: ['paraíba', 'paraiba', 'pb', 'joão pessoa', 'campina grande'] },
-  { uf: 'AL', name: 'Alagoas', words: ['alagoas', 'al', 'maceió', 'maceio'] },
-  { uf: 'SE', name: 'Sergipe', words: ['sergipe', 'se', 'aracaju'] },
-  { uf: 'PI', name: 'Piauí', words: ['piauí', 'piaui', 'pi', 'teresina'] },
-  { uf: 'MA', name: 'Maranhão', words: ['maranhão', 'maranhao', 'ma', 'são luís', 'sao luis'] },
-  { uf: 'RO', name: 'Rondônia', words: ['rondônia', 'rondonia', 'ro', 'porto velho'] },
-  { uf: 'TO', name: 'Tocantins', words: ['tocantins', 'to', 'palmas'] },
-  { uf: 'AC', name: 'Acre', words: ['acre', 'ac', 'rio branco'] },
-  { uf: 'AP', name: 'Amapá', words: ['amapá', 'amapa', 'ap', 'macapá', 'macapa'] },
-  { uf: 'RR', name: 'Roraima', words: ['roraima', 'rr', 'boa vista'] }
-];
-
-const WORLD_PATTERNS = [
-  { code: 'DE', name: 'Alemanha', scope: 'europa', words: ['germany', 'deutschland', 'alemanha', 'berlin', 'munich', 'münchen', 'frankfurt', 'hamburg', 'stuttgart', 'kiel'] },
-  { code: 'NL', name: 'Holanda', scope: 'europa', words: ['netherlands', 'holanda', 'países baixos', 'amsterdam', 'rotterdam', 'eindhoven', 'utrecht'] },
-  { code: 'GB', name: 'Reino Unido', scope: 'europa', words: ['united kingdom', 'reino unido', 'england', 'scotland', 'wales', 'london', 'manchester', 'cambridge', 'oxford'] },
-  { code: 'ES', name: 'Espanha', scope: 'europa', words: ['spain', 'espanha', 'españa', 'madrid', 'barcelona', 'valencia', 'seville', 'bilbao'] },
-  { code: 'FR', name: 'França', scope: 'europa', words: ['france', 'frança', 'paris', 'lyon', 'toulouse', 'marseille', 'nice', 'bordeaux'] },
-  { code: 'IT', name: 'Itália', scope: 'europa', words: ['italy', 'itália', 'italia', 'milan', 'milano', 'rome', 'roma', 'turin'] },
-  { code: 'PL', name: 'Polônia', scope: 'europa', words: ['poland', 'polônia', 'polska', 'warsaw', 'warszawa', 'krakow', 'kraków', 'wroclaw', 'gdansk'] },
-  { code: 'CH', name: 'Suíça', scope: 'europa', words: ['switzerland', 'suíça', 'suica', 'schweiz', 'zürich', 'zurich', 'geneva'] },
-  { code: 'SE', name: 'Suécia', scope: 'europa', words: ['sweden', 'suécia', 'suecia', 'stockholm', 'gothenburg', 'göteborg'] },
-  { code: 'FI', name: 'Finlândia', scope: 'europa', words: ['finland', 'finlândia', 'finlandia', 'helsinki', 'espoo'] },
-  { code: 'PT', name: 'Portugal', scope: 'europa', words: ['portugal', 'lisbon', 'lisboa', 'porto', 'braga', 'coimbra'] },
-  { code: 'IE', name: 'Irlanda', scope: 'europa', words: ['ireland', 'irlanda', 'dublin', 'cork', 'galway'] },
-  { code: 'BE', name: 'Bélgica', scope: 'europa', words: ['belgium', 'bélgica', 'belgica', 'brussels', 'bruxelles'] },
-  { code: 'AT', name: 'Áustria', scope: 'europa', words: ['austria', 'áustria', 'vienna', 'wien'] },
-  { code: 'NO', name: 'Noruega', scope: 'europa', words: ['norway', 'noruega', 'oslo', 'bergen'] },
-  { code: 'DK', name: 'Dinamarca', scope: 'europa', words: ['denmark', 'dinamarca', 'copenhagen'] },
-  { code: 'CZ', name: 'República Tcheca', scope: 'europa', words: ['czech', 'czechia', 'prague', 'praha'] },
-  { code: 'RO', name: 'Romênia', scope: 'europa', words: ['romania', 'romênia', 'bucharest'] },
-  { code: 'HU', name: 'Hungria', scope: 'europa', words: ['hungary', 'hungria', 'budapest'] },
-  { code: 'CA', name: 'Canadá', scope: 'global', words: ['canada', 'canadá', 'toronto', 'ontario', 'vancouver', 'montreal'] },
-  { code: 'US', name: 'Estados Unidos', scope: 'global', words: ['united states', 'estados unidos', 'usa', 'u.s.', 'washington', 'd.c.', 'san francisco', 'california', 'new york', 'seattle', 'austin', 'boston', 'chicago', 'texas', 'florida', 'los angeles', 'colorado', 'denver', 'mountain view', 'sunnyvale'] },
-  { code: 'RU', name: 'Rússia', scope: 'global', words: ['russia', 'rússia', 'россия', 'moscow', 'москва', 'saint petersburg'] },
-  { code: 'JP', name: 'Japão', scope: 'global', words: ['japan', 'japão', 'tokyo', 'osaka'] },
-  { code: 'SG', name: 'Singapura', scope: 'global', words: ['singapore', 'singapura', 'cingapura'] },
-  { code: 'AU', name: 'Austrália', scope: 'global', words: ['australia', 'austrália', 'sydney', 'melbourne'] },
-  { code: 'IN', name: 'Índia', scope: 'global', words: ['india', 'índia', 'bangalore', 'bengaluru', 'hyderabad'] },
-  { code: 'AR', name: 'Argentina', scope: 'global', words: ['argentina', 'buenos aires', 'cordoba'] },
-  { code: 'CL', name: 'Chile', scope: 'global', words: ['chile', 'santiago'] },
-  { code: 'CO', name: 'Colômbia', scope: 'global', words: ['colombia', 'colômbia', 'bogota', 'bogotá', 'medellin'] },
-  { code: 'MX', name: 'México', scope: 'global', words: ['mexico', 'méxico', 'mexico city', 'cdmx', 'guadalajara'] },
-  { code: 'UY', name: 'Uruguai', scope: 'global', words: ['uruguay', 'uruguai', 'montevideo'] },
-  { code: 'IL', name: 'Israel', scope: 'global', words: ['israel', 'tel aviv'] },
-  { code: 'KR', name: 'Coreia do Sul', scope: 'global', words: ['korea', 'south korea', 'coreia', 'seoul'] },
-  { code: 'AE', name: 'Emirados Árabes', scope: 'global', words: ['uae', 'emirates', 'dubai', 'abu dhabi'] }
-];
-
-const BR_PORTALS = new Set([
-  'gupy-search', 'solides-search', 'vagas-search', 'infojobs-search', 'remotar-search',
-  'programathor-search', 'geekhunter-search', 'trampos-search', 'pcd-search',
-  'agrobase-search', 'agrosearch-search', 'digai-search', 'empregos-search'
-]);
+import {
+  AVAILABLE_PORTALS,
+  ActiveGeoFilter,
+  GeoResolution,
+  PORTAL_CATEGORIES,
+  PortalOption,
+  getPortalDisplayName,
+  getWorkModelLabel,
+  isWithinDays,
+  matchesRegionFilter,
+  matchesScoreFilter,
+  matchesTextFilter,
+  normalizeWorkModel,
+  parseCalendarDateMs,
+  resolveGeo as resolveGeoUtil,
+} from '../../core/utils/job-filters.util';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-
-interface GeoResolution {
-  scope: 'brasil' | 'europa' | 'global';
-  countryCode: string;
-  code: string;
-  label: string;
-  isRemote: boolean;
-  remoteBucket: string | null;
-}
-
-interface ActiveGeoFilter {
-  type: 'country' | 'uf' | 'remote';
-  code: string;
-  name: string;
-  count: number;
-}
-
-
-export interface PortalOption {
-  id: string;
-  name: string;
-  category: 'brasil' | 'tech' | 'global' | 'executivo' | 'agro';
-  categoryLabel: string;
-  badge?: string;
-}
-
-export const PORTAL_CATEGORIES = [
-  { id: 'brasil', label: 'Portais Brasil' },
-  { id: 'tech', label: 'Tecnologia & Inovação' },
-  { id: 'global', label: 'Internacional & Remoto Global (Career-Ops)' },
-  { id: 'executivo', label: 'Executivo & Especialistas' },
-  { id: 'agro', label: 'Agronegócio' },
-];
-
-export const AVAILABLE_PORTALS: PortalOption[] = [
-  // Portais Brasil
-  { id: 'gupy-search', name: 'Gupy', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'portal.gupy.io' },
-  { id: 'solides-search', name: 'Sólides Vagas', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PMEs BR' },
-  { id: 'vagas-search', name: 'VAGAS.com', category: 'brasil', categoryLabel: 'Portais Brasil' },
-  { id: 'infojobs-search', name: 'InfoJobs Brasil', category: 'brasil', categoryLabel: 'Portais Brasil' },
-  { id: 'empregos-search', name: 'Empregos.com.br', category: 'brasil', categoryLabel: 'Portais Brasil' },
-  { id: 'trampos-search', name: 'Trampos', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Freelas & Tech' },
-  { id: 'digai-search', name: 'DigAÍ', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Entrevista IA' },
-  { id: 'pcd-search', name: 'PCD Online', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PcD Exclusivo' },
-
-  // Tecnologia & Inovação
-  { id: 'geekhunter-search', name: 'GeekHunter', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Tech BR' },
-  { id: 'programathor-search', name: 'Programathor', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Devs BR' },
-  { id: 'remotar-search', name: 'Remotar', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: '100% Remoto' },
-  { id: 'greenhouse-search', name: 'Greenhouse ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Global & BR' },
-  { id: 'ashby-search', name: 'Ashby ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'IA & Startups' },
-
-  // Internacional & Remoto Global (career-ops)
-  { id: 'remoteok-search', name: 'RemoteOK', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Remoto USD' },
-  { id: 'jobicy-search', name: 'Jobicy', category: 'global', categoryLabel: 'Internacional & Global', badge: '100% Remoto' },
-  { id: 'hn-search', name: 'Hacker News (HN)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Who is hiring' },
-  { id: 'freehire-search', name: 'FreeHire', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech Global' },
-  { id: 'linkedin-search', name: 'LinkedIn', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Global' },
-  { id: 'hh-search', name: 'HeadHunter (hh.ru)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Internacional' },
-  { id: 'habrcareer-search', name: 'Habr Career', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech RU' },
-  { id: 'europa', name: 'Europa EURES', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Oficial UE' },
-
-  // Executivo & Especialistas
-  { id: 'michaelpage-search', name: 'Michael Page', category: 'executivo', categoryLabel: 'Executivo & Especialistas' },
-  { id: 'roberthalf-search', name: 'Robert Half', category: 'executivo', categoryLabel: 'Executivo & Especialistas' },
-
-  // Agronegócio
-  { id: 'agrobase-search', name: 'Agrobase', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Agro BR' },
-  { id: 'agrosearch-search', name: 'AGROSearch', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Gestão Agro' }
-];
 
 @Component({
   selector: 'app-buscar-vagas',
@@ -194,33 +31,134 @@ export const AVAILABLE_PORTALS: PortalOption[] = [
   templateUrl: './buscar-vagas.component.html',
   styleUrl: './buscar-vagas.component.css'
 })
-export class BuscarVagasComponent implements OnInit, AfterViewInit {
+export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly api = inject(ApiService);
+  readonly autoMode = inject(AutoModeService);
+  readonly state = inject(SearchStateService);
+
+  private lastAutoTick = this.autoMode.resultsRefreshTick();
+  private lastAutoKeywords = '';
+  private searchEventSource: EventSource | null = null;
+  private searchFallbackInterval: any = null;
+  private batchPollInterval: any = null;
+
+  constructor() {
+    effect(() => {
+      const tick = this.autoMode.resultsRefreshTick();
+      const st = this.autoMode.status();
+      if (st?.running && st.mode !== 'recruiters' && st.phase !== 'cooldown' && st.keywords?.length) {
+        const kwStr = st.keywords.join(', ');
+        if (kwStr !== this.lastAutoKeywords) {
+          this.lastAutoKeywords = kwStr;
+          if (this.filterText !== kwStr) {
+            this.state.filterText.set(kwStr);
+            this.state.cvAreaBadge.set('Sorteado pela IA (Modo Automático)');
+            this.state.markSearchExecuted(kwStr);
+          }
+        }
+      }
+      if (!st?.running) {
+        this.lastAutoKeywords = '';
+      }
+      if (tick > 0 && tick !== this.lastAutoTick && st?.mode !== 'recruiters') {
+        this.lastAutoTick = tick;
+        this.loadResults();
+      }
+    }, { allowSignalWrites: true });
+  }
 
   @ViewChild('mapWorldContainer') mapWorldContainer!: ElementRef<HTMLDivElement>;
   @ViewChild('mapBrasilContainer') mapBrasilContainer!: ElementRef<HTMLDivElement>;
 
-  allVagas = signal<Vaga[]>([]);
+  readonly allVagas = this.state.allVagas;
   filteredVagas = signal<Vaga[]>([]);
-  activeSubtab = signal<'mapa' | 'lista'>('mapa');
-  currentMapMode: 'world' | 'brasil' = 'world';
+  readonly activeSubtab = this.state.activeSubtab;
 
-  // Filtros
-  filterText = '';
-  filterFocus = 'all';
-  filterModel = '';
-  filterRegion = '';
-  filterJobAge = '';
-  filterScore = '';
-  filterSort = 'date';
-  filterNoWarn = false;
-  filterVisa = false;
+  get currentMapMode(): 'world' | 'brasil' { return this.state.currentMapMode(); }
+  set currentMapMode(v: 'world' | 'brasil') {
+    this.state.currentMapMode.set(v);
+    this.state.persist();
+  }
+
+  get autoMinScore(): number { return this.state.autoMinScore(); }
+  set autoMinScore(v: number) {
+    this.state.autoMinScore.set(Number(v) || 60);
+    this.state.persist();
+  }
+
+  get autoContinuous(): boolean { return this.state.autoContinuous(); }
+  set autoContinuous(v: boolean) {
+    this.state.autoContinuous.set(Boolean(v));
+    this.state.persist();
+  }
+
+  get autoCooldownMinutes(): number { return this.state.autoCooldownMinutes(); }
+  set autoCooldownMinutes(v: number) {
+    const n = Number(v);
+    this.state.autoCooldownMinutes.set(Number.isNaN(n) ? 5 : n);
+    this.state.persist();
+  }
+
+  // Filtros persistidos no SearchStateService
+  get filterText(): string { return this.state.filterText(); }
+  set filterText(v: string) {
+    this.state.filterText.set(v);
+    this.state.persist();
+  }
+
+  get filterModel(): string { return this.state.filterModel(); }
+  set filterModel(v: string) {
+    this.state.filterModel.set(v);
+    this.state.persist();
+  }
+
+  get filterRegion(): string { return this.state.filterRegion(); }
+  set filterRegion(v: string) {
+    this.state.filterRegion.set(v);
+    this.state.persist();
+  }
+
+  get filterJobAge(): string { return this.state.filterJobAge(); }
+  set filterJobAge(v: string) {
+    this.state.filterJobAge.set(v);
+    this.state.persist();
+  }
+
+  get filterScore(): string { return this.state.filterScore(); }
+  set filterScore(v: string) {
+    this.state.filterScore.set(v);
+    this.state.persist();
+  }
+
+  get filterSort(): 'date' | 'score-desc' | 'score-asc' { return this.state.filterSort(); }
+  set filterSort(v: 'date' | 'score-desc' | 'score-asc') {
+    this.state.filterSort.set(v);
+    this.state.persist();
+  }
+
+  get filterNoWarn(): boolean { return this.state.filterNoWarn(); }
+  set filterNoWarn(v: boolean) {
+    this.state.filterNoWarn.set(v);
+    this.state.persist();
+  }
+
+  get filterHideUndated(): boolean { return this.state.filterHideUndated(); }
+  set filterHideUndated(v: boolean) {
+    this.state.filterHideUndated.set(v);
+    this.state.persist();
+  }
+
+  get filterVisa(): boolean { return this.state.filterVisa(); }
+  set filterVisa(v: boolean) {
+    this.state.filterVisa.set(v);
+    this.state.persist();
+  }
 
   readonly availablePortals = AVAILABLE_PORTALS;
   readonly portalCategories = PORTAL_CATEGORIES;
   portalsDropdownOpen = signal<boolean>(false);
-  selectedPortalIds = signal<Set<string>>(new Set(AVAILABLE_PORTALS.map(p => p.id)));
-  filterPortalSearchText = signal<string>('');
+  readonly selectedPortalIds = this.state.selectedPortalIds;
+  readonly filterPortalSearchText = this.state.filterPortalSearchText;
 
   portalsSummaryLabel = computed(() => {
     const total = this.availablePortals.length;
@@ -267,16 +205,19 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       current.add(id);
     }
     this.selectedPortalIds.set(current);
+    this.state.persist();
     this.onFilterChange();
   }
 
   selectAllPortals(): void {
     this.selectedPortalIds.set(new Set(this.availablePortals.map(p => p.id)));
+    this.state.persist();
     this.onFilterChange();
   }
 
   deselectAllPortals(): void {
     this.selectedPortalIds.set(new Set());
+    this.state.persist();
     this.onFilterChange();
   }
 
@@ -297,6 +238,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       inCat.forEach(p => current.add(p.id));
     }
     this.selectedPortalIds.set(current);
+    this.state.persist();
     this.onFilterChange();
   }
 
@@ -311,48 +253,63 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     return this.getFilteredPortalsByCategory(catId).length > 0;
   }
 
-  cvAreaBadge = signal<string>('');
+  readonly cvAreaBadge = this.state.cvAreaBadge;
   private cvAreasList: any[] = [];
   private cvAreaQueue: any[] = [];
   private lastPickedAreaId: string | null = null;
 
   // Mapa & Dados Geográficos
   private geoData: any = null;
-  activeGeoFilter: ActiveGeoFilter | null = null;
-  isTriageMode = false;
+  get activeGeoFilter(): ActiveGeoFilter | null { return this.state.activeGeoFilter(); }
+  set activeGeoFilter(v: ActiveGeoFilter | null) {
+    this.state.activeGeoFilter.set(v);
+    this.state.persist();
+  }
+  get isTriageMode(): boolean { return this.state.isTriageMode(); }
+  set isTriageMode(v: boolean) {
+    this.state.isTriageMode.set(v);
+    this.state.persist();
+  }
   remoteCounts: Record<string, number> = { REMOTO_BR: 0, EU_REMOTE: 0, GLOBAL_REMOTE: 0 };
   remoteScores: Record<string, number> = { REMOTO_BR: -1, EU_REMOTE: -1, GLOBAL_REMOTE: -1 };
 
-  // Status de Busca & Triagem
-  searching = signal<boolean>(false);
-  searchStatus = signal<string>('');
-  searchError = signal<string>('');
-  searchSummary = signal<string>('');
+  // Status de Busca & Triagem (mantidos no singleton SearchStateService)
+  readonly searching = this.state.searching;
+  readonly searchStatus = this.state.searchStatus;
+  readonly searchError = this.state.searchError;
+  readonly searchSummary = this.state.searchSummary;
+  readonly lastSearchQuery = this.state.lastSearchQuery;
 
   // Painel Retrátil de Progresso
-  showProgressPanel = signal<boolean>(false);
-  progressExpanded = signal<boolean>(true);
-  searchProgressPercent = signal<number>(0);
-  searchCompletedCount = signal<number>(0);
-  searchTotalCount = signal<number>(0);
-  searchCurrentPortal = signal<string>('');
-  searchJobsFoundCount = signal<number>(0);
-  searchPortalStatuses = signal<Array<{ portal: string; label: string; status: string; jobs: number; error?: string }>>([]);
-  batchRunning = signal<boolean>(false);
-  batchStatus = signal<string>('');
-  showTriagePanel = signal<boolean>(false);
-  triageExpanded = signal<boolean>(true);
-  triageProgressPercent = signal<number>(0);
-  triageCurrentCount = signal<number>(0);
-  triageTotalCount = signal<number>(0);
-  triageCurrentTitle = signal<string>('');
-  triageHighFitCount = signal<number>(0);
-  triageMedFitCount = signal<number>(0);
-  triageLowFitCount = signal<number>(0);
-  triageErrorCount = signal<number>(0);
-  triageProviderLabel = signal<string>('Google Gemini (Antigravity)');
-  batchScope = 'all-visible';
-  selectedUrls = new Set<string>();
+  readonly showProgressPanel = this.state.showProgressPanel;
+  readonly progressExpanded = this.state.progressExpanded;
+  readonly searchProgressPercent = this.state.searchProgressPercent;
+  readonly searchCompletedCount = this.state.searchCompletedCount;
+  readonly searchTotalCount = this.state.searchTotalCount;
+  readonly searchCurrentPortal = this.state.searchCurrentPortal;
+  readonly searchJobsFoundCount = this.state.searchJobsFoundCount;
+  readonly searchPortalStatuses = this.state.searchPortalStatuses;
+  readonly batchRunning = this.state.batchRunning;
+  readonly batchStatus = this.state.batchStatus;
+  readonly showTriagePanel = this.state.showTriagePanel;
+  readonly triageExpanded = this.state.triageExpanded;
+  readonly triageProgressPercent = this.state.triageProgressPercent;
+  readonly triageCurrentCount = this.state.triageCurrentCount;
+  readonly triageTotalCount = this.state.triageTotalCount;
+  readonly triageCurrentTitle = this.state.triageCurrentTitle;
+  readonly triageHighFitCount = this.state.triageHighFitCount;
+  readonly triageMedFitCount = this.state.triageMedFitCount;
+  readonly triageLowFitCount = this.state.triageLowFitCount;
+  readonly triageErrorCount = this.state.triageErrorCount;
+  readonly triageProviderLabel = this.state.triageProviderLabel;
+
+  get batchScope(): string { return this.state.batchScope(); }
+  set batchScope(v: string) {
+    this.state.batchScope.set(v);
+    this.state.persist();
+  }
+
+  get selectedUrls(): Set<string> { return this.state.selectedUrls(); }
 
   // Toast de feedback visual
   toastMessage = signal<string>('');
@@ -368,12 +325,83 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
 
   ngOnInit(): void {
     this.loadCvAreas();
-    // Só restaura vagas se o usuário já tiver clicado em "Buscar vagas" nesta sessão
-    if (this.api.hasSearchedInSession()) {
-      this.allVagas.set(this.api.sessionVagas());
-      this.onFilterChange();
-      this.checkInitialStatus();
+    this.loadAutoConfig();
+
+    const isAutoJobsRunning = this.autoMode.isRunning() && this.autoMode.status()?.mode !== 'recruiters';
+    const hasPersistedSession = this.state.hasTodaySearch() || this.api.hasSearchedInSession() || isAutoJobsRunning;
+
+    if (hasPersistedSession) {
+      this.api.hasSearchedInSession.set(true);
+      if (this.allVagas().length > 0) {
+        this.onFilterChange();
+      } else if (this.api.sessionVagas().length > 0) {
+        this.allVagas.set(this.api.sessionVagas());
+        this.onFilterChange();
+      }
+      this.loadResults();
     }
+
+    this.checkInitialStatus();
+  }
+
+  ngOnDestroy(): void {
+    if (this.toastTimer) {
+      clearTimeout(this.toastTimer);
+      this.toastTimer = null;
+    }
+    this.cleanupSearchPolling();
+    this.cleanupBatchPolling();
+  }
+
+  private cleanupSearchPolling(): void {
+    if (this.searchEventSource) {
+      this.searchEventSource.close();
+      this.searchEventSource = null;
+    }
+    if (this.searchFallbackInterval) {
+      clearInterval(this.searchFallbackInterval);
+      this.searchFallbackInterval = null;
+    }
+  }
+
+  private cleanupBatchPolling(): void {
+    if (this.batchPollInterval) {
+      clearInterval(this.batchPollInterval);
+      this.batchPollInterval = null;
+    }
+  }
+
+  loadAutoConfig(): void {
+    this.api.getAutoModeConfig().subscribe({
+      next: (res) => {
+        const cfg = res?.config;
+        if (!cfg) return;
+        if (typeof cfg.min_score === 'number') {
+          this.state.autoMinScore.set(cfg.min_score);
+        }
+        if (typeof cfg.continuous === 'boolean') {
+          this.state.autoContinuous.set(cfg.continuous);
+        }
+        if (typeof cfg.cooldown_seconds === 'number' && !Number.isNaN(cfg.cooldown_seconds)) {
+          const mins = Math.max(2, Math.min(30, Math.round(cfg.cooldown_seconds / 60)));
+          this.state.autoCooldownMinutes.set(mins);
+        }
+        this.state.persist();
+      },
+      error: () => {}
+    });
+  }
+
+  onAutoConfigChange(): void {
+    const clampedScore = Math.max(45, Math.min(95, Number(this.autoMinScore) || 60));
+    const clampedMins = Math.max(2, Math.min(30, Math.round(Number(this.autoCooldownMinutes) || 5)));
+    this.autoMinScore = clampedScore;
+    this.autoCooldownMinutes = clampedMins;
+    this.api.saveAutoModeConfig({
+      min_score: clampedScore,
+      continuous: this.autoContinuous,
+      cooldown_seconds: clampedMins * 60,
+    }).subscribe({ error: () => {} });
   }
 
   ngAfterViewInit(): void {
@@ -409,15 +437,22 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     if (!picked) return;
     this.lastPickedAreaId = picked.id;
 
-    const keywords = (picked.keywords || []).slice(0, 3);
-    this.filterText = keywords.join(', ');
+    const candidates: string[] = (picked.keywords || [])
+      .map((k: unknown) => String(k || '').trim())
+      .filter(Boolean);
+    const current = (this.filterText || '').trim().toLowerCase();
+    const pool = candidates.filter((k: string) => k.toLowerCase() !== current);
+    const chosen = (pool.length ? pool[Math.floor(Math.random() * pool.length)] : candidates[0]) || '';
+    this.filterText = chosen;
     this.cvAreaBadge.set(`Área CV: ${picked.label || picked.title}`);
+    this.state.persist();
     this.onFilterChange();
   }
 
   clearTextFilter(): void {
     this.filterText = '';
     this.cvAreaBadge.set('');
+    this.state.persist();
     this.onFilterChange();
   }
 
@@ -429,11 +464,8 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
         // Deseleciona quaisquer vagas que tenham saído da lista (ex: auto-descartadas)
         if (this.selectedUrls.size > 0) {
           const currentUrls = new Set(newVagas.map((v: any) => v.url));
-          for (const u of Array.from(this.selectedUrls)) {
-            if (!currentUrls.has(u)) {
-              this.selectedUrls.delete(u);
-            }
-          }
+          const remaining = new Set(Array.from(this.selectedUrls).filter(u => currentUrls.has(u)));
+          this.state.selectedUrls.set(remaining);
         }
         this.onFilterChange();
       },
@@ -454,14 +486,91 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   checkInitialStatus(): void {
     this.api.getSearchStatus().subscribe({
       next: (st) => {
-        if (st && st.search && st.search.error) {
-          this.searchError.set('A busca não terminou: ' + st.search.error);
+        const searchJob = st?.search;
+        if (searchJob?.error) {
+          this.searchError.set('A busca não terminou: ' + searchJob.error);
         }
-        if (st && st.search && st.search.summary) {
-          this.searchSummary.set(st.search.summary);
+        if (searchJob?.summary) {
+          this.searchSummary.set(searchJob.summary);
+        }
+
+        if (searchJob?.running) {
+          this.api.hasSearchedInSession.set(true);
+          this.searching.set(true);
+          this.showProgressPanel.set(true);
+          if (searchJob.started) {
+            this.searchStatus.set(`Buscando desde ${searchJob.started.slice(11, 16)}…`);
+          }
+          this.pollSearchStatus();
+        } else if (this.searching()) {
+          this.searching.set(false);
+          this.searchProgressPercent.set(100);
+          this.searchStatus.set('Busca concluída!');
+          this.loadResults();
+        }
+
+        const batchJob = st?.batch;
+        if (batchJob?.running) {
+          this.batchRunning.set(true);
+          this.showTriagePanel.set(true);
+          this.isTriageMode = true;
+          this.pollBatchStatus();
+        } else if (this.batchRunning()) {
+          this.batchRunning.set(false);
+          this.triageProgressPercent.set(100);
+          this.loadResults();
+          this.api.refreshCounts();
         }
       },
       error: () => {}
+    });
+  }
+
+  private _resolvePortalsSelection(): { selectedList: string[]; isAllPortals: boolean } | null {
+    const selectedList = Array.from(this.selectedPortalIds());
+    if (selectedList.length === 0) {
+      this.showToast('⚠️ Selecione pelo menos uma fonte de busca (portal) no dropdown.');
+      return null;
+    }
+    return {
+      selectedList,
+      isAllPortals: selectedList.length === this.availablePortals.length,
+    };
+  }
+
+  triggerAutoMode(): void {
+    const sel = this._resolvePortalsSelection();
+    if (!sel) return;
+
+    const effectiveJobAge = Math.min(Number(this.filterJobAge) || 7, 7);
+    const minScore = Math.max(45, Math.min(95, Number(this.autoMinScore) || 60));
+    const cooldownMins = Math.max(2, Math.min(30, Math.round(Number(this.autoCooldownMinutes) || 5)));
+    this.autoMinScore = minScore;
+    this.autoCooldownMinutes = cooldownMins;
+    this.filterJobAge = String(effectiveJobAge);
+    this.activeGeoFilter = null;
+    this.searchError.set('');
+    this.batchStatus.set('');
+    this.showTriagePanel.set(false);
+    this.isTriageMode = true;
+
+    this.autoMode.start({
+      region: this.filterRegion || 'all',
+      portals: sel.isAllPortals ? ['all'] : sel.selectedList,
+      jobage: effectiveJobAge,
+      min_score: minScore,
+      hide_undated: this.filterHideUndated,
+      continuous: this.autoContinuous,
+      cooldown_seconds: cooldownMins * 60,
+    }).subscribe({
+      next: () => {
+        this.state.markSearchExecuted(this.filterText.trim() || undefined);
+        this.showToast('🤖 Modo Automático iniciado! Acompanhe o aviso no topo de qualquer tela.');
+      },
+      error: (err) => {
+        const msg = err?.error?.detail || err?.error?.error || err?.message || 'Falha ao iniciar';
+        this.searchError.set('Modo Automático: ' + msg);
+      }
     });
   }
 
@@ -483,27 +592,31 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     this.activeGeoFilter = null;
 
     const trimmedQuery = (this.filterText || '').trim();
+    this.lastSearchQuery.set(trimmedQuery);
+    if (!this.batchRunning()) {
+      this.batchStatus.set('');
+      this.showTriagePanel.set(false);
+    }
 
-    const selectedList = Array.from(this.selectedPortalIds());
-    if (selectedList.length === 0) {
+    const sel = this._resolvePortalsSelection();
+    if (!sel) {
       this.searching.set(false);
       this.searchStatus.set('');
-      this.showToast('⚠️ Selecione pelo menos uma fonte de busca (portal) no dropdown.');
       return;
     }
 
-    const isAllPortals = selectedList.length === this.availablePortals.length;
     const payload = {
       all: true,
       jobage: Number(this.filterJobAge) || 14,
-      focus: isAllPortals ? 'all' : selectedList.join(','),
-      portals: isAllPortals ? ['all'] : selectedList,
+      focus: sel.isAllPortals ? 'all' : sel.selectedList.join(','),
+      portals: sel.isAllPortals ? ['all'] : sel.selectedList,
       region: this.filterRegion || 'all',
       query: trimmedQuery || undefined
     };
 
     this.api.startSearch(payload).subscribe({
       next: () => {
+        this.state.markSearchExecuted(trimmedQuery);
         this.pollSearchStatus();
       },
       error: (err) => {
@@ -523,23 +636,11 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   }
 
   getPortalLabel(portal: string): string {
-    return PORTAIS[portal] || portal.replace('-search', '');
+    return getPortalDisplayName(portal);
   }
 
   private pollSearchStatus(): void {
-    let eventSource: EventSource | null = null;
-    let fallbackInterval: any = null;
-
-    const cleanup = () => {
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
-      if (fallbackInterval) {
-        clearInterval(fallbackInterval);
-        fallbackInterval = null;
-      }
-    };
+    this.cleanupSearchPolling();
 
     const handleProgressUpdate = (p: any) => {
       if (!p) return;
@@ -553,7 +654,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       if (p.portals) {
         const list = Object.entries(p.portals).map(([key, val]: [string, any]) => ({
           portal: key,
-          label: PORTAIS[key] || key.replace('-search', ''),
+          label: getPortalDisplayName(key),
           status: val.status,
           jobs: val.jobs || 0,
           error: val.error
@@ -563,7 +664,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     };
 
     const handleDone = (job?: any) => {
-      cleanup();
+      this.cleanupSearchPolling();
       this.searching.set(false);
       this.searchProgressPercent.set(100);
       if (job && job.error) {
@@ -593,7 +694,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
             }
           },
           error: () => {
-            cleanup();
+            this.cleanupSearchPolling();
             this.searching.set(false);
           }
         });
@@ -602,14 +703,14 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
 
     if (typeof EventSource !== 'undefined') {
       try {
-        eventSource = new EventSource('/api/search/stream');
-        eventSource.addEventListener('progress', (e: MessageEvent) => {
+        this.searchEventSource = new EventSource('/api/stream');
+        this.searchEventSource.addEventListener('progress', (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data);
             handleProgressUpdate(data);
           } catch (_) {}
         });
-        eventSource.addEventListener('done', (e: MessageEvent) => {
+        this.searchEventSource.addEventListener('done', (e: MessageEvent) => {
           try {
             const data = JSON.parse(e.data);
             handleDone(data);
@@ -617,52 +718,90 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
             handleDone();
           }
         });
-        eventSource.onerror = () => {
-          cleanup();
-          fallbackInterval = startPolling();
+        this.searchEventSource.onerror = () => {
+          this.cleanupSearchPolling();
+          this.searchFallbackInterval = startPolling();
         };
       } catch (_) {
-        fallbackInterval = startPolling();
+        this.searchFallbackInterval = startPolling();
       }
     } else {
-      fallbackInterval = startPolling();
+      this.searchFallbackInterval = startPolling();
     }
+  }
+
+  getHiddenFilterReasons(): string {
+    const vagas = this.allVagas();
+    if (!vagas.length) return '';
+    const reasons: string[] = [];
+    const text = this.filterText.trim();
+    if (text) {
+      const noDescCount = vagas.filter(v => !(v.description && v.description.trim())).length;
+      reasons.push(
+        noDescCount > 0
+          ? `palavra-chave ("${text}") com ${noDescCount} vaga(s) sem descrição detalhada`
+          : `palavra-chave ("${text}")`
+      );
+    }
+    const selectedPortals = this.selectedPortalIds();
+    if (selectedPortals.size === 0) {
+      reasons.push('nenhum portal selecionado');
+    } else if (selectedPortals.size < this.availablePortals.length) {
+      reasons.push(`seleção de portais (${selectedPortals.size} de ${this.availablePortals.length})`);
+    }
+    if (this.filterModel) {
+      const noModelCount = vagas.filter(v => normalizeWorkModel(v.workplace_type) === 'none').length;
+      reasons.push(
+        noModelCount > 0
+          ? `modelo "${this.filterModel}" (${noModelCount} vaga(s) sem modelo informado)`
+          : `modelo "${this.filterModel}"`
+      );
+    }
+    if (this.filterRegion) reasons.push(`região "${this.filterRegion}"`);
+    if (this.filterJobAge) {
+      const undated = vagas.filter(v => this.parsePostedDate(v.date) === null).length;
+      reasons.push(
+        this.filterHideUndated && undated > 0
+          ? `período de ${this.filterJobAge} dia(s) (${undated} vaga(s) sem data ocultas)`
+          : `período de ${this.filterJobAge} dia(s)`
+      );
+    } else if (this.filterHideUndated) {
+      const undated = vagas.filter(v => this.parsePostedDate(v.date) === null).length;
+      reasons.push(undated > 0 ? `ocultando ${undated} vaga(s) sem data` : 'ocultando vagas sem data');
+    }
+    if (this.filterScore) reasons.push(`afinidade "${this.filterScore}"`);
+    if (this.filterNoWarn) reasons.push('somente sem alertas');
+    if (this.filterVisa) reasons.push('somente com visto/relocação');
+    if (this.activeGeoFilter) reasons.push('filtro de país no mapa');
+    return reasons.join(', ');
   }
 
   getBaseFilteredVagas(): Vaga[] {
     const rawText = this.filterText.trim();
     const model = this.filterModel;
-    const focus = this.filterFocus;
     const days = this.filterJobAge ? Number(this.filterJobAge) : null;
     const score = this.filterScore;
     const nowarn = this.filterNoWarn;
+    const hideUndated = this.filterHideUndated;
     const visaOnly = this.filterVisa;
     const region = this.filterRegion;
-
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    const fold = (s: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const selectedPortals = this.selectedPortalIds();
 
     return this.allVagas().filter((r) => {
       const geo = this.resolveGeo(r);
 
-      if (region) {
-        if (region === 'remote' && !geo.isRemote) return false;
-        if (region === 'brasil' && geo.scope !== 'brasil') return false;
-        if (region === 'estados-unidos' && geo.countryCode !== 'US' && geo.remoteBucket !== 'US_REMOTE' && !geo.label.includes('Estados Unidos')) return false;
-        if (region === 'europa' && geo.scope !== 'europa') return false;
-        if (region === 'global' && geo.scope !== 'global' && !geo.isRemote) return false;
+      if (region && !matchesRegionFilter(geo, region)) {
+        return false;
       }
 
       if (nowarn && this.getWarning(r)) return false;
       if (visaOnly && !this.hasVisa(r)) return false;
 
-      if (model) {
-        if (model === 'none' ? Boolean(r.workplace_type) : r.workplace_type !== model) return false;
+      if (model && normalizeWorkModel(r.workplace_type) !== model) {
+        return false;
       }
 
       // Verificação por seleção de portais multi-select
-      const selectedPortals = this.selectedPortalIds();
       if (selectedPortals.size === 0) {
         return false;
       }
@@ -672,38 +811,37 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
         if (!matches && !portal.endsWith('-search')) {
           matches = selectedPortals.has(`${portal}-search`);
         }
-        if (!matches && (portal === 'google' || portal === 'google-careers') && selectedPortals.has('google')) {
-          matches = true;
-        }
-        if (!matches && (portal === 'europa' || portal === 'eures') && selectedPortals.has('europa')) {
-          matches = true;
-        }
         if (!matches) {
           return false;
         }
       }
 
-      if (days && r.date) {
-        const diffDays = Math.floor((today.getTime() - new Date(r.date + 'T00:00:00').getTime()) / 86400000);
-        if (diffDays > days) return false;
+      if (hideUndated || days) {
+        const within = isWithinDays(r.date, days || 36500);
+        if (within === null) {
+          // Sem data confiável: visível com badge "Sem data", salvo se usuário pedir para ocultar.
+          if (hideUndated) return false;
+        } else if (days && !within) {
+          return false;
+        }
       }
 
-      if (score) {
-        const s = r.screening?.score;
-        if (score === 'triadas' && (s === undefined || s === null)) return false;
-        if (score === 'high' && (s === undefined || s < 80)) return false;
-        if (score === 'med' && (s === undefined || s < 60)) return false;
-        if (score === 'low' && (s === undefined || s >= 60 || s < 40)) return false;
+      if (score && !matchesScoreFilter(r.screening?.score, score, Boolean(r.screening))) {
+        return false;
       }
 
       if (rawText) {
-        const terms = rawText.split(',').map(t => fold(t.trim())).filter(Boolean);
-        if (terms.length > 0) {
-          const desc = r.description ? (r.description.length > 2500 ? r.description.slice(0, 2500) : r.description) : '';
-          const tags = Array.isArray((r as any).tags) ? (r as any).tags.join(' ') : '';
-          const skills = Array.isArray((r as any).skills) ? (r as any).skills.join(' ') : '';
-          const hay = fold(`${r.title || ''} ${r.company || ''} ${r.location || ''} ${r.seniority || ''} ${desc} ${tags} ${skills}`);
-          if (!terms.some(t => hay.includes(t))) return false;
+        const hasDesc = Boolean(r.description && r.description.trim());
+        const desc = r.description ? (r.description.length > 6000 ? r.description.slice(0, 6000) : r.description) : '';
+        const tags = Array.isArray(r.tags) ? r.tags.join(' ') : '';
+        const skills = Array.isArray(r.skills) ? r.skills.join(' ') : '';
+        const haystack = `${r.title || ''} ${r.company || ''} ${r.location || ''} ${r.seniority || ''} ${desc} ${tags} ${skills}`;
+        if (!matchesTextFilter(haystack, rawText, {
+          hasDescription: hasDesc,
+          fallbackQuery: r.query,
+          lastSearchQuery: this.lastSearchQuery(),
+        })) {
+          return false;
         }
       }
 
@@ -714,7 +852,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   onFilterChange(): void {
     const base = this.getBaseFilteredVagas();
 
-    let filtered = base;
+    let filtered = [...base];
     if (this.activeGeoFilter) {
       filtered = base.filter((r) => {
         const geo = this.resolveGeo(r);
@@ -729,10 +867,27 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       });
     }
 
-    if (this.filterSort === 'score-desc') {
-      filtered.sort((a, b) => (b.screening?.score || -1) - (a.screening?.score || -1));
+    if (this.filterSort === 'date') {
+      filtered.sort((a, b) => {
+        const da = parseCalendarDateMs(a.date);
+        const db = parseCalendarDateMs(b.date);
+        if (da === null && db === null) return 0;
+        if (da === null) return 1;
+        if (db === null) return -1;
+        return db - da;
+      });
+    } else if (this.filterSort === 'score-desc') {
+      filtered.sort((a, b) => {
+        const sa = a.screening?.score !== undefined && a.screening?.score !== null ? a.screening.score : -1;
+        const sb = b.screening?.score !== undefined && b.screening?.score !== null ? b.screening.score : -1;
+        return sb - sa;
+      });
     } else if (this.filterSort === 'score-asc') {
-      filtered.sort((a, b) => (a.screening?.score || 999) - (b.screening?.score || 999));
+      filtered.sort((a, b) => {
+        const sa = a.screening?.score !== undefined && a.screening?.score !== null ? a.screening.score : 999;
+        const sb = b.screening?.score !== undefined && b.screening?.score !== null ? b.screening.score : 999;
+        return sa - sb;
+      });
     }
 
     this.filteredVagas.set(filtered);
@@ -740,22 +895,13 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   }
 
   resetAllFilters(): void {
-    this.filterText = '';
-    this.cvAreaBadge.set('');
-    this.filterModel = '';
-    this.filterFocus = 'all';
-    this.selectedPortalIds.set(new Set(this.availablePortals.map(p => p.id)));
-    this.filterRegion = '';
-    this.filterJobAge = '';
-    this.filterScore = '';
-    this.filterNoWarn = false;
-    this.filterVisa = false;
-    this.activeGeoFilter = null;
+    this.state.resetFilters();
     this.onFilterChange();
   }
 
   switchSubtab(tab: 'mapa' | 'lista'): void {
     this.activeSubtab.set(tab);
+    this.state.persist();
     if (tab === 'mapa') {
       setTimeout(() => this.updateMap(), 50);
     }
@@ -828,7 +974,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     const locs = new Set<string>();
     this.filteredVagas().forEach(r => {
       const g = this.resolveGeo(r);
-      if (g.code) locs.add(g.code);
+      if (g.code && g.code !== 'UNKNOWN') locs.add(g.code);
     });
     return locs.size;
   }
@@ -896,7 +1042,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     const counts: Record<string, number> = { 'Remoto': 0, 'Híbrido': 0, 'Presencial': 0, 'Não informado': 0 };
     const total = this.filteredVagas().length || 1;
     this.filteredVagas().forEach(r => {
-      const lbl = MODELOS[r.workplace_type || ''] || 'Não informado';
+      const lbl = getWorkModelLabel(r.workplace_type);
       counts[lbl] = (counts[lbl] || 0) + 1;
     });
 
@@ -962,43 +1108,95 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     }
   }
 
-  private renderWorldMapSvg(world: Record<string, any>, counts: Record<string, number>, scores: Record<string, number>): void {
-    const el = this.mapWorldContainer.nativeElement;
-    el.innerHTML = '';
+  private createSvgEl(tag: string, attrs: Record<string, string | number>, text?: string): SVGElement {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, val] of Object.entries(attrs)) {
+      node.setAttribute(key, String(val));
+    }
+    if (text !== undefined) {
+      node.textContent = text;
+    }
+    return node;
+  }
 
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 1000 500');
-    svg.setAttribute('style', 'width: 100%; height: auto; max-height: 500px; display: block;');
-
-    // Radial gradient background
+  private appendOceanGradient(svg: SVGElement, id: string, cx: string, cy: string): void {
     const defs = document.createElementNS(SVG_NS, 'defs');
-    const grad = document.createElementNS(SVG_NS, 'radialGradient');
-    grad.setAttribute('id', 'world-ocean-grad');
-    grad.setAttribute('cx', '50%');
-    grad.setAttribute('cy', '45%');
-    grad.setAttribute('r', '70%');
-    grad.innerHTML = `<stop offset="0%" stop-color="#0d1525"/><stop offset="100%" stop-color="#070b13"/>`;
+    const grad = this.createSvgEl('radialGradient', { id, cx, cy, r: '70%' });
+    grad.appendChild(this.createSvgEl('stop', { offset: '0%', 'stop-color': '#0d1525' }));
+    grad.appendChild(this.createSvgEl('stop', { offset: '100%', 'stop-color': '#070b13' }));
     defs.appendChild(grad);
     svg.appendChild(defs);
+  }
 
-    const bgRect = document.createElementNS(SVG_NS, 'rect');
-    bgRect.setAttribute('width', '1000');
-    bgRect.setAttribute('height', '500');
-    bgRect.setAttribute('rx', '10');
-    bgRect.setAttribute('fill', 'url(#world-ocean-grad)');
-    svg.appendChild(bgRect);
+  private createMapBadge(
+    code: string,
+    cx: number,
+    cy: number,
+    cnt: number,
+    maxScore: number,
+    isHighFit: boolean
+  ): SVGElement {
+    const gBadge = this.createSvgEl('g', { style: 'cursor: pointer;' });
+    const hasScore = this.isTriageMode && maxScore >= 0;
+    const rectW = hasScore ? 62 : 46;
 
-    // Cartographic lines
-    const gGrid = document.createElementNS(SVG_NS, 'g');
-    gGrid.setAttribute('style', 'pointer-events: none;');
-    gGrid.innerHTML = `
-      <line x1="20" y1="250" x2="980" y2="250" stroke="rgba(51, 65, 85, 0.28)" stroke-dasharray="4 6"/>
-      <line x1="20" y1="180" x2="980" y2="180" stroke="rgba(51, 65, 85, 0.16)" stroke-dasharray="3 6"/>
-      <line x1="20" y1="320" x2="980" y2="320" stroke="rgba(51, 65, 85, 0.16)" stroke-dasharray="3 6"/>
-      <line x1="250" y1="20" x2="250" y2="480" stroke="rgba(51, 65, 85, 0.16)" stroke-dasharray="3 6"/>
-      <line x1="500" y1="20" x2="500" y2="480" stroke="rgba(51, 65, 85, 0.22)" stroke-dasharray="4 6"/>
-      <line x1="750" y1="20" x2="750" y2="480" stroke="rgba(51, 65, 85, 0.16)" stroke-dasharray="3 6"/>
-    `;
+    gBadge.appendChild(
+      this.createSvgEl('rect', {
+        class: `geo-badge-bg ${isHighFit ? 'fit-high' : ''}`.trim(),
+        x: cx - rectW / 2,
+        y: cy - 12,
+        width: rectW,
+        height: 24,
+      })
+    );
+    gBadge.appendChild(this.createSvgEl('text', { class: 'geo-badge', x: cx, y: cy - 1 }, code));
+    gBadge.appendChild(
+      this.createSvgEl(
+        'text',
+        {
+          class: 'geo-badge-sub',
+          style: `fill: ${isHighFit ? '#34d399' : '#38bdf8'}; font-size: 8.5px;`,
+          x: cx,
+          y: cy + 9,
+        },
+        hasScore ? `${cnt} (${maxScore}p)` : `${cnt} vaga(s)`
+      )
+    );
+    return gBadge;
+  }
+
+  private renderWorldMapSvg(world: Record<string, any>, counts: Record<string, number>, scores: Record<string, number>): void {
+    const el = this.mapWorldContainer.nativeElement;
+    el.replaceChildren();
+
+    const svg = this.createSvgEl('svg', {
+      viewBox: '0 0 1000 500',
+      style: 'width: 100%; height: auto; max-height: 500px; display: block;',
+    });
+
+    this.appendOceanGradient(svg, 'world-ocean-grad', '50%', '45%');
+
+    svg.appendChild(
+      this.createSvgEl('rect', {
+        width: 1000,
+        height: 500,
+        rx: 10,
+        fill: 'url(#world-ocean-grad)',
+      })
+    );
+
+    const gGrid = this.createSvgEl('g', { style: 'pointer-events: none;' });
+    const gridLines: Array<Record<string, string | number>> = [
+      { x1: 20, y1: 250, x2: 980, y2: 250, stroke: 'rgba(51, 65, 85, 0.28)', 'stroke-dasharray': '4 6' },
+      { x1: 20, y1: 180, x2: 980, y2: 180, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
+      { x1: 20, y1: 320, x2: 980, y2: 320, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
+      { x1: 250, y1: 20, x2: 250, y2: 480, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
+      { x1: 500, y1: 20, x2: 500, y2: 480, stroke: 'rgba(51, 65, 85, 0.22)', 'stroke-dasharray': '4 6' },
+      { x1: 750, y1: 20, x2: 750, y2: 480, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
+    ];
+    for (const attrs of gridLines) {
+      gGrid.appendChild(this.createSvgEl('line', attrs));
+    }
     svg.appendChild(gGrid);
 
     const gPaths = document.createElementNS(SVG_NS, 'g');
@@ -1012,43 +1210,29 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       const isActive = this.activeGeoFilter?.type === 'country' && this.activeGeoFilter.code === code;
       const fill = this.getGeoColor(cnt, maxScore, isActive);
 
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('class', `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`);
-      path.setAttribute('d', info.path);
-      path.setAttribute('fill', fill);
-      path.setAttribute('data-code', code);
-      path.setAttribute('data-name', info.name);
+      const path = this.createSvgEl('path', {
+        class: `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`.trim(),
+        d: info.path,
+        fill,
+        'data-code': code,
+        'data-name': info.name,
+      });
 
-      path.addEventListener('click', () => {
+      const selectCountry = () => {
         if (code === 'BR') {
           this.switchMapMode('brasil');
         } else {
           this.activeGeoFilter = { type: 'country', code, name: `${info.name} (${code})`, count: cnt };
           this.onFilterChange();
         }
-      });
+      };
 
+      path.addEventListener('click', selectCountry);
       gPaths.appendChild(path);
 
       if (cnt > 0 && info.cx > 0 && info.cy > 0) {
-        const gBadge = document.createElementNS(SVG_NS, 'g');
-        gBadge.setAttribute('style', 'cursor: pointer;');
-        const hasScore = this.isTriageMode && maxScore >= 0;
-        const rectW = hasScore ? 62 : 46;
-
-        gBadge.innerHTML = `
-          <rect class="geo-badge-bg ${isHighFit ? 'fit-high' : ''}" x="${info.cx - rectW / 2}" y="${info.cy - 12}" width="${rectW}" height="24"/>
-          <text class="geo-badge" x="${info.cx}" y="${info.cy - 1}">${code}</text>
-          <text class="geo-badge-sub" style="fill: ${isHighFit ? '#34d399' : '#38bdf8'}; font-size: 8.5px;" x="${info.cx}" y="${info.cy + 9}">${hasScore ? `${cnt} (${maxScore}p)` : `${cnt} vaga(s)`}</text>
-        `;
-        gBadge.addEventListener('click', () => {
-          if (code === 'BR') {
-            this.switchMapMode('brasil');
-          } else {
-            this.activeGeoFilter = { type: 'country', code, name: `${info.name} (${code})`, count: cnt };
-            this.onFilterChange();
-          }
-        });
+        const gBadge = this.createMapBadge(code, info.cx, info.cy, cnt, maxScore, isHighFit);
+        gBadge.addEventListener('click', selectCountry);
         gBadges.appendChild(gBadge);
       }
     }
@@ -1060,28 +1244,23 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
 
   private renderBrasilMapSvg(states: Record<string, any>, counts: Record<string, number>, scores: Record<string, number>): void {
     const el = this.mapBrasilContainer.nativeElement;
-    el.innerHTML = '';
+    el.replaceChildren();
 
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 600 600');
-    svg.setAttribute('style', 'width: 100%; height: auto; max-height: 500px; display: block;');
+    const svg = this.createSvgEl('svg', {
+      viewBox: '0 0 600 600',
+      style: 'width: 100%; height: auto; max-height: 500px; display: block;',
+    });
 
-    const defs = document.createElementNS(SVG_NS, 'defs');
-    const grad = document.createElementNS(SVG_NS, 'radialGradient');
-    grad.setAttribute('id', 'br-ocean-grad');
-    grad.setAttribute('cx', '50%');
-    grad.setAttribute('cy', '50%');
-    grad.setAttribute('r', '70%');
-    grad.innerHTML = `<stop offset="0%" stop-color="#0d1525"/><stop offset="100%" stop-color="#070b13"/>`;
-    defs.appendChild(grad);
-    svg.appendChild(defs);
+    this.appendOceanGradient(svg, 'br-ocean-grad', '50%', '50%');
 
-    const bgRect = document.createElementNS(SVG_NS, 'rect');
-    bgRect.setAttribute('width', '600');
-    bgRect.setAttribute('height', '600');
-    bgRect.setAttribute('rx', '10');
-    bgRect.setAttribute('fill', 'url(#br-ocean-grad)');
-    svg.appendChild(bgRect);
+    svg.appendChild(
+      this.createSvgEl('rect', {
+        width: 600,
+        height: 600,
+        rx: 10,
+        fill: 'url(#br-ocean-grad)',
+      })
+    );
 
     const gPaths = document.createElementNS(SVG_NS, 'g');
     const gBadges = document.createElementNS(SVG_NS, 'g');
@@ -1093,44 +1272,39 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
       const isActive = this.activeGeoFilter?.type === 'uf' && this.activeGeoFilter.code === uf;
       const fill = this.getGeoColor(cnt, maxScore, isActive);
 
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('class', `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`);
-      path.setAttribute('d', info.path);
-      path.setAttribute('fill', fill);
-      path.setAttribute('data-uf', uf);
-      path.setAttribute('data-name', info.name);
-
-      path.addEventListener('click', () => {
-        this.activeGeoFilter = { type: 'uf', code: uf, name: `${info.name} (${uf})`, count: cnt };
-        this.onFilterChange();
+      const path = this.createSvgEl('path', {
+        class: `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`.trim(),
+        d: info.path,
+        fill,
+        'data-uf': uf,
+        'data-name': info.name,
       });
 
+      const selectUf = () => {
+        this.activeGeoFilter = { type: 'uf', code: uf, name: `${info.name} (${uf})`, count: cnt };
+        this.onFilterChange();
+      };
+
+      path.addEventListener('click', selectUf);
       gPaths.appendChild(path);
 
       if (cnt > 0) {
-        const gBadge = document.createElementNS(SVG_NS, 'g');
-        gBadge.setAttribute('style', 'cursor: pointer;');
-        const hasScore = this.isTriageMode && maxScore >= 0;
-        const rectW = hasScore ? 62 : 46;
-
-        gBadge.innerHTML = `
-          <rect class="geo-badge-bg ${isHighFit ? 'fit-high' : ''}" x="${info.cx - rectW / 2}" y="${info.cy - 12}" width="${rectW}" height="24"/>
-          <text class="geo-badge" x="${info.cx}" y="${info.cy - 1}">${uf}</text>
-          <text class="geo-badge-sub" style="fill: ${isHighFit ? '#34d399' : '#38bdf8'}; font-size: 8.5px;" x="${info.cx}" y="${info.cy + 9}">${hasScore ? `${cnt} (${maxScore}p)` : `${cnt} vaga(s)`}</text>
-        `;
-        gBadge.addEventListener('click', () => {
-          this.activeGeoFilter = { type: 'uf', code: uf, name: `${info.name} (${uf})`, count: cnt };
-          this.onFilterChange();
-        });
+        const gBadge = this.createMapBadge(uf, info.cx, info.cy, cnt, maxScore, isHighFit);
+        gBadge.addEventListener('click', selectUf);
         gBadges.appendChild(gBadge);
       } else {
-        const txtUf = document.createElementNS(SVG_NS, 'text');
-        txtUf.setAttribute('class', 'geo-badge-sub');
-        txtUf.setAttribute('style', 'fill: #475569; font-size: 8px;');
-        txtUf.setAttribute('x', String(info.cx));
-        txtUf.setAttribute('y', String(info.cy + 3));
-        txtUf.textContent = uf;
-        gBadges.appendChild(txtUf);
+        gBadges.appendChild(
+          this.createSvgEl(
+            'text',
+            {
+              class: 'geo-badge-sub',
+              style: 'fill: #475569; font-size: 8px;',
+              x: info.cx,
+              y: info.cy + 3,
+            },
+            uf
+          )
+        );
       }
     }
 
@@ -1203,109 +1377,14 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   }
 
   resolveGeo(r: Vaga): GeoResolution {
-    const rawLoc = String(r.location || '').trim();
-    const loc = rawLoc.toLowerCase();
-    const portal = String(r.portal || '').toLowerCase();
-    const workplace = String(r.workplace_type || '').toLowerCase();
-    const isRemote = workplace === 'remote' || loc.includes('remot') || loc.includes('home office') || loc.includes('teletrabalho') || loc.includes('anywhere') || loc.includes('worldwide');
-    const hasExplicitBrasil = loc.includes('brasil') || loc.includes('brazil');
+    return resolveGeoUtil(r);
+  }
 
-    if (loc.includes('latam') || loc.includes('latin america')) {
-      return {
-        scope: 'global',
-        countryCode: 'LATAM_REMOTE',
-        code: 'LATAM_REMOTE',
-        label: 'Remoto LATAM',
-        isRemote: true,
-        remoteBucket: 'GLOBAL_REMOTE'
-      };
-    }
-
-    if (loc.includes('us only') || loc.includes('u.s. only') || loc.includes('us time zones') || loc.includes('united states remote')) {
-      return {
-        scope: 'global',
-        countryCode: 'US',
-        code: 'US_REMOTE',
-        label: 'Remoto EUA',
-        isRemote: true,
-        remoteBucket: 'GLOBAL_REMOTE'
-      };
-    }
-
-    if (!hasExplicitBrasil) {
-      for (const country of WORLD_PATTERNS) {
-        for (const w of country.words) {
-          if (loc.includes(w)) {
-            return {
-              scope: country.scope as any,
-              countryCode: country.code,
-              code: country.code,
-              label: country.name,
-              isRemote,
-              remoteBucket: isRemote ? (country.scope === 'europa' ? 'EU_REMOTE' : 'GLOBAL_REMOTE') : null
-            };
-          }
-        }
-      }
-    }
-
-    if (portal === 'eures') {
-      return {
-        scope: 'europa',
-        countryCode: 'DE',
-        code: isRemote ? 'EU_REMOTE' : 'DE',
-        label: isRemote ? 'Remoto Europa' : 'Europa (EURES)',
-        isRemote,
-        remoteBucket: isRemote ? 'EU_REMOTE' : null
-      };
-    }
-
-    for (const m of BR_UF_WORDS) {
-      for (const w of m.words) {
-        const regex = new RegExp('(^|[\\s,/()-])' + w + '([\\s,/()-]|$)', 'i');
-        if (regex.test(loc)) {
-          return {
-            scope: 'brasil',
-            countryCode: 'BR',
-            code: m.uf,
-            label: `${m.name} (${m.uf})`,
-            isRemote,
-            remoteBucket: isRemote ? 'REMOTO_BR' : null
-          };
-        }
-      }
-    }
-
-    if (hasExplicitBrasil || BR_PORTALS.has(portal)) {
-      return {
-        scope: 'brasil',
-        countryCode: 'BR',
-        code: isRemote ? 'REMOTO_BR' : 'SP',
-        label: isRemote ? 'Remoto Brasil' : 'Brasil (Nacional)',
-        isRemote,
-        remoteBucket: isRemote ? 'REMOTO_BR' : null
-      };
-    }
-
-    if (isRemote) {
-      return {
-        scope: 'global',
-        countryCode: 'GLOBAL_REMOTE',
-        code: 'GLOBAL_REMOTE',
-        label: 'Remoto Global',
-        isRemote: true,
-        remoteBucket: 'GLOBAL_REMOTE'
-      };
-    }
-
-    return {
-      scope: 'brasil',
-      countryCode: 'BR',
-      code: 'SP',
-      label: 'São Paulo (SP)',
-      isRemote: false,
-      remoteBucket: null
-    };
+  private removeUrlFromSelection(url: string): void {
+    if (!this.selectedUrls.has(url)) return;
+    const next = new Set(this.selectedUrls);
+    next.delete(url);
+    this.state.selectedUrls.set(next);
   }
 
   // --- Ações de Vagas ---
@@ -1313,6 +1392,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     this.api.markDecision([vaga.url], 'interesse', vaga).subscribe({
       next: () => {
         this.allVagas.set(this.allVagas().filter(v => v.url !== vaga.url));
+        this.removeUrlFromSelection(vaga.url);
         this.api.sessionVagas.set(this.allVagas());
         this.onFilterChange();
         this.showToast(`⭐ Vaga salva! "${vaga.title}" foi movida com segurança para a aba "Me Interessam".`);
@@ -1330,6 +1410,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     }).subscribe({
       next: () => {
         this.allVagas.set(this.allVagas().filter(v => v.url !== vaga.url));
+        this.removeUrlFromSelection(vaga.url);
         this.api.sessionVagas.set(this.allVagas());
         this.onFilterChange();
         this.showToast(`🎯 Candidatura registrada! "${vaga.title}" foi salva em "Minhas Candidaturas".`);
@@ -1342,6 +1423,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
     this.api.markDecision([vaga.url], 'descartar').subscribe({
       next: () => {
         this.allVagas.set(this.allVagas().filter(v => v.url !== vaga.url));
+        this.removeUrlFromSelection(vaga.url);
         this.api.sessionVagas.set(this.allVagas());
         this.onFilterChange();
         this.showToast(`🗑️ Vaga descartada e movida para a aba "Descartadas".`);
@@ -1357,15 +1439,19 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
 
   toggleSelectAll(e: any): void {
     const checked = e.target.checked;
+    const next = new Set(this.selectedUrls);
     this.filteredVagas().forEach(v => {
-      if (checked) this.selectedUrls.add(v.url);
-      else this.selectedUrls.delete(v.url);
+      if (checked) next.add(v.url);
+      else next.delete(v.url);
     });
+    this.state.selectedUrls.set(next);
   }
 
   toggleVagaSelection(url: string, e: any): void {
-    if (e.target.checked) this.selectedUrls.add(url);
-    else this.selectedUrls.delete(url);
+    const next = new Set(this.selectedUrls);
+    if (e.target.checked) next.add(url);
+    else next.delete(url);
+    this.state.selectedUrls.set(next);
   }
 
   triggerBatchScreen(): void {
@@ -1413,7 +1499,8 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   }
 
   private pollBatchStatus(): void {
-    const interval = setInterval(() => {
+    this.cleanupBatchPolling();
+    this.batchPollInterval = setInterval(() => {
       this.api.getSearchStatus().subscribe({
         next: (st) => {
           const batch = st.batch;
@@ -1439,7 +1526,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
               this.loadResults();
               this.api.refreshCounts();
             } else {
-              clearInterval(interval);
+              this.cleanupBatchPolling();
               this.batchRunning.set(false);
               this.triageProgressPercent.set(100);
               this.batchStatus.set(batch?.total ? `Triagem de ${batch.total} vagas concluída! Encontradas ${batch.high_fit || 0} de alta afinidade.` : '');
@@ -1449,7 +1536,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
           }
         },
         error: () => {
-          clearInterval(interval);
+          this.cleanupBatchPolling();
           this.batchRunning.set(false);
         }
       });
@@ -1476,15 +1563,24 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit {
   }
 
   getPortalName(portal?: string): string {
-    return portal ? (PORTAIS[portal] || portal.replace(/-search$/, '')) : 'Portal';
+    return portal ? getPortalDisplayName(portal) : 'Portal';
   }
 
   getModelLabel(type?: string): string {
-    return type ? (MODELOS[type] || type) : 'Modelo não informado';
+    return getWorkModelLabel(type);
   }
 
   hasVisa(vaga: Vaga): boolean {
     return (vaga as any).visa_sponsorship === true || (vaga as any).visa_sponsorship === 'true' || (vaga as any).visa_sponsorship === 1;
+  }
+
+  /** Timestamp (meia-noite local) da data de publicação ou null se ausente/inválida. */
+  parsePostedDate(raw: string | null | undefined): number | null {
+    return parseCalendarDateMs(raw);
+  }
+
+  isUndated(vaga: Vaga): boolean {
+    return this.parsePostedDate(vaga.date) === null;
   }
 
   getWarning(vaga: Vaga): string | null {

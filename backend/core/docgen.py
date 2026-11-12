@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.db.repository import Repository
-from backend.tools import painel, painel_ia, verify_pdf
+from backend.tools import painel, painel_ia
 
 
 class DocGenService:
@@ -150,7 +150,3 @@ class DocGenService:
                         pass
 
         return {"ok": True, "removed": removed, "count": len(removed), "kept_cv": keep_cv}
-
-    def verify_pdf_layout(self, path: str) -> Dict[str, Any]:
-        """Validate generated PDF compliance against page bounds."""
-        return verify_pdf.verify_pdf(path)

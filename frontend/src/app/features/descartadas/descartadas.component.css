@@ -69,7 +69,7 @@
 }
 
 .job-card {
-  background: var(--vc-bg-surface);
+  background: var(--vc-bg-surface, var(--vc-panel));
   border: 1px solid var(--vc-border);
   border-radius: 10px;
   padding: 1.25rem;

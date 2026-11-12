@@ -48,6 +48,21 @@ class TestLivenessService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(res["alive"])
         self.assertEqual(res["reason"], "posting_closed_text")
 
+    async def test_probe_blocks_ssrf_and_non_http_urls(self):
+        client = AsyncMock()
+        for bad_url in (
+            "file:///etc/passwd",
+            "http://127.0.0.1:8765/api/settings",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://localhost:8765/api/profile",
+            "http://10.0.0.1/admin",
+        ):
+            res = await self.liveness.probe_url(client, bad_url)
+            self.assertIsNone(res["alive"], bad_url)
+            self.assertIn(res["reason"], ("invalid_scheme", "blocked_internal_host", "blocked_private_ip"))
+        client.head.assert_not_called()
+        client.get.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,67 +2,41 @@
 
 ## 1. Visão Geral
 
-O módulo de geolocalização do `vagamundo` integra visualização cartográfica interativa diretamente no painel de oportunidades (`tools/painel.py` e `tools/painel/index.html`), permitindo que a pessoa candidata analise a distribuição geográfica das vagas encontradas tanto no Brasil (dividido por 27 Unidades Federativas) quanto internacionalmente (cobrindo 172 países e pólos de contratação remota).
+O módulo de geolocalização do **Vagamundo** oferece visualização cartográfica interativa diretamente na tela **Buscar e Vagas** (`/buscar-vagas`), permitindo analisar a distribuição geográfica das oportunidades no **Brasil (27 Unidades Federativas)** e no **Mundo (172 países)** além dos fluxos remotos.
 
 ---
 
 ## 2. Componentes e Arquitetura
 
-### 2.1 Dados Cartográficos (`tools/painel/geo_data.json`)
-- Contém a definição vetorial compactada (caminhos SVG e centroides) de:
-  - **Brasil (27 UFs):** SP, RJ, MG, RS, PR, SC, BA, DF, etc.
-  - **Mundo (172 países):** Códigos ISO-2 (BR, US, DE, NL, PT, GB, CA, RU, etc.).
-- Não depende de bibliotecas externas pesadas (como Leaflet, Google Maps ou D3), garantindo execução local rápida, offline e com conformidade estrita com a política de Content Security Policy (`CSP`).
+### 2.1 Dados Cartográficos (`geo_data.json`)
+- O arquivo vetorial compactado (caminhos SVG e centroides de 27 UFs BR e 172 códigos ISO-2 globais) reside em `frontend/src/assets/geo_data.json` (servido pelo backend via `GET /api/geo` e como fallback local no Angular).
+- Não depende de bibliotecas externas (como Leaflet, Google Maps ou D3), garantindo carregamento offline imediato, zero vazamento de telemetria a terceiros e conformidade total com CSP.
 
-### 2.2 Endpoint de Geometria (`GET /api/geo`)
-- Implementado no servidor HTTP local (`tools/painel.py`).
-- Utiliza **cache em memória (`_GEO_CACHE`)** no backend para evitar leituras repetidas em disco.
-- No frontend, utiliza **`sessionStorage`** para cache instantâneo (~1ms) entre recarregamentos e navegação de abas.
-- Utiliza padrão de deduplicação via Promise (`geoMapPromise`) para evitar requisições de rede redundantes.
+### 2.2 Endpoint e Cache (`GET /api/geo`)
+- Servido pelo backend FastAPI (`backend/api/routes/search.py`), utilizando `ApiService.getGeo()` no Angular.
+- No frontend, o estado cartográfico e os filtros ativos são gerenciados de forma reativa por `SearchStateService` (persistido em `localStorage` sob `vagamundo.searchState.v1`) e cache de geometria em `sessionStorage`.
 
-### 2.3 Resolução Geográfica (`resolveGeo(row)`)
-A função `resolveGeo` no cliente normaliza a localização informada em cada vaga retornada:
-1. **Regime Remoto:** Identifica vagas 100% remotas e as direciona para baldes específicos:
-   - `REMOTO_BR`: Remoto Brasil
-   - `EU_REMOTE`: Remoto Europa
-   - `GLOBAL_REMOTE`: Remoto Internacional / Global
-2. **Polos Brasileiros (UFs e Cidades):**
-   - Identifica siglas de estado e principais cidades (ex: São Paulo, Campinas, Belo Horizonte, Curitiba, Porto Alegre, Salvador, etc.).
-3. **Países Estrangeiros e Eurásia:**
-   - Mapeia termos internacionais e países da rede EURES/Américas/Ásia para suas respectivas siglas ISO-2.
-   - **Rússia e Eurásia (`RU`):** Mapeamento nativo para vagas vindas do HeadHunter e Habr Career (`Moscou`, `São Petersburgo`, `Novosibirsk`, `Russia`, etc.).
+### 2.3 Resolução Geográfica (`resolveGeo` em `frontend/src/app/core/utils/job-filters.util.ts`)
+A função pura `resolveGeo` normaliza a localidade e o portal de cada vaga em uma estrutura `GeoResolution`:
+1. **Regime Remoto:** Separa oportunidades 100% remotas em baldes dedicados (`REMOTO_BR`, `EU_REMOTE`, `GLOBAL_REMOTE`) considerando `BR_PORTALS` e termos do anúncio.
+2. **Polos Brasileiros (UFs e Cidades):** Reconhece siglas estaduais e centenas de nomes de municípios (`BR_UF_WORDS`) para atribuir a respectiva UF (`SP`, `MG`, `RJ`, `PR`, `SC`, `RS`, etc.).
+3. **Países Estrangeiros e Eurásia:** Mapeia países da Europa/EURES, Américas, Ásia e Eurásia para seus códigos ISO-2 (incluindo mapeamento nativo `RU` para `Moscou`, `São Petersburgo`, `HeadHunter`, `Habr Career` etc.).
+
+Clicar em um estado, país ou badge remoto aplica `ActiveGeoFilter` imediatamente sobre a lista de vagas exibida.
 
 ---
 
 ## 3. Modos de Visualização e Legendagem
 
-O painel adota uma separação visual limpa entre contagem de vagas e avaliação por IA:
+Em `BuscarVagasComponent` (`frontend/src/app/features/buscar-vagas/buscar-vagas.component.ts`), a visualização alterna entre **Volume de Vagas** e **Notas da Triagem IA**:
 
-### 3.1 Modo Inicial / Volume de Vagas (Padrão)
-- **Quando ativo:** Ao abrir a página e após buscas gerais de vagas, antes de solicitar a triagem por IA.
-- **Coloração do Mapa:**
-  - `0 vagas`: `#131b2b` (fundo cartográfico neutro)
-  - `1 a 4 vagas`: `#0369a1` (azul moderado)
-  - `5 a 9 vagas`: `#0284c7` (azul intenso)
-  - `10+ vagas`: `#f59e0b` (laranja de alto volume)
-- **Rótulos dos Badges:** Apresentam o código do local e a contagem exata (ex.: `BR` / `56 vaga(s)`).
-
-### 3.2 Modo Triagem / Notas de Compatibilidade
-- **Quando ativo:** Ao clicar em **"Triar vagas com a IA"** ou ao selecionar filtros de nota (`f-score`).
-- **Coloração do Mapa:**
-  - `Nota 75+`: `#10b981` (verde esmeralda - forte afinidade)
-  - `Nota 60 a 74`: `#0ea5e9` (azul claro - afinidade média)
-  - `Nota < 60`: `#64748b` (cinza ardósia - baixa afinidade)
-  - `Sem nota calculada`: `#0369a1`
-- **Contagem Mantida:** Os números de vagas **permanecem sempre visíveis** no badge (ex.: `56 (85p)` ou `56 vaga(s)`).
-- **Controle Manual:** Um botão discreto (`Ver volume de vagas` / `Ver notas da triagem`) permite alternar entre as visões a qualquer momento quando houver vagas triadas.
+- **Modo Volume (Padrão):** Destaca densidade de oportunidades por localidade (0 vagas em neutro, faixas crescentes de azul até alto volume em âmbar) com badges exibindo o código e a contagem exata.
+- **Modo Triagem IA:** Quando há vagas avaliadas, permite colorir pelas faixas de nota (`75+` verde, `60–74` azul claro, `< 60` ardósia) mantendo sempre a contagem visível no badge, com alternância manual a qualquer momento.
 
 ---
 
-## 4. Otimizações de Desempenho e Segurança
+## 4. Segurança (DOM SVG Puro, Zero `innerHTML`)
 
-1. **Carregamento Inicial Limpo:**
-   - Na abertura da página, o mapa mundial é renderizado imediatamente em estado limpo (vazio), sem pré-carregar vagas de buscas antigas ou disparar pesquisas não solicitadas.
-2. **Segurança e CSP:**
-   - Todos os elementos SVG e gráficos são criados via `document.createElementNS` e `replaceChildren`.
-   - Proibição absoluta de `innerHTML`, `outerHTML` e `eval`, garantindo conformidade com a auditoria de segurança (`tools/security_guards.py`).
+Para eliminar qualquer superfície de XSS armazenado caso um título, cidade ou nome de país venha malformado de um portal externo:
+- As funções `renderWorldMapSvg`, `renderBrasilMapSvg`, `createSvgEl`, `appendOceanGradient` e `createMapBadge` em `BuscarVagasComponent` constroem toda a árvore SVG usando exclusivamente `document.createElementNS('http://www.w3.org/2000/svg', ...)`, `.replaceChildren()` e `.textContent`.
+- O uso de `innerHTML`, `outerHTML`, `eval` ou inserções de HTML bruto no painel é bloqueado automaticamente por `backend/tools/security_guards.py` (verificação executada em testes e CI).

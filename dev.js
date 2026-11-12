@@ -29,22 +29,36 @@ function killPort(port) {
 killPort(8765);
 killPort(4200);
 
-// 2. Inicia o Backend Python
-console.log('\x1b[36m[backend]\x1b[0m Iniciando servidor FastAPI / Uvicorn (porta 8765)...');
+// 2. Inicia o Backend Python (com auto-restart caso caia inesperadamente)
 const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-const backend = spawn(pythonCmd, ['-m', 'uvicorn', 'backend.api.app:app', '--port', '8765', '--host', '127.0.0.1'], {
-  cwd: __dirname,
-  stdio: ['inherit', 'pipe', 'pipe']
-});
+let backend = null;
+let isCleaningUp = false;
 
-backend.stdout.on('data', (data) => {
-  const msg = data.toString();
-  process.stdout.write(`\x1b[36m[backend]\x1b[0m ${msg}`);
-});
+function startBackend() {
+  if (isCleaningUp) return;
+  console.log('\x1b[36m[backend]\x1b[0m Iniciando servidor FastAPI / Uvicorn (porta 8765)...');
+  backend = spawn(pythonCmd, ['-m', 'uvicorn', 'backend.api.app:app', '--port', '8765', '--host', '127.0.0.1'], {
+    cwd: __dirname,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
 
-backend.stderr.on('data', (data) => {
-  process.stderr.write(`\x1b[31m[backend-err]\x1b[0m ${data.toString()}`);
-});
+  backend.stdout.on('data', (data) => {
+    const msg = data.toString();
+    process.stdout.write(`\x1b[36m[backend]\x1b[0m ${msg}`);
+  });
+
+  backend.stderr.on('data', (data) => {
+    process.stderr.write(`\x1b[31m[backend-err]\x1b[0m ${data.toString()}`);
+  });
+
+  backend.on('exit', (code) => {
+    if (isCleaningUp) return;
+    console.error(`\x1b[33m[backend]\x1b[0m Servidor Python encerrado (code=${code}). Reiniciando automaticamente em 1.5s...`);
+    setTimeout(() => startBackend(), 1500);
+  });
+}
+
+startBackend();
 
 // 3. Aguarda o backend responder antes de ligar o frontend
 function waitForBackend(callback, retries = 25) {
@@ -73,7 +87,7 @@ waitForBackend(() => {
   const ngBin = path.join(__dirname, 'frontend', 'node_modules', '@angular', 'cli', 'bin', 'ng.js');
   frontend = spawn(process.execPath, [ngBin, 'serve'], {
     cwd: path.join(__dirname, 'frontend'),
-    stdio: 'inherit'
+    stdio: ['pipe', 'inherit', 'inherit']
   });
 
   frontend.on('exit', (code) => {
@@ -83,7 +97,6 @@ waitForBackend(() => {
 });
 
 // 5. Finalização limpa ao pressionar Ctrl+C
-let isCleaningUp = false;
 function cleanup() {
   if (isCleaningUp) return;
   isCleaningUp = true;

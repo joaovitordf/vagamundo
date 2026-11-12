@@ -123,6 +123,68 @@ class Tracker(Tmp):
         self.assertEqual(rows[1]["source"], "https://new")
 
 
+class RecruiterTriageCalibration(Tmp):
+    def test_compact_candidate_profile_keeps_claude_rules_and_profile_in_english(self):
+        long_cv_en = "ENGLISH_RESUME " * 700
+        long_profile_pt = "PERFIL_PT_COMPLETO experiencias Angular Java Python"
+        claude_text = (
+            "# Assistente\n"
+            "## Perfil da pessoa candidata\n"
+            "REGRA_SENIORIDADE_JUNIOR_PLENO Localidade Campinas-SP Engenharia de Software\n"
+            "## Estrutura do repositório\n"
+            + ("WORKFLOW_IGNORADO " * 800)
+        )
+        p_md = self.dir / "profile.md"
+        c_md = self.dir / "CLAUDE.md"
+        p_md.write_text(long_profile_pt, encoding="utf-8")
+        c_md.write_text(claude_text, encoding="utf-8")
+
+        with mock.patch.object(painel_ia, "PROFILE_MD", p_md), \
+             mock.patch.object(painel_ia, "CLAUDE_MD", c_md), \
+             mock.patch.object(painel_ia, "english_cv_text", return_value=long_cv_en):
+            compact = painel_ia._compact_candidate_profile(language="en", max_chars=14000)
+
+        self.assertIn("REGRA_SENIORIDADE_JUNIOR_PLENO", compact)
+        self.assertIn("PERFIL_PT_COMPLETO", compact)
+        self.assertNotIn("WORKFLOW_IGNORADO", compact)
+        self.assertLessEqual(len(compact), 14000)
+
+    def test_seniority_ceiling_respects_mixed_or_junior_titles(self):
+        # Título estritamente Sênior continua travado em 45
+        s, v, _ = painel_ia._apply_seniority_ceiling("Senior Rust Engineer", {}, 80, "Good Fit", "Forte")
+        self.assertEqual((s, v), (45, "Weak Fit"))
+
+        # Título misto ou com vaga Júnior no mesmo anúncio NÃO é sobrescrito cegamente
+        s2, v2, _ = painel_ia._apply_seniority_ceiling("Sortrace | Senior CV, Junior Frontend", {}, 72, "Good Fit", "Forte")
+        self.assertEqual((s2, v2), (72, "Good Fit"))
+
+        s3, v3, _ = painel_ia._apply_seniority_ceiling("Backend Engineer (Pleno / Sênior)", {}, 68, "Good Fit", "Ok")
+        self.assertEqual((s3, v3), (68, "Good Fit"))
+
+    def test_recruiter_triage_prompt_includes_multirole_and_adjacent_rules(self):
+        captured = {}
+
+        def fake_llm(prompt, temperature=0.1, timeout=None):
+            captured["prompt"] = prompt
+            return '{"classification": "vaga_ativa", "best_email": "jobs@albert.com", "score": 68, "verdict": "Good Fit", "summary": "New grad remoto."}'
+
+        post = {
+            "title": "ALBERT | REMOTE, ALMOST ANYWHERE | New grads",
+            "company": "meetalbert",
+            "location": "Remoto / Global",
+            "emails": ["jobs@albert.com"],
+            "description": "Remote almost anywhere. Python, PostgreSQL, React.",
+        }
+        with mock.patch.object(painel_ia, "call_llm", side_effect=fake_llm), \
+             mock.patch.object(painel_ia, "_compact_candidate_profile", return_value="COMPACT_PROFILE"):
+            out = painel_ia.triar_post_recrutador(post)
+
+        self.assertEqual(out["score"], 68)
+        self.assertIn("COMPACT_PROFILE", captured["prompt"])
+        self.assertIn("Múltiplas vagas no mesmo anúncio", captured["prompt"])
+        self.assertIn("framework irmão", captured["prompt"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

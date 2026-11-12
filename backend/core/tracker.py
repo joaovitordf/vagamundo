@@ -71,9 +71,6 @@ class TrackerService:
     ) -> int:
         return self.repo.mark_jobs(ids=ids, decision=decision, source=source, note=note)
 
-    def record_evaluation(self, eval_data: dict) -> int:
-        return self.repo.insert_evaluation(eval_data)
-
     def get_evaluation(self, job_id: str) -> dict | None:
         return self.repo.get_evaluation(job_id)
 
@@ -97,9 +94,6 @@ class TrackerService:
 
     def delete_application_event(self, event_id: int) -> int:
         return self.repo.delete_application_event(event_id=event_id)
-
-    def record_scan_run(self, run_data: dict) -> int:
-        return self.repo.insert_scan_run(run_data)
 
     def record_application_ledger(
         self,

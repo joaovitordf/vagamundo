@@ -33,16 +33,19 @@
   </div>
 } @else {
   <div class="cards-grid">
-    @for (job of filteredJobs(); track job.url) {
+    @for (job of filteredJobs(); track job.url || job.id || $index) {
       <article class="job-card">
         <div class="job-card__header">
           <div>
-            <h3 class="job-card__title">{{ job.title }}</h3>
+            <h3 class="job-card__title">{{ job.title || 'Vaga sem título' }}</h3>
             <p class="job-card__company">{{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}</p>
           </div>
-          @if (job.screening?.score !== undefined && job.screening.score !== null) {
-            <span class="vc-badge-fit vc-badge-fit--low">
-              {{ job.screening!.score }}/100 &bull; {{ job.screening!.verdict }}
+          @if (job.screening && job.screening.score !== undefined && job.screening.score !== null) {
+            <span class="vc-badge-fit"
+              [class.vc-badge-fit--high]="job.screening.score >= 75"
+              [class.vc-badge-fit--med]="job.screening.score >= 50 && job.screening.score < 75"
+              [class.vc-badge-fit--low]="job.screening.score < 50">
+              {{ job.screening.score }}/100 &bull; {{ job.screening.verdict || (job.screening.score >= 75 ? 'Alta Afinidade' : (job.screening.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
             </span>
           }
         </div>

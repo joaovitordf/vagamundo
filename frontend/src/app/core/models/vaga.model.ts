@@ -8,10 +8,14 @@ export interface Vaga {
   portal?: string;
   date?: string;
   description?: string;
-  workplace_type?: 'remote' | 'hybrid' | 'on_site' | string;
+  workplace_type?: 'remote' | 'hybrid' | 'on_site' | 'on-site' | string;
   seniority?: string;
   contract?: string;
   salary?: string;
+  query?: string;
+  tags?: string[];
+  skills?: string[];
+  visa_sponsorship?: boolean | string | number;
   screening?: {
     score?: number;
     verdict?: string;
@@ -183,6 +187,15 @@ export interface DashboardStats {
   recent_activity: DashboardActivityPoint[];
 }
 
+export interface PreviouslyContactedEmail {
+  email: string;
+  company: string;
+  title: string;
+  contacted_at: string;
+  job_id?: string;
+  application_id?: number;
+}
+
 export interface RecruiterPost {
   id: number;
   emails: string[];
@@ -199,5 +212,16 @@ export interface RecruiterPost {
   match_score: number;
   job_id?: string;
   dismissed?: number;
+  ai_classification?: 'vaga_ativa' | 'banco_talentos' | 'nao_e_vaga' | null;
+  ai_score?: number | null;
+  ai_verdict?: string | null;
+  ai_summary?: string | null;
+  ai_best_email?: string | null;
+  ai_evaluated_at?: string | null;
+  auto_promoted?: number;
+  auto_run_id?: string | null;
+  contacted_email?: string | null;
+  contacted_at?: string | null;
+  previously_contacted?: PreviouslyContactedEmail[];
   created_at: string;
 }

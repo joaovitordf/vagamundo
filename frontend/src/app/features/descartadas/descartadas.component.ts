@@ -26,6 +26,11 @@ const PORTAIS: Record<string, string> = {
   'habrcareer-search': 'Habr Career',
   'google-careers': 'Google Careers',
   'eures': 'EURES (Europa)',
+  'github-vagas': 'GitHub Vagas BR',
+  'remotive-search': 'Remotive',
+  'remoteok-search': 'RemoteOK',
+  'hn-search': 'Hacker News',
+  'linkedin_post': 'LinkedIn (Post)',
 };
 
 @Component({

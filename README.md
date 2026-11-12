@@ -12,12 +12,12 @@ O **Vagamundo** é um ecossistema completo e local para profissionais buscarem v
 
 ## Principais Funcionalidades
 
-### 1. Busca Multicanal em 18 Portais de Vagas
-O Vagamundo agrega oportunidades de 18 portais nacionais e internacionais em uma interface unificada:
-- **Portais ATS Corporativos:** Gupy, Sólides Vagas, Greenhouse, DigAÍ (entrevistas por IA).
-- **Portais Especializados em Tecnologia:** Programathor, GeekHunter, FreeHire (agregador técnico global), Habr Career e Hacker News.
-- **Portais Generalistas e Executivos:** VAGAS.com, InfoJobs Brasil, Empregos.com.br, Michael Page, Robert Half e LinkedIn.
-- **Vagas 100% Remotas:** Remotar (Brasil) e Jobicy (Internacional).
+### 1. Busca Multicanal em 24 Portais de Vagas
+O Vagamundo agrega oportunidades de 24 portais nacionais e internacionais em uma interface unificada:
+- **Portais ATS Corporativos:** Gupy, Sólides Vagas, Greenhouse, Ashby e DigAÍ (entrevistas por IA).
+- **Portais Especializados em Tecnologia e Comunicação:** Programathor, GeekHunter, Trampos, FreeHire (agregador técnico global), Habr Career e Hacker News.
+- **Portais Generalistas, Executivos e Internacionais:** VAGAS.com, InfoJobs Brasil, Empregos.com.br, Michael Page, Robert Half, LinkedIn e HeadHunter (`hh.ru`).
+- **Vagas 100% Remotas:** Remotar (Brasil), Jobicy e RemoteOK (Internacionais).
 - **Vagas Afirmativas & Nichos:** PCD Online (exclusivo para PcD), Agrobase e AGROSearch (agronegócio e ciências agrárias).
 
 ### 2. Mapa Interativo (Brasil & Mundo)
@@ -54,7 +54,7 @@ vagamundo/
 │   ├── core/             # Serviços de negócio (avaliador, rastreador, perfil)
 │   ├── db/               # SQLite primário (modo WAL) e repositório de persistência
 │   └── tools/            # Utilitários de compilação, scraping e integração com IA
-├── .agents/skills/       # 18 Scrapers de portais de vagas em TypeScript (Bun)
+├── .agents/skills/       # 24 Scrapers de portais de vagas em TypeScript (Bun)
 └── docs/                 # Documentação arquitetural detalhada e ADRs
 ```
 
@@ -68,6 +68,9 @@ vagamundo/
 - **Bun** ([instruções de instalação](https://bun.sh))
 
 ### 1. Clonar e Instalar Dependências
+
+> **Aviso de Privacidade:** Prefira trabalhar em um **clone local** ou **repositório privado** (evite um *fork público* no GitHub via `gh repo fork`), pois comandos como `/setup` gravam seus **dados pessoais** em arquivos rastreados do perfil caso não estejam isolados. Consulte [SECURITY.md](SECURITY.md) antes de publicar alterações em um repositório remoto.
+
 ```bash
 # Clone o repositório
 git clone https://github.com/joaovitordf/vagamundo.git

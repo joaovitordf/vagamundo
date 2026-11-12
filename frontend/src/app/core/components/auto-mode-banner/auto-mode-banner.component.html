@@ -1,0 +1,149 @@
+@if (auto.showBanner() && auto.status(); as st) {
+  <div class="auto-banner"
+    role="status"
+    aria-live="polite"
+    [class.auto-banner--running]="st.running"
+    [class.auto-banner--cooldown]="st.phase === 'cooldown'"
+    [class.auto-banner--done]="!st.running && st.phase === 'done'"
+    [class.auto-banner--warn]="!st.running && st.phase === 'cancelled'"
+    [class.auto-banner--error]="!st.running && st.phase === 'error'">
+
+    <div class="auto-banner__main">
+      <div class="auto-banner__icon">
+        @if (st.phase === 'cooldown') {
+          <i class="bi bi-hourglass-split pulse-warn"></i>
+        } @else if (st.running) {
+          <i class="bi bi-exclamation-triangle-fill pulse-warn"></i>
+        } @else if (st.phase === 'error') {
+          <i class="bi bi-x-octagon-fill"></i>
+        } @else {
+          <i class="bi bi-robot"></i>
+        }
+      </div>
+
+      <div class="auto-banner__body">
+        <div class="auto-banner__headline">
+          @if (st.running) {
+            <strong>MODO AUTOMÁTICO {{ st.continuous ? 'CONTÍNUO ' : '' }}ATIVO — {{ st.mode === 'recruiters' ? 'RECRUTADORES' : 'SEM LIMITE DE VAGAS' }}</strong>
+            @if (st.phase === 'cooldown') {
+              <span class="auto-banner__cooldown-note">
+                Aguardando intervalo seguro · Próxima rodada (#{{ (st.round || 1) + 1 }}) em <strong>{{ auto.cooldownCountdownLabel() }}</strong>
+              </span>
+            } @else {
+              <span class="auto-banner__warning-note">
+                Consumo contínuo de IA e tempo proporcional {{ st.mode === 'recruiters' ? 'às publicações encontradas' : 'às vagas encontradas' }}.
+              </span>
+            }
+          } @else if (st.phase === 'error') {
+            <strong>{{ phaseLabel() }}:</strong>
+            <span>{{ st.error }}</span>
+          } @else {
+            <strong>{{ phaseLabel() }}</strong>
+            @if (st.undone) {
+              <span class="auto-banner__undone-tag">(Rodada desfeita)</span>
+            }
+          }
+        </div>
+
+        <div class="auto-banner__meta">
+          @if ((st.round || 0) > 0) {
+            <span class="auto-chip auto-chip--round">
+              <i class="bi bi-arrow-repeat"></i> Rodada #{{ st.round }}{{ st.continuous ? ' · Contínuo' : '' }}
+            </span>
+          }
+
+          @if (st.phase === 'cooldown') {
+            <span class="auto-chip auto-chip--cooldown">
+              <i class="bi bi-clock"></i> Próxima em {{ auto.cooldownCountdownLabel() }}
+            </span>
+          } @else {
+            <span class="auto-chip">
+              <i class="bi bi-activity"></i> {{ phaseLabel() }}
+            </span>
+          }
+
+          @if (st.backoff_reason) {
+            <span class="auto-chip auto-chip--warn">
+              <i class="bi bi-shield-exclamation"></i> {{ st.backoff_reason }}
+            </span>
+          }
+
+          @if (st.keywords.length) {
+            <span class="auto-chip auto-chip--kw" [title]="st.rationale || 'Palavras sorteadas pela IA'">
+              <i class="bi bi-tags"></i> {{ st.keywords.join(' · ') }}
+            </span>
+          }
+
+          <span class="auto-chip">
+            @if (st.mode === 'recruiters') {
+              <i class="bi bi-envelope-at"></i> Recrutadores &bull; Nota ≥ {{ st.min_score }}
+            } @else {
+              <i class="bi bi-calendar-range"></i> Máx. {{ st.jobage }}d &bull; Nota ≥ {{ st.min_score }}
+            }
+          </span>
+
+          @if (st.counts.to_screen > 0 || !st.running) {
+            <span class="auto-chip auto-chip--ok">
+              <i class="bi bi-star-fill"></i> {{ st.counts.promoted }} p/ Me Interessam
+            </span>
+            @if (st.mode === 'recruiters') {
+              <span class="auto-chip">
+                <i class="bi bi-trash3"></i> {{ st.counts.talent_pools_discarded ?? st.counts.discarded }} bancos de talentos descartados
+              </span>
+              @if ((st.counts.not_a_job || 0) > 0) {
+                <span class="auto-chip">
+                  <i class="bi bi-tag"></i> {{ st.counts.not_a_job }} "Não é vaga"
+                </span>
+              }
+            } @else {
+              <span class="auto-chip">
+                <i class="bi bi-trash3"></i> {{ st.counts.discarded }} descartadas
+              </span>
+            }
+            @if (st.counts.errors > 0) {
+              <span class="auto-chip auto-chip--err">
+                <i class="bi bi-bug"></i> {{ st.counts.errors }} erros
+              </span>
+            }
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="auto-banner__actions">
+      <a [routerLink]="st.mode === 'recruiters' ? '/recrutadores' : '/buscar-vagas'" class="auto-btn auto-btn--ghost">
+        <i class="bi" [class.bi-envelope-at]="st.mode === 'recruiters'" [class.bi-search]="st.mode !== 'recruiters'"></i>
+        {{ st.mode === 'recruiters' ? 'Recrutadores' : 'Buscar Vagas' }}
+      </a>
+
+      @if (st.running) {
+        @if (st.phase === 'cooldown') {
+          <button type="button"
+                  class="auto-btn auto-btn--skip"
+                  (click)="auto.skipCooldown()"
+                  [disabled]="auto.skippingCooldown() || auto.cancelling()"
+                  title="Iniciar imediatamente a próxima rodada sem aguardar o restante do intervalo">
+            <i class="bi bi-skip-forward-circle"></i> {{ auto.skippingCooldown() ? 'Iniciando…' : 'Pular espera' }}
+          </button>
+        }
+        <button type="button" class="auto-btn auto-btn--stop" (click)="auto.cancel()" [disabled]="auto.cancelling()">
+          <i class="bi bi-stop-circle"></i> {{ auto.cancelling() ? 'Parando…' : 'Parar agora' }}
+        </button>
+      } @else {
+        @if (st.counts.promoted > 0) {
+          <a routerLink="/me-interessam" class="auto-btn auto-btn--primary">
+            <i class="bi bi-star"></i> Ver Me Interessam ({{ st.counts.promoted }})
+          </a>
+        }
+        @if (st.counts.promoted > 0 && !st.undone && st.run_id) {
+          <button type="button" class="auto-btn auto-btn--undo" (click)="onUndoRun()" [disabled]="auto.undoing()">
+            <i class="bi bi-arrow-counterclockwise"></i> {{ auto.undoing() ? 'Desfazendo…' : 'Desfazer rodada' }}
+          </button>
+        }
+        <button type="button" class="auto-btn auto-btn--close" (click)="auto.dismissBanner()" title="Dispensar aviso" aria-label="Dispensar aviso">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      }
+    </div>
+  </div>
+}

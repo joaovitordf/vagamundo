@@ -1,25 +1,32 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
 import { Observable, of, throwError } from 'rxjs';
 import { map, catchError, switchMap, tap } from 'rxjs/operators';
 import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, DashboardStats, RecruiterPost } from '../models/vaga.model';
+import { SearchStateService } from './search-state.service';
+import { RecruiterStateService } from './recruiter-state.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ApiService {
   private readonly http = inject(HttpClient);
+  private readonly searchState = inject(SearchStateService);
+  private readonly recruiterState = inject(RecruiterStateService);
   private readonly baseUrl = '/api';
   private token = '';
+  private persistedHydrated = false;
 
   // Estado de busca da sessão atual: inicia vazio e só popula quando o usuário clica em "Buscar vagas"
   readonly hasSearchedInSession = signal<boolean>(false);
   readonly sessionVagas = signal<Vaga[]>([]);
-  readonly hasSearchedRecruitersInSession = signal<boolean>(false);
+  readonly hasSearchedRecruitersInSession = computed(() => this.recruiterState.hasActiveKeywordSearch());
   readonly savedCount = signal<number>(0);
   readonly applicationsCount = signal<number>(0);
   readonly discardedCount = signal<number>(0);
-  readonly recruiterPostsCount = signal<number>(0);
+  readonly recruiterPostsCount = computed(() =>
+    this.recruiterState.hasActiveKeywordSearch() ? this.recruiterState.filteredPosts().length : 0
+  );
 
   constructor() {
     this.initToken();
@@ -97,10 +104,36 @@ export class ApiService {
     return this.http.get<{ new: Vaga[]; total?: number; meta?: any }>(`${this.baseUrl}/results`).pipe(
       tap(res => {
         if (this.hasSearchedInSession()) {
-          this.sessionVagas.set(res.new || []);
+          const items = res.new || [];
+          this.sessionVagas.set(items);
+          this.searchState.allVagas.set(items);
         }
       })
     );
+  }
+
+  hydratePersistedSessions(): void {
+    if (this.persistedHydrated) return;
+    this.persistedHydrated = true;
+
+    if (this.searchState.hasTodaySearch()) {
+      this.hasSearchedInSession.set(true);
+      if (this.searchState.allVagas().length > 0) {
+        this.sessionVagas.set(this.searchState.allVagas());
+      }
+      this.getResults().subscribe({
+        error: () => {},
+      });
+    }
+
+    if (this.recruiterState.hasActiveKeywordSearch()) {
+      this.getRecruiterPosts().subscribe({
+        next: (res) => {
+          this.recruiterState.allPosts.set(res.posts || []);
+        },
+        error: () => {},
+      });
+    }
   }
 
   getSaved(): Observable<any[]> {
@@ -187,6 +220,8 @@ export class ApiService {
     return this.postWithToken<{ cleared?: number }>(`${this.baseUrl}/clear-pending`, {}).pipe(
       tap(() => {
         this.sessionVagas.set([]);
+        this.hasSearchedInSession.set(false);
+        this.searchState.clearSearchSession();
       })
     );
   }
@@ -197,7 +232,14 @@ export class ApiService {
     );
   }
 
-  markApplied(payload: { url: string; company?: string; role?: string; portal?: string }): Observable<any> {
+  markApplied(payload: {
+    url: string;
+    company?: string;
+    role?: string;
+    portal?: string;
+    contact_channel?: string;
+    contacted_email?: string;
+  }): Observable<any> {
     return this.postWithToken(`${this.baseUrl}/applied`, payload).pipe(
       tap(() => this.refreshCounts())
     );
@@ -205,6 +247,20 @@ export class ApiService {
 
   removeApplication(payload: { url?: string; id?: number; job_id?: string }): Observable<any> {
     return this.postWithToken(`${this.baseUrl}/applications/remove`, payload).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  reopenRecruiterApplication(payload: {
+    id?: number;
+    job_id?: string;
+    url?: string;
+    recruiter_post_id?: number;
+  }): Observable<{ ok: boolean; reopened: boolean; post_id?: number; job_id?: string; url?: string }> {
+    return this.postWithToken<{ ok: boolean; reopened: boolean; post_id?: number; job_id?: string; url?: string }>(
+      `${this.baseUrl}/applications/reopen-recruiter`,
+      payload
+    ).pipe(
       tap(() => this.refreshCounts())
     );
   }
@@ -269,19 +325,34 @@ export class ApiService {
     return this.http.get(`${this.baseUrl}/status`);
   }
 
-  getRecruiterPosts(query?: string, onlyCv = false, portal?: string): Observable<{ total: number; posts: RecruiterPost[] }> {
+  getRecruiterPosts(query?: string, onlyCv = false, portal?: string, includeNonJobs = true): Observable<{ total: number; posts: RecruiterPost[] }> {
     const params: string[] = [];
     if (query && query.trim()) params.push(`q=${encodeURIComponent(query.trim())}`);
     if (onlyCv) params.push('only_cv=true');
     if (portal && portal.trim()) params.push(`portal=${encodeURIComponent(portal.trim())}`);
+    if (!includeNonJobs) params.push('include_non_jobs=false');
     const qs = params.length > 0 ? `?${params.join('&')}` : '';
-    return this.http.get<{ total: number; posts: RecruiterPost[] }>(`${this.baseUrl}/recruiters${qs}`).pipe(
-      tap((res) => {
-        if (this.hasSearchedRecruitersInSession()) {
-          this.recruiterPostsCount.set(res?.total || 0);
-        }
-      })
-    );
+    return this.http.get<{ total: number; posts: RecruiterPost[] }>(`${this.baseUrl}/recruiters${qs}`);
+  }
+
+  getRecruiterAutoConfig(): Observable<{ config: any }> {
+    return this.http.get<{ config: any }>(`${this.baseUrl}/recruiters/auto/config`);
+  }
+
+  saveRecruiterAutoConfig(payload: {
+    min_score?: number;
+    continuous?: boolean;
+    cooldown_seconds?: number;
+  }): Observable<{ ok: boolean; config: any }> {
+    return this.postWithToken<{ ok: boolean; config: any }>(`${this.baseUrl}/recruiters/auto/config`, payload);
+  }
+
+  startRecruiterAutoMode(payload: {
+    min_score?: number;
+    continuous?: boolean;
+    cooldown_seconds?: number;
+  }): Observable<any> {
+    return this.postWithToken(`${this.baseUrl}/recruiters/auto/start`, payload);
   }
 
   syncRecruiterPosts(query?: string): Observable<{ ok: boolean; scanned: number; posts_with_email: number; synced: number; hn_synced?: number }> {
@@ -310,9 +381,105 @@ export class ApiService {
     );
   }
 
+  markRecruiterPostInterested(postId: number): Observable<{ ok: boolean; post_id: number; job_id: string; url: string }> {
+    return this.postWithToken<{ ok: boolean; post_id: number; job_id: string; url: string }>(
+      `${this.baseUrl}/recruiters/${postId}/interested`,
+      {}
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  markRecruiterPostContacted(
+    postId: number,
+    payload: { email?: string; notes?: string } = {}
+  ): Observable<{
+    ok: boolean;
+    post_id: number;
+    job_id: string;
+    application_id: number;
+    url: string;
+    contacted_email: string;
+    contacted_at: string;
+  }> {
+    return this.postWithToken<{
+      ok: boolean;
+      post_id: number;
+      job_id: string;
+      application_id: number;
+      url: string;
+      contacted_email: string;
+      contacted_at: string;
+    }>(
+      `${this.baseUrl}/recruiters/${postId}/contacted`,
+      payload
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
   dismissRecruiterPost(postId: number): Observable<{ ok: boolean; id: number }> {
     return this.deleteWithToken<{ ok: boolean; id: number }>(
       `${this.baseUrl}/recruiters/${postId}`
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  getAutoModeStatus(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/auto-mode/status`);
+  }
+
+  getAutoModeConfig(): Observable<{ config: any }> {
+    return this.http.get<{ config: any }>(`${this.baseUrl}/auto-mode/config`);
+  }
+
+  saveAutoModeConfig(payload: {
+    region?: string;
+    portals?: string[] | null;
+    jobage?: number;
+    min_score?: number;
+    hide_undated?: boolean;
+    continuous?: boolean;
+    cooldown_seconds?: number;
+  }): Observable<{ ok: boolean; config: any }> {
+    return this.postWithToken<{ ok: boolean; config: any }>(`${this.baseUrl}/auto-mode/config`, payload);
+  }
+
+  startAutoMode(payload: {
+    region?: string;
+    portals?: string[] | null;
+    jobage?: number;
+    min_score?: number;
+    hide_undated?: boolean;
+    continuous?: boolean;
+    cooldown_seconds?: number;
+  }): Observable<any> {
+    this.hasSearchedInSession.set(true);
+    return this.postWithToken(`${this.baseUrl}/auto-mode/start`, payload);
+  }
+
+  cancelAutoMode(): Observable<any> {
+    return this.postWithToken(`${this.baseUrl}/auto-mode/cancel`, {});
+  }
+
+  skipAutoModeCooldown(): Observable<{ ok: boolean; skipped: boolean }> {
+    return this.postWithToken<{ ok: boolean; skipped: boolean }>(`${this.baseUrl}/auto-mode/skip-cooldown`, {});
+  }
+
+  undoAutoModeRun(runId?: string): Observable<{ ok: boolean; run_id?: string; reverted: number; error?: string }> {
+    return this.postWithToken<{ ok: boolean; run_id?: string; reverted: number; error?: string }>(
+      `${this.baseUrl}/auto-mode/undo`,
+      runId ? { run_id: runId } : {}
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  undoAutoModeJob(payload: { url?: string; job_id?: string }): Observable<{ ok: boolean; reverted: number; error?: string }> {
+    return this.postWithToken<{ ok: boolean; reverted: number; error?: string }>(
+      `${this.baseUrl}/auto-mode/undo-job`,
+      payload
     ).pipe(
       tap(() => this.refreshCounts())
     );

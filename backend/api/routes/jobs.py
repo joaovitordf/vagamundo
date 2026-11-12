@@ -1,6 +1,7 @@
 """Job management, decision marking, and evaluation endpoints."""
 
 from __future__ import annotations
+import re
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -48,15 +49,18 @@ async def get_saved_jobs(
         except Exception:
             pass
 
-    # Pre-fetch saved_at timestamps from status_log for interested jobs
+    # Pre-fetch saved_at timestamps, auto-promotion provenance and linked recruiter direct emails
     job_ids = [s.get("id") for s in raw_saved if s.get("id")]
+    job_urls = [s.get("url") for s in raw_saved if s.get("url")]
     saved_at_map = {}
+    auto_meta_map = {}
+    recruiter_email_map = {}
     if job_ids:
         try:
             placeholders = ",".join("?" for _ in job_ids)
             cur = tracker.repo.conn.execute(
                 f"""
-                SELECT job_id, created_at
+                SELECT job_id, created_at, source, note
                 FROM status_log
                 WHERE to_status = 'interested' AND job_id IN ({placeholders})
                 ORDER BY id ASC
@@ -65,13 +69,29 @@ async def get_saved_jobs(
             )
             for r in cur.fetchall():
                 saved_at_map[r["job_id"]] = r["created_at"]
+                src = r["source"] or ""
+                note = r["note"] or ""
+                is_auto = src in ("auto_triage", "auto_triage_recruiter")
+                m_run = re.search(r"\[auto:([A-Za-z0-9_-]+)\]", note)
+                auto_meta_map[r["job_id"]] = {
+                    "auto_promoted": is_auto,
+                    "auto_origin": "recruiter" if src == "auto_triage_recruiter" else ("jobs" if src == "auto_triage" else None),
+                    "auto_run_id": m_run.group(1) if (is_auto and m_run) else None,
+                }
         except Exception:
             pass
+
+    try:
+        recruiter_email_map = tracker.repo.get_recruiter_emails_for_jobs(job_ids, job_urls)
+    except Exception:
+        recruiter_email_map = {}
 
     rows = []
     for s in raw_saved:
         u = s.get("url")
         jid = s.get("id")
+        auto_meta = auto_meta_map.get(jid, {})
+        rec_emails = recruiter_email_map.get(f"id:{jid}") or recruiter_email_map.get(f"url:{u}") or []
         date_val = s.get("date") or s.get("posted_date") or s.get("first_seen")
         saved_at_val = (
             saved_at_map.get(jid)
@@ -121,6 +141,10 @@ async def get_saved_jobs(
                 "claude": answers,
                 **pdfs,
                 "screening": screening,
+                "auto_promoted": bool(auto_meta.get("auto_promoted", False)),
+                "auto_origin": auto_meta.get("auto_origin"),
+                "auto_run_id": auto_meta.get("auto_run_id"),
+                "recruiter_emails": rec_emails,
             })
         else:
             rows.append({
@@ -129,6 +153,10 @@ async def get_saved_jobs(
                 "posted_date": date_val,
                 "saved_at": saved_date,
                 "saved_at_full": saved_at_str,
+                "auto_promoted": bool(auto_meta.get("auto_promoted", False)),
+                "auto_origin": auto_meta.get("auto_origin"),
+                "auto_run_id": auto_meta.get("auto_run_id"),
+                "recruiter_emails": rec_emails,
             })
 
     def sort_key(r):

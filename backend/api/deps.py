@@ -10,6 +10,7 @@ from backend.core.profile import ProfileService
 from backend.core.ai_mux import AIMux
 from backend.core.liveness import LivenessService
 from backend.core.recruiter_service import RecruiterService
+from backend.core.auto_mode import AutoModeService
 
 _repo: Repository | None = None
 _tracker: TrackerService | None = None
@@ -20,6 +21,7 @@ _profile: ProfileService | None = None
 _ai_mux: AIMux | None = None
 _liveness: LivenessService | None = None
 _recruiter: RecruiterService | None = None
+_auto_mode: AutoModeService | None = None
 
 
 def get_repository() -> Repository:
@@ -83,3 +85,16 @@ def get_recruiter_service() -> RecruiterService:
     if _recruiter is None:
         _recruiter = RecruiterService(repo=get_repository())
     return _recruiter
+
+
+def get_auto_mode() -> AutoModeService:
+    global _auto_mode
+    if _auto_mode is None:
+        _auto_mode = AutoModeService(
+            repo=get_repository(),
+            scanner=get_scanner(),
+            evaluator=get_evaluator(),
+            ai_mux=get_ai_mux(),
+            recruiter_service=get_recruiter_service(),
+        )
+    return _auto_mode

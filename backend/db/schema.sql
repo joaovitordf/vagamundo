@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS applications (
     interview_notes_path TEXT,
     applied_date TEXT,
     notes TEXT,
+    contact_channel TEXT DEFAULT 'portal',
+    contacted_email TEXT,
+    recruiter_post_id INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -147,6 +150,16 @@ CREATE TABLE IF NOT EXISTS recruiter_posts (
     match_score INTEGER DEFAULT 0,
     job_id TEXT REFERENCES jobs(id) ON DELETE SET NULL,
     dismissed INTEGER DEFAULT 0,
+    ai_classification TEXT,
+    ai_score INTEGER,
+    ai_verdict TEXT,
+    ai_summary TEXT,
+    ai_best_email TEXT,
+    ai_evaluated_at TEXT,
+    auto_promoted INTEGER DEFAULT 0,
+    auto_run_id TEXT,
+    contacted_email TEXT,
+    contacted_at TEXT,
     created_at TEXT NOT NULL
 );
 

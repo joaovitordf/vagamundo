@@ -177,8 +177,71 @@ REGION_PORTALS = {
         "remoteok-search", "jobicy-search", "hn-search",
         "freehire-search", "ashby-search", "greenhouse-search",
         "linkedin-search", "hh-search", "habrcareer-search", "remotar-search"
+    },
+    "remote": {
+        "remotar-search", "remoteok-search", "jobicy-search", "hn-search",
+        "freehire-search", "ashby-search", "greenhouse-search", "linkedin-search",
+        "gupy-search", "solides-search", "vagas-search", "infojobs-search"
     }
 }
+
+REGION_LINKEDIN_LOCATION = {
+    "brasil": "Brazil",
+    "estados-unidos": "United States",
+    "europa": "European Union",
+    "remote": "Remote",
+}
+
+
+def _normalize_linkedin_location(cargs: list[str], region: str | None) -> list[str]:
+    """Keep linkedin-search -l/--location aligned with the chosen target region."""
+    target_loc = REGION_LINKEDIN_LOCATION.get(region or "")
+    if not target_loc:
+        return list(cargs)
+    out = list(cargs)
+    was_remote = False
+    replaced = False
+    for flag in ("-l", "--location"):
+        if flag in out:
+            idx = out.index(flag)
+            if idx + 1 < len(out):
+                if out[idx + 1].strip().lower() == "remote":
+                    was_remote = True
+                out[idx + 1] = target_loc
+                replaced = True
+                break
+    if not replaced:
+        out.extend(["-l", target_loc])
+    if (was_remote or region == "remote") and "--remote" not in out:
+        out.extend(["--remote", "remote"])
+    return out
+
+
+def _apply_query_terms(calls: list[tuple], query_str: str) -> list[tuple]:
+    """Split comma-separated keywords into clean single-term portal calls and deduplicate."""
+    terms = [t.strip() for t in query_str.split(",") if t.strip()][:3]
+    if not terms:
+        return calls
+    updated_calls = []
+    seen_sigs = set()
+    for term in terms:
+        for prio, portal, cargs in calls:
+            new_cargs = list(cargs)
+            if "-q" in new_cargs:
+                idx = new_cargs.index("-q")
+                if idx + 1 < len(new_cargs):
+                    new_cargs[idx + 1] = term
+            elif "--query" in new_cargs:
+                idx = new_cargs.index("--query")
+                if idx + 1 < len(new_cargs):
+                    new_cargs[idx + 1] = term
+            else:
+                new_cargs.extend(["-q", term])
+            sig = (portal, tuple(new_cargs))
+            if sig not in seen_sigs:
+                seen_sigs.add(sig)
+                updated_calls.append((prio, portal, new_cargs))
+    return updated_calls
 
 
 
@@ -981,6 +1044,49 @@ def summary(result: dict) -> str:
 
 
 
+def _filter_calls_by_region(
+    calls: list[tuple],
+    region: str | None,
+    has_explicit_portal: bool = False,
+    installed: dict | None = None,
+    default_query: str | None = None,
+) -> list[tuple]:
+    """Filtra chamadas por região sem vazar portais não solicitados quando --portal é explícito."""
+    if not region or region == "all":
+        return calls
+
+    region_set = REGION_PORTALS.get(region, set())
+    filtered = [c for c in calls if c[1] in region_set]
+    if not filtered and not has_explicit_portal:
+        resolved_installed = installed if installed is not None else installed_portals()
+        default_q = default_query or "desenvolvedor"
+        if not default_query and LOCAL_ANSWERS.exists():
+            try:
+                ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
+                if ans.get("cargos"):
+                    default_q = ans["cargos"][0]
+            except Exception:
+                pass
+        for p in sorted(region_set):
+            if resolved_installed.get(p):
+                extra_cargs = ["-q", default_q]
+                if p == "linkedin-search":
+                    extra_cargs = _normalize_linkedin_location(extra_cargs, region)
+                    if not REGION_LINKEDIN_LOCATION.get(region):
+                        extra_cargs.extend(["-l", "Remote"])
+                filtered.append((1, p, extra_cargs))
+
+    normalized_calls = []
+    seen_sigs = set()
+    for prio, portal, cargs in filtered:
+        new_cargs = _normalize_linkedin_location(cargs, region) if portal == "linkedin-search" else list(cargs)
+        sig = (portal, tuple(new_cargs))
+        if sig not in seen_sigs:
+            seen_sigs.add(sig)
+            normalized_calls.append((prio, portal, new_cargs))
+    return normalized_calls
+
+
 def main(argv=None) -> int:
 
     _force_utf8_output()
@@ -1004,7 +1110,7 @@ def main(argv=None) -> int:
     s.add_argument("--out", type=Path, default=None, help="results file (default: system temp dir; never inside the repo)")
 
     s.add_argument("--portal", default=None, help="limit search to a specific portal CLI (e.g. gupy-search)")
-    s.add_argument("--region", default="all", choices=["all", "brasil", "estados-unidos", "europa", "global"], help="filter portals by target region (default all)")
+    s.add_argument("--region", default="all", choices=["all", "brasil", "estados-unidos", "europa", "global", "remote"], help="filter portals by target region (default all)")
     s.add_argument("--query", "-q", default=None, help="search query / keyword to override or apply across portal calls")
 
     s.add_argument("--workers", type=int, default=4, help="parallel CLI calls (default 4; keep it low)")
@@ -1077,7 +1183,10 @@ def main(argv=None) -> int:
 
         return 2
 
-    if getattr(args, "portal", None) and args.portal.strip() and args.portal.strip() != "all":
+    has_explicit_portal = bool(
+        getattr(args, "portal", None) and args.portal.strip() and args.portal.strip() != "all"
+    )
+    if has_explicit_portal:
         raw_portals = [p.strip() for p in args.portal.split(",") if p.strip()]
         target_portals = set()
         for p in raw_portals:
@@ -1123,42 +1232,14 @@ def main(argv=None) -> int:
         calls = [c for c in calls if c[0] in wanted]
 
     if getattr(args, "region", None) and args.region != "all":
-        region_set = REGION_PORTALS.get(args.region, set())
-        calls = [c for c in calls if c[1] in region_set]
-        if not calls:
-            installed = installed_portals()
-            default_q = "desenvolvedor"
-            if LOCAL_ANSWERS.exists():
-                try:
-                    ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
-                    if ans.get("cargos"):
-                        default_q = ans["cargos"][0]
-                except Exception:
-                    pass
-            for p in sorted(region_set):
-                if installed.get(p):
-                    extra_cargs = ["-q", default_q]
-                    if p == "linkedin-search":
-                        extra_cargs.extend(["-l", "Brazil"])
-                    calls.append((1, p, extra_cargs))
+        calls = _filter_calls_by_region(
+            calls,
+            args.region,
+            has_explicit_portal=has_explicit_portal,
+        )
 
     if getattr(args, "query", None) and args.query.strip():
-        q_user = args.query.strip()
-        updated_calls = []
-        for prio, portal, cargs in calls:
-            new_cargs = list(cargs)
-            if "-q" in new_cargs:
-                idx = new_cargs.index("-q")
-                if idx + 1 < len(new_cargs):
-                    new_cargs[idx + 1] = q_user
-            elif "--query" in new_cargs:
-                idx = new_cargs.index("--query")
-                if idx + 1 < len(new_cargs):
-                    new_cargs[idx + 1] = q_user
-            else:
-                new_cargs.extend(["-q", q_user])
-            updated_calls.append((prio, portal, new_cargs))
-        calls = updated_calls
+        calls = _apply_query_terms(calls, args.query.strip())
 
     if not calls:
 

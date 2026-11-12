@@ -345,6 +345,19 @@ class TestFastAPI(unittest.TestCase):
         rem_resp = self.client.post("/api/applications/remove", json={"id": app_id, "url": test_url}, headers={"X-Painel-Token": self.token})
         self.assertEqual(rem_resp.status_code, 200)
 
+    def test_host_check_blocks_localhost_spoof_and_allows_valid_hosts(self):
+        bad_spoof = self.client.get("/api/token", headers={"Host": "localhost.attacker.com:8765"})
+        self.assertEqual(bad_spoof.status_code, 400)
+
+        bad_empty = self.client.get("/api/token", headers={"Host": ""})
+        self.assertEqual(bad_empty.status_code, 400)
+
+        ok_ipv6 = self.client.get("/api/token", headers={"Host": "[::1]:8765"})
+        self.assertEqual(ok_ipv6.status_code, 200)
+
+        ok_local = self.client.get("/api/token", headers={"Host": "localhost:4200"})
+        self.assertEqual(ok_local.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

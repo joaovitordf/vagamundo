@@ -10,7 +10,7 @@ O Vagamundo é composto por:
 - **Frontend SPA:** Angular 17+ moderno com interface reativa em `http://localhost:4200`.
 - **Backend API Gateway:** FastAPI assíncrono com Uvicorn rodando em `http://127.0.0.1:8765`.
 - **Banco de Dados:** SQLite local (`data/vagamundo.db`) com modo WAL e criação automática de tabelas.
-- **Portais de Vagas:** 18 ferramentas de scraping em TypeScript executadas via Bun (`.agents/skills/`).
+- **Portais de Vagas:** 24 ferramentas de scraping em TypeScript executadas via Bun (`.agents/skills/`).
 - **Motor de Inteligência Artificial:** Integração configurável com Google Gemini, Anthropic Claude ou OpenAI.
 
 ---
@@ -53,6 +53,9 @@ Antes de iniciar, certifique-se de ter instalado em sua máquina:
 ## 3. Instalação Passo a Passo
 
 ### Passo 1: Clonar o Repositório
+
+> **Aviso de Privacidade:** Um **fork público** (`gh repo fork`) expõe qualquer commit feito nele; se for manter um backup próprio no GitHub, use um **repositório privado**, pois o `/setup` preenche **dados pessoais** no perfil local. Veja as regras completas em [SECURITY.md](SECURITY.md).
+
 ```bash
 git clone https://github.com/joaovitordf/vagamundo.git
 cd vagamundo

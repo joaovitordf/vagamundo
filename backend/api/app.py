@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.api.routes import applications, dashboard, documents, jobs, profile, recruiters, search, settings
+from backend.api.routes import applications, auto_mode, dashboard, documents, jobs, profile, recruiters, search, settings
 from backend.api.security import HostCheckMiddleware, get_token
 
 _here = Path(__file__).resolve()
@@ -44,6 +44,7 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(recruiters.router, prefix="/api")
+app.include_router(auto_mode.router, prefix="/api")
 
 # SPA serving fallback for Angular
 if ANGULAR_DIST.is_dir():
@@ -58,8 +59,9 @@ if ANGULAR_DIST.is_dir():
         if full_path.startswith("api/"):
             return HTMLResponse(status_code=404, content='{"error": "Endpoint não encontrado"}')
 
-        file_path = ANGULAR_DIST / full_path
-        if full_path and file_path.is_file():
+        dist_root = ANGULAR_DIST.resolve()
+        file_path = (dist_root / full_path).resolve()
+        if full_path and file_path.is_relative_to(dist_root) and file_path.is_file():
             return FileResponse(file_path)
 
         index_file = ANGULAR_DIST / "index.html"

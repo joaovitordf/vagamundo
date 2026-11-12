@@ -51,9 +51,9 @@ BASH = find_bash()
 
 
 def tracked_document_subfolders():
-    """Names of documents/ subfolders tracked in git (ignores local noise)."""
+    """Names of documents/ subfolders tracked in git (or carrying .gitkeep)."""
     out = subprocess.run(
-        ["git", "ls-files", "documents/"],
+        ["git", "ls-files", "documents/", "backend/documents/"],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -62,8 +62,16 @@ def tracked_document_subfolders():
     folders = set()
     for line in out.splitlines():
         parts = line.split("/")
-        if len(parts) >= 3:  # documents/<subfolder>/<file...>
+        if parts[0] == "documents" and len(parts) >= 3:
             folders.add(parts[1])
+        elif parts[:2] == ["backend", "documents"] and len(parts) >= 4:
+            folders.add(parts[2])
+    backend_docs = REPO / "backend" / "documents"
+    if not folders and backend_docs.is_dir():
+        folders = {
+            p.name for p in backend_docs.iterdir()
+            if p.is_dir() and (p / ".gitkeep").exists()
+        }
     return folders
 
 

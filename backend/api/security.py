@@ -33,11 +33,22 @@ class HostCheckMiddleware(BaseHTTPMiddleware):
     """Enforce request host allowlist against DNS rebinding."""
 
     async def dispatch(self, request: Request, call_next):
-        host_header = request.headers.get("host", "").split(":")[0].strip().lower()
-        if host_header and host_header not in ALLOWED_HOSTS and not host_header.startswith("localhost"):
+        raw_host = (request.headers.get("host") or "").strip().lower()
+        if not raw_host:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                content={"error": f"Host '{host_header}' não permitido."},
+                content={"error": "Cabeçalho Host ausente."},
+            )
+        if raw_host.startswith("["):
+            end_bracket = raw_host.find("]")
+            host_header = raw_host[1:end_bracket] if end_bracket != -1 else raw_host
+        else:
+            host_header = raw_host.partition(":")[0]
+
+        if not host_header or host_header not in ALLOWED_HOSTS:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"error": f"Host '{host_header or raw_host}' não permitido."},
             )
         return await call_next(request)
 

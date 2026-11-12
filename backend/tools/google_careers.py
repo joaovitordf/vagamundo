@@ -157,7 +157,7 @@ def evaluate_google_job(
     # Caso 2: Vagas exclusivas afirmativas (Women in Tech / PcD)
     if is_women_exclusive or is_pcd_exclusive:
         grupo = "mulheres (Women in Tech)" if is_women_exclusive else "pessoas com deficiência (PcD)"
-        exp_info = f"{min_years} ano(s) de experiência" if min_years else "graduação em Computação"
+        exp_info = f"{min_years} ano(s) de experiência" if min_years else "formação na área"
         return (
             {
                 "score": 20,
@@ -206,7 +206,7 @@ def evaluate_google_job(
                 "score": 38,
                 "verdict": "Weak Fit",
                 "summary": (
-                    f"Casa na formação em Ciência da Computação, localidade ({location}) e stack ({tech_str}). "
+                    f"Alinhada em localidade ({location}) e stack ({tech_str}). "
                     f"Teto aplicado pois as qualificações mínimas exigem {min_years or 8}+ anos de experiência e liderança sênior."
                 ),
             },
@@ -220,7 +220,7 @@ def evaluate_google_job(
                 "score": 45,
                 "verdict": "Weak Fit",
                 "summary": (
-                    f"Excelente aderência temática e geográfica ({location}) com {tech_str} e Bacharelado em Ciência da Computação. "
+                    f"Boa aderência temática e geográfica ({location}) com {tech_str}. "
                     f"Nota limitada ao teto de senioridade pois a descrição exige {min_years} anos de experiência mínima."
                 ),
             },
@@ -233,21 +233,21 @@ def evaluate_google_job(
         score = 88
         verdict = "Strong Fit"
         summary = (
-            f"Encaixe direto: pede Bacharelado em Ciência da Computação e {min_years or 1} ano de experiência em desenvolvimento "
-            f"({tech_str}) em {location}, alinhado ao seu perfil e tempo de experiência."
+            f"Encaixe direto: pede {min_years or 1} ano(s) de experiência em desenvolvimento "
+            f"({tech_str}) em {location}, alinhado à faixa de senioridade inicial/plena."
         )
     elif min_years <= 3:
         score = 74
         verdict = "Good Fit"
         summary = (
-            f"Boa compatibilidade com o Bacharelado em Ciência da Computação e base em {tech_str} ({location}). "
-            f"As qualificações mínimas pedem {min_years} anos de experiência técnica ou resolução de problemas."
+            f"Boa compatibilidade com base técnica em {tech_str} ({location}). "
+            f"As qualificações mínimas pedem {min_years} anos de experiência."
         )
     else:
         score = 64
         verdict = "Moderate Fit"
         summary = (
-            f"Alinhada à formação em Computação e tecnologias ({tech_str}) em {location}. "
+            f"Alinhada às tecnologias ({tech_str}) em {location}. "
             f"Principal ponto de atenção é o requisito de {min_years} anos de experiência nas qualificações mínimas."
         )
 

@@ -6,8 +6,10 @@
       <div class="title-row">
         <div class="title-with-badge">
           <h2><i class="bi bi-envelope-at title-icon"></i> Recrutadores</h2>
-          @if (hasSearched()) {
-            <span class="badge-total">{{ filteredPosts().length }} de {{ allPosts().length }} {{ allPosts().length === 1 ? 'publicação' : 'publicações' }}</span>
+          @if (hasSearched() && keywordMatchedCount() > 0) {
+            <span class="badge-total">{{ filteredPosts().length }} de {{ keywordMatchedCount() }} {{ keywordMatchedCount() === 1 ? 'publicação' : 'publicações' }}</span>
+          } @else if (hasSearched()) {
+            <span class="badge-total">0 publicações</span>
           }
         </div>
       </div>
@@ -23,7 +25,7 @@
       <!-- Campo 1: Palavras-Chave com Sorteador do CV -->
       <div class="filter-field wide">
         <div class="filter-label-row">
-          <label for="f-recruiter-text">Palavras-chave ou Tecnologia (até 3, separadas por vírgula)</label>
+          <label for="f-recruiter-text">Palavra-chave ou Tecnologia (1 termo focalizado, ou vírgula)</label>
           @if (cvAreaBadge()) {
             <span class="cv-area-badge">{{ cvAreaBadge() }}</span>
           }
@@ -32,7 +34,7 @@
           <input type="text"
                  id="f-recruiter-text"
                  class="vc-input"
-                 placeholder="Filtrar por cargo, tecnologia ou competência (separe por vírgula)..."
+                 placeholder="Ex.: Angular, Python, Spring Boot, Computer Vision..."
                  [(ngModel)]="filterText"
                  (keyup.enter)="onSearch()">
 
@@ -60,17 +62,73 @@
         </select>
       </div>
 
-      <!-- Campo 3: Checkbox Compatibilidade CV -->
-      <div class="filter-field checkbox-field">
+      <!-- Campo 3: Modelo de Trabalho -->
+      <div class="filter-field">
+        <label for="f-recruiter-model">Modelo de Trabalho</label>
+        <select id="f-recruiter-model" class="vc-select" [(ngModel)]="workModelFilter">
+          <option value="">Qualquer modelo</option>
+          <option value="remote">Remoto</option>
+          <option value="hybrid">Híbrido</option>
+          <option value="on-site">Presencial</option>
+          <option value="none">Não informado</option>
+        </select>
+      </div>
+
+      <!-- Campo 4: Região / Polo -->
+      <div class="filter-field">
+        <label for="f-recruiter-region">Região / Polo</label>
+        <select id="f-recruiter-region" class="vc-select" [(ngModel)]="regionFilter">
+          <option value="">Todas as regiões</option>
+          <option value="brasil">Brasil</option>
+          <option value="estados-unidos">Estados Unidos</option>
+          <option value="europa">Europa</option>
+          <option value="global">Global / Remoto</option>
+          <option value="remote">Somente Remoto</option>
+        </select>
+      </div>
+
+      <!-- Campo 5: Data de Publicação -->
+      <div class="filter-field">
+        <label for="f-recruiter-jobage">Data de Publicação</label>
+        <select id="f-recruiter-jobage" class="vc-select" [(ngModel)]="jobAgeFilter">
+          <option value="">Todas as datas (Mostrar tudo)</option>
+          <option value="1">Últimas 24 horas</option>
+          <option value="2">Últimos 2 dias</option>
+          <option value="3">Últimos 3 dias</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="14">Últimos 14 dias</option>
+          <option value="30">Últimos 30 dias</option>
+        </select>
+      </div>
+
+      <!-- Campo 6: Ordenação -->
+      <div class="filter-field">
+        <label for="f-recruiter-sort">Ordenação</label>
+        <select id="f-recruiter-sort" class="vc-select" [(ngModel)]="sortBy">
+          <option value="relevance">Mais relevantes (Padrão)</option>
+          <option value="date">Mais recentes primeiro</option>
+        </select>
+      </div>
+
+      <!-- Checkboxes complementares -->
+      <div class="filter-field wide checkboxes-inline-row">
         <label class="filter-checkbox-label">
-          <input type="checkbox" [ngModel]="onlyCvMatch()" (ngModelChange)="onlyCvMatch.set($event)">
+          <input type="checkbox" [ngModel]="onlyCvMatch()" (ngModelChange)="onOnlyCvMatchChange($event)">
           <span><i class="bi bi-stars"></i> Apenas compatíveis com meu CV</span>
+        </label>
+        <label class="filter-checkbox-label">
+          <input type="checkbox" [ngModel]="hideNonJobs()" (ngModelChange)="onHideNonJobsChange($event)">
+          <span><i class="bi bi-eye-slash"></i> Ocultar "Não é vaga"</span>
+        </label>
+        <label class="filter-checkbox-label" title="Oculta publicações cuja data não foi informada pela origem">
+          <input type="checkbox" [ngModel]="hideUndated()" (ngModelChange)="onHideUndatedChange($event)">
+          <span><i class="bi bi-calendar-x"></i> Ocultar publicações sem data</span>
         </label>
       </div>
 
     </div>
 
-    <!-- BARRA DE AÇÕES (SIMPLIFICADA: APENAS BUSCAR) -->
+    <!-- BARRA DE AÇÕES (BUSCAR + MODO AUTOMÁTICO + LINKEDIN) -->
     <div class="actions-bar">
       <div class="actions-left">
         <button type="button"
@@ -84,6 +142,45 @@
             <i class="bi bi-search"></i> Buscar
           }
         </button>
+
+        <div class="auto-mode-trigger-group">
+          <button type="button"
+                  class="btn-auto-mode"
+                  [class.is-running]="autoMode.isRunning()"
+                  (click)="triggerAutoMode()"
+                  [disabled]="autoMode.isRunning() && autoMode.status()?.mode !== 'recruiters'"
+                  title="Sorteia 1 palavra-chave focalizada do CV por rodada, descarta bancos de talentos, marca posts que não são vagas e move vagas compatíveis para Me Interessam">
+            <i class="bi" [class.bi-stop-circle]="autoMode.isRunning()" [class.bi-robot]="!autoMode.isRunning()"></i>
+            <span>{{ autoMode.isRunning() && autoMode.status()?.mode === 'recruiters' ? 'Parar Automático' : 'Modo Automático' }}</span>
+          </button>
+          <label class="auto-score-field" title="Nota mínima (45 a 95) para mover automaticamente para Me Interessam">
+            <span>Nota ≥</span>
+            <input type="number"
+                   min="45"
+                   max="95"
+                   [(ngModel)]="autoMinScore"
+                   (change)="onAutoConfigChange()"
+                   [disabled]="autoMode.isRunning()" />
+          </label>
+          <label class="auto-continuous-toggle" title="Quando marcado, sorteia novas palavras-chave continuamente com intervalo anti-ban até você clicar em Parar">
+            <input type="checkbox"
+                   [(ngModel)]="autoContinuous"
+                   (ngModelChange)="onAutoConfigChange()"
+                   [disabled]="autoMode.isRunning()" />
+            <span>Contínuo</span>
+          </label>
+          <label class="auto-cooldown-field" title="Intervalo base em segundos entre rodadas (15 a 300 s, com jitter e backoff automático anti-ban)">
+            <span>Intervalo</span>
+            <input type="number"
+                   min="15"
+                   max="300"
+                   step="5"
+                   [(ngModel)]="autoCooldownSeconds"
+                   (change)="onAutoConfigChange()"
+                   [disabled]="autoMode.isRunning() || !autoContinuous" />
+            <span>s</span>
+          </label>
+        </div>
 
         <button type="button"
                 class="btn-action linkedin-btn"
@@ -108,6 +205,23 @@
   <!-- LISTA DE PUBLICAÇÕES (APENAS EXIBE APÓS CLICAR EM BUSCAR) -->
   <section class="posts-list-section">
 
+    @if (hasSearched() && hasSecondaryFilters() && filteredPosts().length < keywordMatchedCount()) {
+      <div class="active-filters-banner recruiter-filters-banner">
+        <div class="active-filters-banner__text">
+          <i class="bi bi-funnel-fill"></i>
+          <div>
+            <span>Filtros ativos: exibindo <strong>{{ filteredPosts().length }}</strong> de <strong>{{ keywordMatchedCount() }}</strong> publicações encontradas.</span>
+            @if (filteredPosts().length === 0 && getHiddenFilterReasons()) {
+              <div class="active-filters-banner__reason">Motivo provável: {{ getHiddenFilterReasons() }}</div>
+            }
+          </div>
+        </div>
+        <button type="button" class="btn-clear-all-filters" (click)="resetSecondaryFilters()">
+          <i class="bi bi-x-circle"></i> Limpar filtros
+        </button>
+      </div>
+    }
+
     @if (!hasSearched()) {
       <div class="initial-search-prompt">
         <i class="bi bi-search prompt-icon"></i>
@@ -123,27 +237,51 @@
       <div class="empty-state">
         <i class="bi bi-inbox empty-icon"></i>
         <h3>Nenhuma publicação encontrada</h3>
-        <p>Nenhuma oportunidade com e-mail correspondeu às palavras-chave informadas. Tente outros termos, limpe os filtros ou busque diretamente no LinkedIn.</p>
-        <button type="button" class="btn-action linkedin-btn mt-3" (click)="openLinkedInContentSearch()">
-          <i class="bi bi-linkedin"></i> Buscar no LinkedIn ↗
-        </button>
+        <p>Nenhuma oportunidade com e-mail correspondeu às palavras-chave e filtros informados. Tente outros termos, limpe os filtros secundários ou busque diretamente no LinkedIn.</p>
+        <div class="empty-actions-row">
+          @if (hasSecondaryFilters()) {
+            <button type="button" class="btn-clear-all-filters mt-3" (click)="resetSecondaryFilters()">
+              <i class="bi bi-x-circle"></i> Limpar filtros
+            </button>
+          }
+          <button type="button" class="btn-action linkedin-btn mt-3" (click)="openLinkedInContentSearch()">
+            <i class="bi bi-linkedin"></i> Buscar no LinkedIn ↗
+          </button>
+        </div>
       </div>
     } @else {
       <div class="posts-grid">
         @for (post of filteredPosts(); track post.id) {
-          <article class="post-card">
+          <article class="post-card" [class.post-card--non-job]="post.ai_classification === 'nao_e_vaga'">
 
             <!-- BLOCO DE DESTAQUE: E-MAIL E CONTEXTO -->
             <div class="email-highlight-banner">
+              @if (post.previously_contacted && post.previously_contacted.length > 0) {
+                <div class="duplicate-outreach-alert" title="Você já enviou e-mail para um destes endereços anteriormente">
+                  <i class="bi bi-exclamation-triangle-fill"></i>
+                  <span>
+                    E-mail já contatado em <strong>{{ formatShortDate(post.previously_contacted[0].contacted_at) }}</strong>
+                    ({{ post.previously_contacted[0].email }} — {{ post.previously_contacted[0].company }})
+                  </span>
+                </div>
+              }
+
               <div class="emails-row">
                 <span class="email-label"><i class="bi bi-envelope-check"></i> E-mail(s) para contato:</span>
                 <div class="emails-chips">
                   @for (email of post.emails; track email) {
                     <button type="button"
                             class="email-chip"
-                            (click)="copyEmail(email)"
-                            title="Clique para copiar o e-mail">
+                            [class.email-chip--best]="post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()"
+                            [class.email-chip--contacted]="!!getPreviouslyContactedMatch(post, email)"
+                            (click)="copyEmail(email, post)"
+                            [title]="getPreviouslyContactedMatch(post, email) ? 'Você já contatou este e-mail em ' + formatShortDate(getPreviouslyContactedMatch(post, email)?.contacted_at) + ' — clique para copiar' : 'Clique para copiar o e-mail'">
                       <span class="email-text">{{ email }}</span>
+                      @if (getPreviouslyContactedMatch(post, email)) {
+                        <span class="copy-badge contacted-pill">Já contatado</span>
+                      } @else if (post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()) {
+                        <span class="copy-badge best-email-pill">Principal</span>
+                      }
                       @if (copiedEmail() === email) {
                         <span class="copy-badge copied"><i class="bi bi-check"></i> Copiado!</span>
                       } @else {
@@ -153,6 +291,29 @@
                   }
                 </div>
               </div>
+
+              @if (copiedPrompt()?.postId === post.id) {
+                <div class="post-copy-prompt">
+                  <span class="post-copy-prompt__text">
+                    <i class="bi bi-send-check"></i>
+                    Copiou <strong>{{ copiedPrompt()!.email }}</strong> — já enviou o e-mail?
+                  </span>
+                  <div class="post-copy-prompt__actions">
+                    <button type="button"
+                            class="btn-prompt-confirm"
+                            (click)="onMarkContactedClick(post, copiedPrompt()!.email)"
+                            [disabled]="isPostBusy(post.id)">
+                      <i class="bi bi-check2-circle"></i> Já mandei e-mail
+                    </button>
+                    <button type="button"
+                            class="btn-prompt-dismiss"
+                            (click)="dismissCopyPrompt()"
+                            title="Fechar lembrete">
+                      <i class="bi bi-x"></i>
+                    </button>
+                  </div>
+                </div>
+              }
 
               @if (post.email_context) {
                 <div class="context-snippet" title="Trecho da publicação onde o e-mail é citado">
@@ -170,14 +331,29 @@
               </div>
 
               <div class="post-badges">
-                <span class="portal-badge" [attr.data-portal]="post.portal">{{ getPortalLabel(post.portal) }}</span>
-                @if (post.match_score && post.match_score > 0) {
-                  <span class="match-score-badge" title="Score de compatibilidade com palavras-chave do seu CV">
-                    <i class="bi bi-stars"></i> {{ post.match_score }}% match
+                @if (post.ai_classification === 'nao_e_vaga') {
+                  <span class="badge-non-job" title="Classificado pela IA como conteúdo que não representa uma vaga real">
+                    <i class="bi bi-exclamation-octagon"></i> Não é vaga
                   </span>
                 }
+                @if (post.ai_classification === 'vaga_ativa' && post.ai_score !== null && post.ai_score !== undefined) {
+                  <span class="ai-score-badge"
+                        [class.ai-score-badge--high]="post.ai_score >= 70"
+                        [class.ai-score-badge--med]="post.ai_score >= 50 && post.ai_score < 70"
+                        [class.ai-score-badge--low]="post.ai_score < 50"
+                        title="Nota calculada pela IA contra seu currículo">
+                    <i class="bi bi-robot"></i> {{ post.ai_score }}/100 &bull; {{ post.ai_verdict || 'Avaliada' }}
+                  </span>
+                }
+                <span class="portal-badge" [attr.data-portal]="post.portal">{{ getPortalLabel(post.portal) }}</span>
               </div>
             </div>
+
+            @if (post.ai_summary) {
+              <p class="ai-summary-box">
+                <i class="bi bi-chat-square-text"></i> {{ post.ai_summary }}
+              </p>
+            }
 
             <!-- METADADOS COMPLEMENTARES -->
             <div class="post-meta-row">
@@ -187,10 +363,14 @@
               @if (post.location) {
                 <span class="meta-item"><i class="bi bi-geo-alt"></i> {{ post.location }}</span>
               }
-              @if (post.work_model) {
-                <span class="meta-item"><i class="bi bi-laptop"></i> {{ post.work_model }}</span>
+              @if (getPostWorkModelDisplay(post) !== 'Não informado') {
+                <span class="meta-item"><i class="bi bi-laptop"></i> {{ getPostWorkModelDisplay(post) }}</span>
               }
-              @if (post.published_date) {
+              @if (isUndated(post)) {
+                <span class="meta-item chip-undated" title="Publicação sem data informada pela origem">
+                  <i class="bi bi-calendar-x"></i> Sem data
+                </span>
+              } @else if (post.published_date) {
                 <span class="meta-item"><i class="bi bi-calendar3"></i> {{ post.published_date }}</span>
               }
               @if (post.url) {
@@ -223,12 +403,50 @@
                   <span>{{ isExpanded(post.id) ? 'Recolher texto' : 'Ver publicação completa' }}</span>
                 </button>
 
-                <button type="button"
-                        class="btn-dismiss"
-                        (click)="dismissPost(post.id)"
-                        title="Ocultar esta publicação do radar">
-                  <i class="bi bi-eye-slash"></i> Ocultar
-                </button>
+                <div class="post-footer-buttons">
+                  @if (multiEmailPickerPostId() === post.id) {
+                    <div class="multi-email-picker">
+                      <span class="picker-label">Qual e-mail contatou?</span>
+                      @for (em of post.emails; track em) {
+                        <button type="button"
+                                class="btn-pick-email"
+                                (click)="onMarkContactedClick(post, em)"
+                                [disabled]="isPostBusy(post.id)">
+                          {{ em }}
+                        </button>
+                      }
+                      <button type="button"
+                              class="btn-cancel-picker"
+                              (click)="multiEmailPickerPostId.set(null)">
+                        Cancelar
+                      </button>
+                    </div>
+                  } @else {
+                    <button type="button"
+                            class="btn-footer-interested"
+                            (click)="saveAsInterested(post)"
+                            [disabled]="isPostBusy(post.id)"
+                            title="Mover para Me Interessam (para revisar e preparar CV/Carta manualmente antes de enviar)">
+                      <i class="bi bi-bookmark-plus"></i> Me interessa
+                    </button>
+
+                    <button type="button"
+                            class="btn-footer-contacted"
+                            (click)="onMarkContactedClick(post)"
+                            [disabled]="isPostBusy(post.id)"
+                            title="Registrar que já enviou o e-mail e mover para Minhas Candidaturas">
+                      <i class="bi bi-send-check"></i> Já mandei e-mail
+                    </button>
+
+                    <button type="button"
+                            class="btn-dismiss"
+                            (click)="dismissPost(post.id)"
+                            [disabled]="isPostBusy(post.id)"
+                            title="Ocultar esta publicação do radar">
+                      <i class="bi bi-eye-slash"></i> Ocultar
+                    </button>
+                  }
+                </div>
               </div>
             </div>
 

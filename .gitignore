@@ -151,6 +151,7 @@ backend/documents/applications/**
 backend/documents/postings/**
 backend/documents/perfil/**
 backend/documents/interview/**
+!backend/documents/**/.gitkeep
 
 # Personal job search tracking
 job_search_tracker.csv

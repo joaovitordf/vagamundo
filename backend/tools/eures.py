@@ -83,10 +83,7 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 
 def _ssl_context():
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    return ssl.create_default_context()
 
 
 def get_eures_stats() -> dict:
@@ -328,61 +325,72 @@ def is_tech_role(title: str, desc: str = "") -> bool:
     return any(k in t_low for k in TECH_TITLE_KEYWORDS)
 
 
+def _profile_eures_keywords() -> list[str]:
+    """Extrai palavras-chave técnicas do perfil ativo com fallback neutro."""
+    try:
+        from backend.tools import painel_perfil
+        areas = painel_perfil.extract_cv_areas()
+        kws: list[str] = []
+        seen: set[str] = set()
+        for area in areas:
+            for kw in area.get("keywords", []):
+                clean = str(kw or "").strip()
+                if clean and clean.lower() not in seen:
+                    seen.add(clean.lower())
+                    kws.append(clean)
+        if kws:
+            return kws[:8]
+    except Exception:
+        pass
+    return ["Software Engineer", "Backend", "Data Engineer", "Machine Learning", "Python"]
+
+
 def evaluate_eures_job(title: str, desc: str, location: str, languages: list) -> tuple[dict, str]:
-    """Calcula aderência da vaga europeia ao perfil (Computação, Visão Computacional, IA e Software)."""
+    """Calcula aderência da vaga europeia comparando requisitos com o perfil ativo do candidato."""
     t_low = title.lower()
     full_low = f"{title} {desc}".lower()
 
-    is_cv = any(k in full_low for k in ("computer vision", "image processing", "opencv", "yolo", "3d vision", "slam", "point cloud", "medical imaging", "video analytics"))
-    is_ai = any(k in full_low for k in ("machine learning", "deep learning", "artificial intelligence", "neural network", "pytorch", "tensorflow", "llm", "generative ai", "nlp"))
-    is_py_cpp = any(k in full_low for k in ("python", "c++", "cuda", "rust", "golang", "typescript", "docker", "kubernetes", "aws", "linux"))
+    profile_kws = _profile_eures_keywords()
+    matched = [kw for kw in profile_kws if kw.lower() in full_low]
+
+    generic_tech_pairs = [
+        ("Python", "python"),
+        ("TypeScript/JS", "typescript"),
+        ("Java", "java"),
+        ("C/C++", "c++"),
+        ("SQL/Dados", "sql"),
+        ("Cloud/Docker", "docker"),
+        ("Machine Learning", "machine learning"),
+        ("Engenharia de Software", "software"),
+    ]
+    for lbl, kw in generic_tech_pairs:
+        if kw in full_low and lbl.lower() not in [m.lower() for m in matched]:
+            matched.append(lbl)
 
     is_senior_lead = any(k in t_low for k in ("senior", "sr.", "lead", "principal", "staff", "head of", "director", "architect"))
     is_junior_entry = any(k in t_low for k in ("junior", "jr", "graduate", "intern", "trainee", "working student", "entry"))
+    tech_str = ", ".join(matched[:4]) if matched else "Tecnologia e Engenharia de Sistemas"
 
-    matched = []
-    for lbl, kw in [
-        ("Visão Computacional", "computer vision"),
-        ("Processamento de Imagens", "image processing"),
-        ("Deep Learning", "deep learning"),
-        ("Machine Learning", "machine learning"),
-        ("Python", "python"),
-        ("C++", "c++"),
-        ("PyTorch/TensorFlow", "pytorch"),
-        ("Engenharia de Software", "software"),
-        ("Cloud/Docker", "docker"),
-    ]:
-        if kw in full_low:
-            matched.append(lbl)
-    tech_str = ", ".join(matched[:4]) if matched else "Ciência da Computação e Desenvolvimento de Sistemas"
-
-    if is_cv:
-        score = 88 if not is_senior_lead else 76
+    if len(matched) >= 3:
+        score = 86 if not is_senior_lead else 72
         verdict = "Strong Fit" if score >= 80 else "Good Fit"
         summary = (
-            f"Forte alinhamento com o foco principal em Visão Computacional e IA ({tech_str}) em {location}. "
-            f"Oportunidade oficial EURES compatível com formação em Ciência da Computação."
+            f"Forte aderência ao perfil ({tech_str}) em {location}. "
+            f"Oportunidade oficial EURES alinhada às competências buscadas."
         )
-    elif is_ai:
-        score = 82 if not is_senior_lead else 72
-        verdict = "Strong Fit" if score >= 80 else "Good Fit"
-        summary = (
-            f"Alta aderência em Inteligência Artificial e Aprendizado de Máquina ({tech_str}) em {location}. "
-            f"Perfil acadêmico em Computação atende aos requisitos técnicos da vaga europeia."
-        )
-    elif is_py_cpp or is_tech_role(title, desc):
-        score = 70 if not is_senior_lead else 58
+    elif len(matched) >= 1 or is_tech_role(title, desc):
+        score = 72 if not is_senior_lead else 56
         if is_junior_entry:
             score = min(84, score + 8)
         verdict = "Good Fit" if score >= 65 else "Moderate Fit"
         summary = (
-            f"Vaga de Engenharia de Software / Computação ({tech_str}) na Europa ({location}). "
-            f"Boa compatibilidade técnica; requer atenção a visto/mobilidade internacional."
+            f"Vaga de Tecnologia ({tech_str}) na Europa ({location}). "
+            f"Compatibilidade técnica parcial; avaliar idioma exigido e elegibilidade para visto."
         )
     else:
         score = 42
         verdict = "Weak Fit"
-        summary = f"Oportunidade geral na Europa ({location}) com menor aderência direta à pilha de Visão Computacional e IA."
+        summary = f"Oportunidade geral na Europa ({location}) com baixa sobreposição às palavras-chave do seu perfil."
 
     warnings = []
     if is_senior_lead:
@@ -392,11 +400,12 @@ def evaluate_eures_job(title: str, desc: str, location: str, languages: list) ->
 
 
 def fetch_eures_for_panel(focus: str = "all", max_per_query: int = 15) -> list[dict]:
-    """Busca vagas técnicas no EURES para alimentar o painel unificado e o Mapa Mundial."""
-    if focus == "cv":
-        queries = ["Computer Vision", "Image Processing", "Deep Learning", "Machine Learning"]
+    """Busca vagas técnicas no EURES para alimentar o painel unificado usando termos do perfil."""
+    profile_kws = _profile_eures_keywords()
+    if focus and focus not in ("all", "europa"):
+        queries = [focus] + [k for k in profile_kws[:3] if k.lower() != focus.lower()]
     else:
-        queries = ["Computer Vision", "Machine Learning", "Artificial Intelligence", "Python Developer", "Software Engineer"]
+        queries = profile_kws[:5]
 
     seen_urls: set[str] = set()
     collected: list[dict] = []

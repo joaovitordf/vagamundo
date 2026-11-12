@@ -186,6 +186,8 @@
 
           <option value="global">Global / Remoto</option>
 
+          <option value="remote">Somente Remoto</option>
+
         </select>
 
       </div>
@@ -232,11 +234,11 @@
 
             <option value="">Todas as notas</option>
 
-            <option value="high">Maiores notas (80+)</option>
+            <option value="high">Alta afinidade (75+)</option>
 
             <option value="med">Notas médias ou maiores (60+)</option>
 
-            <option value="low">Menores notas (40 a 59)</option>
+            <option value="low">Menores notas (&lt; 60)</option>
 
             <option value="triadas">Apenas vagas com nota</option>
 
@@ -244,27 +246,27 @@
 
         </div>
 
-
-
-        <!-- Campo 7: Ordenação -->
-
-        <div class="filter-field">
-
-          <label for="f-sort">Ordenação (Pós-Triagem)</label>
-
-          <select id="f-sort" class="vc-select" [(ngModel)]="filterSort" (ngModelChange)="onFilterChange()">
-
-            <option value="date">Mais recentes primeiro</option>
-
-            <option value="score-desc">Maior nota primeiro</option>
-
-            <option value="score-asc">Menor nota primeiro</option>
-
-          </select>
-
-        </div>
-
       }
+
+
+
+      <!-- Campo 7: Ordenação -->
+
+      <div class="filter-field">
+
+        <label for="f-sort">Ordenação</label>
+
+        <select id="f-sort" class="vc-select" [(ngModel)]="filterSort" (ngModelChange)="onFilterChange()">
+
+          <option value="date">Mais recentes primeiro</option>
+
+          <option value="score-desc">Maior nota primeiro</option>
+
+          <option value="score-asc">Menor nota primeiro</option>
+
+        </select>
+
+      </div>
 
     </div>
 
@@ -276,7 +278,7 @@
 
       <div class="search-actions-left">
 
-        <button type="button" class="btn-search-trigger" (click)="triggerPortalSearch()" [disabled]="searching()">
+        <button type="button" class="btn-search-trigger" (click)="triggerPortalSearch()" [disabled]="searching() || autoMode.isRunning()">
 
           @if (searching()) {
 
@@ -290,6 +292,46 @@
 
         </button>
 
+        <div class="auto-mode-trigger-group">
+          <button type="button"
+            class="btn-auto-mode"
+            [class.is-running]="autoMode.isRunning()"
+            (click)="autoMode.isRunning() ? autoMode.cancel() : triggerAutoMode()"
+            [disabled]="searching() || autoMode.cancelling()"
+            title="IA sorteia 1 palavra-chave focalizada do seu CV por rodada, busca nos últimos até 7 dias (sem limite de vagas) e envia notas altas para Me Interessam">
+            @if (autoMode.isRunning()) {
+              <span class="vc-spinner"></span> {{ autoMode.cancelling() ? 'Parando…' : 'Parar Automático' }}
+            } @else {
+              <i class="bi bi-robot"></i> Modo Automático (7d)
+            }
+          </button>
+
+          <label class="auto-score-field" title="Nota mínima para enviar automaticamente para Me Interessam (padrão 60: evita vagas presenciais fora da região com teto 50 e stack ausente com teto 55)">
+            <span>Nota ≥</span>
+            <input type="number" min="45" max="95" step="5"
+              [(ngModel)]="autoMinScore"
+              (ngModelChange)="onAutoConfigChange()"
+              [disabled]="autoMode.isRunning()">
+          </label>
+
+          <label class="auto-continuous-toggle" title="Quando marcado, sorteia novas palavras-chave em loop com intervalo anti-ban até você clicar em Parar">
+            <input type="checkbox"
+              [(ngModel)]="autoContinuous"
+              (ngModelChange)="onAutoConfigChange()"
+              [disabled]="autoMode.isRunning()">
+            <span>Contínuo</span>
+          </label>
+
+          <label class="auto-cooldown-field" title="Intervalo base em minutos entre rodadas (2 a 30 min, com jitter e backoff automático anti-ban)">
+            <span>Intervalo</span>
+            <input type="number" min="2" max="30" step="1"
+              [(ngModel)]="autoCooldownMinutes"
+              (change)="onAutoConfigChange()"
+              [disabled]="autoMode.isRunning() || !autoContinuous">
+            <span>min</span>
+          </label>
+        </div>
+
 
 
         <label class="filter-checkbox-label">
@@ -297,6 +339,16 @@
           <input type="checkbox" [(ngModel)]="filterNoWarn" (ngModelChange)="onFilterChange()">
 
           <span>Só vagas sem avisos</span>
+
+        </label>
+
+
+
+        <label class="filter-checkbox-label" title="Oculta vagas cujo portal não informou a data de publicação">
+
+          <input type="checkbox" [(ngModel)]="filterHideUndated" (ngModelChange)="onFilterChange()">
+
+          <span>Ocultar vagas sem data</span>
 
         </label>
 
@@ -682,7 +734,17 @@
 
         <i class="bi bi-funnel-fill"></i>
 
-        <span>Filtros ativos: exibindo <strong>{{ filteredVagas().length }}</strong> de <strong>{{ allVagas().length }}</strong> vagas encontradas.</span>
+        <div>
+
+          <span>Filtros ativos: exibindo <strong>{{ filteredVagas().length }}</strong> de <strong>{{ allVagas().length }}</strong> vagas encontradas.</span>
+
+          @if (filteredVagas().length === 0 && getHiddenFilterReasons()) {
+
+            <div class="active-filters-banner__reason">Motivo provável: {{ getHiddenFilterReasons() }}</div>
+
+          }
+
+        </div>
 
       </div>
 
@@ -1016,7 +1078,7 @@
 
                   </div>
 
-                  @if (vaga.screening?.score) {
+                  @if (vaga.screening?.score !== undefined && vaga.screening?.score !== null) {
 
                     <span class="vc-badge-fit"
 
@@ -1392,7 +1454,7 @@
 
 
 
-              @if (vaga.screening?.score) {
+              @if (vaga.screening?.score !== undefined && vaga.screening?.score !== null) {
 
                 <span class="vc-badge-fit"
 
@@ -1436,9 +1498,15 @@
 
               }
 
-              @if (vaga.date) {
+              @if (!isUndated(vaga)) {
 
                 <span class="chip"><i class="bi bi-calendar3"></i> {{ vaga.date }}</span>
+
+              } @else {
+
+                <span class="chip chip-undated" title="O portal não informou a data de publicação: a vaga pode ser antiga ou já ter sido candidatada por você.">
+                  <i class="bi bi-calendar-x"></i> Sem data
+                </span>
 
               }
 

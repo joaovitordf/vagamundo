@@ -121,10 +121,13 @@ class Privacy(unittest.TestCase):
                 claude_md=Path(tmp) / "missing.md",
                 answers_path=Path(tmp) / "missing.json",
             )
-            self.assertEqual(len(custom_areas), 1)
+            self.assertEqual(len(custom_areas), 2)
             self.assertEqual(custom_areas[0]["label"], "Rust & WebAssembly")
-            self.assertIn("Rust", custom_areas[0]["keywords"])
-            self.assertIn("Wasm", custom_areas[0]["keywords"])
+            all_kws = [kw for area in custom_areas for kw in area["keywords"]]
+            for expected_kw in ("Rust", "WebAssembly", "Wasm", "Tokio", "Actix"):
+                self.assertIn(expected_kw, all_kws)
+            for area in custom_areas:
+                self.assertLessEqual(len(area["keywords"]), 3)
 
 
 if __name__ == "__main__":

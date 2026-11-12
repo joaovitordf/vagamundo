@@ -254,8 +254,14 @@ def extract_cv_areas(
     def add_area(area_id: str, label: str, kws: list):
         clean_kws = []
         for k in kws:
-            ck = re.sub(r"[\(\)\[\]]", "", str(k)).strip(" ,.;:")
-            if ck and len(ck) >= 2 and ck.lower() not in [x.lower() for x in clean_kws]:
+            ck = re.sub(r"^(?:avan[çc]ado|intermedi[áa]rio|b[áa]sico)\s*:\s*", "", str(k), flags=re.IGNORECASE)
+            ck = re.sub(r"[\(\)\[\]\*]", "", ck).strip(" ,.;:-")
+            if (
+                ck
+                and len(ck) >= 2
+                and not ck.isdigit()
+                and ck.lower() not in [x.lower() for x in clean_kws]
+            ):
                 clean_kws.append(ck)
         # Regra de ouro: no máximo 3 palavras-chave por área
         clean_kws = clean_kws[:3]
@@ -304,9 +310,14 @@ def extract_cv_areas(
         if line.startswith("#"):
             current_section = line.strip("# ").strip().lower()
             continue
-        if any(skip in current_section for skip in ("projeto", "checklist", "deal-breakers", "filtro", "estrutura", "fluxo", "privacidade", "identidade", "documento", "diretriz", "publica", "premio", "referencia")):
+        if any(skip in current_section for skip in (
+            "projeto", "checklist", "deal-breakers", "filtro", "estrutura", "fluxo",
+            "privacidade", "identidade", "documento", "diretriz", "publica", "premio",
+            "referencia", "formação", "formacao", "experiência", "experiencia",
+            "certifica", "comportamental", "motiva", "setores",
+        )):
             continue
-        m = re.match(r"^\s*-\s*\*\*([^*:]{2,55})[:*]*\s*(.+)$", line)
+        m = re.match(r"^\s*-\s*\*\*([^*:]{2,55})(?:\*\*:\s*|:\*\*\s*)(.+)$", line)
         if not m:
             continue
         cat_label = m.group(1).strip()
@@ -318,27 +329,41 @@ def extract_cv_areas(
             "foco", "orientação", "pontos", "rende", "português", "inglês", "espanhol", "deal",
         )):
             continue
-        raw_items = [re.sub(r"\([^)]*\)", "", x).strip(" .;:") for x in re.split(r"[,;/]", m.group(2))]
-        items = [x for x in raw_items if 2 <= len(x) <= 35 and not x.endswith(")")]
+        raw_items = [
+            re.sub(r"^(?:avan[çc]ado|intermedi[áa]rio|b[áa]sico)\s*:\s*", "", re.sub(r"\([^)]*\)", "", x), flags=re.IGNORECASE).strip(" .;:")
+            for x in re.split(r"[,;/]", m.group(2))
+        ]
+        items = [x for x in raw_items if 2 <= len(x) <= 35 and not x.endswith(")") and not x.isdigit()]
 
         # Subtermos da própria categoria (ex: Java, Python, TypeScript)
         cat_terms = [
             w for w in re.split(r"[/, &]+", cat_label)
             if len(w) >= 3 and w.lower() not in (
                 "outros", "gerais", "principais", "secundarias", "secundárias",
-                "dominio", "domínio", "softwares", "ferramentas", "bancos", "cache", "infra", "devops"
+                "dominio", "domínio", "softwares", "ferramentas", "bancos", "cache",
+                "infra", "devops", "frameworks", "bibliotecas",
             )
         ]
 
         kws = []
         for term in (cat_terms + items):
             t_clean = term.strip("()[] ")
-            if t_clean and t_clean.lower() not in [k.lower() for k in kws]:
+            if t_clean and not t_clean.isdigit() and t_clean.lower() not in [k.lower() for k in kws]:
                 kws.append(t_clean)
 
-        if kws and cat_label not in seen_labels:
-            slug = re.sub(r"[^a-z0-9]+", "-", cat_low).strip("-") or f"area-{len(areas)+1}"
-            add_area(slug, cat_label, kws[:3])
+        if kws:
+            base_slug = re.sub(r"[^a-z0-9]+", "-", cat_low).strip("-") or f"area-{len(areas)+1}"
+            for chunk_idx in range(0, len(kws), 3):
+                chunk = kws[chunk_idx:chunk_idx + 3]
+                if not chunk:
+                    continue
+                if chunk_idx == 0:
+                    lbl = cat_label
+                    slug = base_slug
+                else:
+                    lbl = f"{cat_label}: {' / '.join(chunk[:2])}"
+                    slug = f"{base_slug}-{chunk_idx // 3 + 1}"
+                add_area(slug, lbl, chunk)
 
     if not areas:
         areas.append({

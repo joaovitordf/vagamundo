@@ -8,7 +8,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from backend.db.repository import Repository
 from backend.tools import painel, painel_ia
@@ -20,6 +20,7 @@ class EvaluatorService:
     def __init__(self, repo: Optional[Repository] = None):
         self.repo = repo or Repository()
         self._batch_lock = threading.Lock()
+        self._db_lock = threading.Lock()
         self.batch: Dict[str, Any] = {
             "running": False,
             "current": 0,
@@ -30,6 +31,8 @@ class EvaluatorService:
             "high_fit": 0,
             "med_fit": 0,
             "low_fit": 0,
+            "auto_interested": 0,
+            "promoted_items": [],
             "provider": "",
             "results": {},
         }
@@ -48,9 +51,10 @@ class EvaluatorService:
                  verdict: Optional[str], report: str, provider: str = "antigravity") -> Optional[Any]:
         job = self.repo.get_job_by_url(url)
         job_id = job["id"] if job else None
-        if not job_id and job_data:
+        payload = job_data or ({"url": url, "title": "Vaga", "status": "new"} if url else None)
+        if not job_id and payload:
             try:
-                job_id = self.repo.upsert_job(job_data)
+                job_id = self.repo.upsert_job(payload)
             except Exception:
                 pass
         if job_id:
@@ -104,13 +108,46 @@ class EvaluatorService:
                 "high_fit": self.batch.get("high_fit", 0),
                 "med_fit": self.batch.get("med_fit", 0),
                 "low_fit": self.batch.get("low_fit", 0),
+                "auto_interested": self.batch.get("auto_interested", 0),
+                "promoted_items": list(self.batch.get("promoted_items", [])),
                 "provider": self.batch.get("provider", ""),
                 "results": dict(self.batch.get("results", {})),
             }
 
-    def _screen_one(self, url: str, jobs_map: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _update_rank_fields(self, job_id: str, score: float, verdict: Optional[str]) -> None:
+        try:
+            with self.repo.conn:
+                self.repo.conn.execute(
+                    "UPDATE jobs SET rank_score = ?, rank_verdict = ?, rank_date = ? WHERE id = ?",
+                    (int(score), verdict, date.today().isoformat(), job_id),
+                )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _sync_painel_mark(url: str, decision: str, job_data: Optional[Dict[str, Any]]) -> None:
+        try:
+            from backend.core.scanner import default_results_path
+            p = default_results_path()
+            data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+            painel.mark(data, [url], decision, job_data=job_data)
+        except Exception:
+            pass
+
+    def _screen_one(
+        self,
+        url: str,
+        jobs_map: Optional[Dict[str, Any]] = None,
+        auto_interest_min: Optional[int] = None,
+        run_id: Optional[str] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
+    ) -> Dict[str, Any]:
+        if should_stop and should_stop():
+            return {"url": url, "ok": False, "skipped": True}
+
         jobs_map = jobs_map or {}
-        job = jobs_map.get(url) or self.repo.get_job_by_url(url)
+        with self._db_lock:
+            job = jobs_map.get(url) or self.repo.get_job_by_url(url)
         job_title = (job.get("title") if job else "") or "Vaga"
         company = (job.get("company") if job else "")
         disp = f"{job_title} ({company})" if company else job_title
@@ -123,49 +160,45 @@ class EvaluatorService:
             score = res.get("score")
             verdict = res.get("verdict")
             summary = res.get("summary") or ""
-            job_id = self._persist(url, job, score, verdict, summary)
 
-            # Se a nota for estritamente baixa (< 40), descarta automaticamente
-            if isinstance(score, (int, float)) and score < 40:
-                res["discarded"] = True
-                # 1. Atualizar banco SQLite com status = 'discarded' e fit = 'low'
-                if job_id:
-                    try:
-                        self.repo.mark_jobs(
-                            [job_id],
-                            decision="descartar",
-                            source="ai_triage",
-                            note=f"Auto-descartada por nota baixa na triagem ({score}/100)",
-                        )
-                        with self.repo.conn:
-                            self.repo.conn.execute(
-                                "UPDATE jobs SET rank_score = ?, rank_verdict = ?, rank_date = ? WHERE id = ?",
-                                (int(score), verdict, date.today().isoformat(), job_id),
+            promoted = False
+            with self._db_lock:
+                job_id = self._persist(url, job, score, verdict, summary)
+
+                # Se a nota for estritamente baixa (< 40), descarta automaticamente
+                if isinstance(score, (int, float)) and score < 40:
+                    res["discarded"] = True
+                    if job_id:
+                        try:
+                            self.repo.mark_jobs(
+                                [job_id],
+                                decision="descartar",
+                                source="ai_triage",
+                                note=f"Auto-descartada por nota baixa na triagem ({score}/100)",
                             )
-                    except Exception:
-                        pass
-
-                # 2. Atualizar seen_jobs.json e painel
-                try:
-                    from backend.core.scanner import default_results_path
-                    p = default_results_path()
-                    if p.exists():
-                        data = json.loads(p.read_text(encoding="utf-8"))
-                        painel.mark(data, [url], "descartar", job_data=job)
-                    else:
-                        painel.mark(None, [url], "descartar", job_data=job)
-                except Exception:
-                    pass
-            elif job_id and isinstance(score, (int, float)):
-                # Se nota >= 40, persiste rank_score e rank_verdict para ordenação
-                try:
-                    with self.repo.conn:
-                        self.repo.conn.execute(
-                            "UPDATE jobs SET rank_score = ?, rank_verdict = ?, rank_date = ? WHERE id = ?",
-                            (int(score), verdict, date.today().isoformat(), job_id),
-                        )
-                except Exception:
-                    pass
+                            self._update_rank_fields(job_id, score, verdict)
+                        except Exception:
+                            pass
+                    self._sync_painel_mark(url, "descartar", job)
+                elif auto_interest_min is not None and isinstance(score, (int, float)) and score >= auto_interest_min:
+                    if job_id:
+                        existing = self.repo.get_job(job_id) or self.repo.get_job_by_url(url)
+                        curr_status = existing["status"] if existing else None
+                        if curr_status not in ("applied", "discarded", "skipped", "interested"):
+                            note_prefix = f"[auto:{run_id}] " if run_id else ""
+                            self.repo.mark_jobs(
+                                [job_id],
+                                decision="interested",
+                                source="auto_triage",
+                                note=f"{note_prefix}Auto-interesse por nota na triagem ({int(score)}/100)",
+                            )
+                            self._update_rank_fields(job_id, score, verdict)
+                            self._sync_painel_mark(url, "interesse", job)
+                            res["auto_interested"] = True
+                            promoted = True
+                elif job_id and isinstance(score, (int, float)):
+                    # Persiste rank_score e rank_verdict para ordenação
+                    self._update_rank_fields(job_id, score, verdict)
 
             with self._batch_lock:
                 self.batch["current"] += 1
@@ -178,6 +211,17 @@ class EvaluatorService:
                         self.batch["med_fit"] += 1
                     else:
                         self.batch["low_fit"] += 1
+                if promoted:
+                    self.batch["auto_interested"] += 1
+                    self.batch["promoted_items"].append({
+                        "url": url,
+                        "job_id": job_id,
+                        "title": job_title,
+                        "company": company or "",
+                        "score": int(score),
+                        "verdict": verdict,
+                        "summary": summary,
+                    })
                 self.batch["results"][url] = res
             return {**res, "ok": True}
         except Exception as exc:
@@ -189,9 +233,17 @@ class EvaluatorService:
                 self.batch["results"][url] = {"url": url, "error": str(exc)[:300], "score": None}
             return {"url": url, "ok": False, "error": str(exc)[:300]}
 
-    def start_batch(self, urls: List[str], workers: int = 2) -> bool:
-        """Screen jobs in a background thread; progress is exposed via batch_status()."""
-        # Deduplicate and validate
+    def start_batch(
+        self,
+        urls: List[str],
+        workers: int = 2,
+        auto_interest_min: Optional[int] = None,
+        run_id: Optional[str] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
+        blocking: bool = False,
+        extra_jobs: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Screen jobs in a background thread (or blocking when awaited by orchestrator)."""
         valid_urls = [u for u in dict.fromkeys(urls) if str(u).startswith("http")]
         if not valid_urls:
             return False
@@ -208,26 +260,41 @@ class EvaluatorService:
                 "current": 0,
                 "total": len(valid_urls),
                 "percent": 0.0,
-                "current_title": "Iniciando IA do Antigravity...",
+                "current_title": "Iniciando IA...",
                 "errors": 0,
                 "high_fit": 0,
                 "med_fit": 0,
                 "low_fit": 0,
+                "auto_interested": 0,
+                "promoted_items": [],
                 "provider": provider_label,
                 "results": {},
             }
 
         jobs_map = self._load_jobs_map()
+        if extra_jobs:
+            jobs_map.update(extra_jobs)
 
         def _worker() -> None:
             try:
                 with ThreadPoolExecutor(max(1, workers)) as ex:
-                    # Execute all in pool
-                    list(ex.map(lambda u: self._screen_one(u, jobs_map), valid_urls))
+                    list(ex.map(
+                        lambda u: self._screen_one(
+                            u,
+                            jobs_map,
+                            auto_interest_min=auto_interest_min,
+                            run_id=run_id,
+                            should_stop=should_stop,
+                        ),
+                        valid_urls,
+                    ))
             finally:
                 with self._batch_lock:
                     self.batch["running"] = False
                     self.batch["percent"] = 100.0
 
-        threading.Thread(target=_worker, daemon=True).start()
+        if blocking:
+            _worker()
+        else:
+            threading.Thread(target=_worker, daemon=True).start()
         return True

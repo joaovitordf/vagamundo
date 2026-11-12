@@ -1,0 +1,204 @@
+.auto-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fef3c7;
+  font-size: 0.86rem;
+  z-index: 30;
+}
+
+.auto-banner--done {
+  background: rgba(16, 185, 129, 0.12);
+  border-bottom-color: rgba(16, 185, 129, 0.4);
+  color: #d1fae5;
+}
+
+.auto-banner--error {
+  background: rgba(239, 68, 68, 0.14);
+  border-bottom-color: rgba(239, 68, 68, 0.45);
+  color: #fee2e2;
+}
+
+.auto-banner__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.auto-banner__icon {
+  font-size: 1.25rem;
+  line-height: 1.2;
+  padding-top: 2px;
+  color: #fbbf24;
+}
+
+.auto-banner--done .auto-banner__icon {
+  color: #34d399;
+}
+
+.auto-banner--error .auto-banner__icon {
+  color: #f87171;
+}
+
+.pulse-warn {
+  animation: autoPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes autoPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.auto-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auto-banner__headline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.auto-banner__warning-note {
+  color: #fde68a;
+  font-size: 0.82rem;
+}
+
+.auto-banner__undone-tag {
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+.auto-banner__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.auto-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.auto-chip--kw {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #bae6fd;
+}
+
+.auto-chip--ok {
+  border-color: rgba(52, 211, 153, 0.45);
+  color: #6ee7b7;
+}
+
+.auto-chip--err {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fca5a5;
+}
+
+.auto-banner__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.auto-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(15, 23, 42, 0.45);
+  color: inherit;
+  transition: opacity 0.15s ease;
+}
+
+.auto-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.auto-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.auto-btn--stop {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fecaca;
+}
+
+.auto-btn--primary {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #d1fae5;
+}
+
+.auto-btn--undo {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #fde68a;
+}
+
+.auto-btn--close {
+  padding: 5px 8px;
+}
+
+.auto-banner--cooldown {
+  background: rgba(56, 189, 248, 0.12);
+  border-bottom-color: rgba(56, 189, 248, 0.45);
+  color: #e0f2fe;
+}
+
+.auto-banner--cooldown .auto-banner__icon {
+  color: #38bdf8;
+}
+
+.auto-banner__cooldown-note {
+  color: #bae6fd;
+  font-size: 0.83rem;
+}
+
+.auto-chip--round {
+  border-color: rgba(167, 139, 250, 0.45);
+  color: #ddd6fe;
+}
+
+.auto-chip--cooldown {
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #bae6fd;
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-chip--warn {
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fde68a;
+}
+
+.auto-btn--skip {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #e0f2fe;
+}

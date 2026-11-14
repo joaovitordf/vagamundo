@@ -101,8 +101,9 @@ def _evolution_default() -> dict:
     }
 
 
-def load_evolution(path: Path = EVOLUTION_PATH) -> dict:
+def load_evolution(path: Path | None = None) -> dict:
     """Lê o JSON local de evolução e cria a estrutura se ela ainda não existir."""
+    path = EVOLUTION_PATH if path is None else path
     data = _evolution_default()
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
@@ -115,7 +116,8 @@ def load_evolution(path: Path = EVOLUTION_PATH) -> dict:
     return data
 
 
-def save_evolution(data: dict, path: Path = EVOLUTION_PATH) -> None:
+def save_evolution(data: dict, path: Path | None = None) -> None:
+    path = EVOLUTION_PATH if path is None else path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -129,8 +131,9 @@ def _tracker_has_url(url: str, tracker_path: Path) -> bool:
                for row in applications(tracker_path))
 
 
-def _update_tracker_application(url: str, app: dict, tracker_path: Path = scrape_run.TRACKER) -> None:
+def _update_tracker_application(url: str, app: dict, tracker_path: Path | None = None) -> None:
     """Mantém o CSV legado sincronizado com os campos principais do JSON."""
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
     if not tracker_path.exists():
         return
     with tracker_path.open(encoding="utf-8", newline="") as fh:
@@ -162,10 +165,13 @@ def _update_tracker_application(url: str, app: dict, tracker_path: Path = scrape
             writer.writerows(rows)
 
 
-def save_application_record(payload: dict, evolution_path: Path = EVOLUTION_PATH,
-                            tracker_path: Path = scrape_run.TRACKER,
-                            seen_path: Path = scrape_run.SEEN) -> dict:
+def save_application_record(payload: dict, evolution_path: Path | None = None,
+                            tracker_path: Path | None = None,
+                            seen_path: Path | None = None) -> dict:
     """Valida e grava candidatura, detalhes da vaga e novos registros de histórico."""
+    evolution_path = EVOLUTION_PATH if evolution_path is None else evolution_path
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     if not isinstance(payload, dict):
         raise ValueError("o cadastro da candidatura precisa ser um objeto")
     url = _clean_field(payload.get("url"), 2000)
@@ -388,12 +394,16 @@ def _context_summary(path: Path) -> tuple[list[str], list[str], list[str]]:
     return _unique_text(strengths), _unique_text(gaps), _unique_text(actions)
 
 
-def update_evolution(evolution_path: Path = EVOLUTION_PATH,
-                     tracker_path: Path = scrape_run.TRACKER,
-                     seen_path: Path = scrape_run.SEEN,
-                     documents_path: Path = painel_ia.DOCUMENTS,
+def update_evolution(evolution_path: Path | None = None,
+                     tracker_path: Path | None = None,
+                     seen_path: Path | None = None,
+                     documents_path: Path | None = None,
                      db_path: str | Path | None = None) -> dict:
     """Valida fontes e candidaturas e grava o resultado derivado no JSON."""
+    evolution_path = EVOLUTION_PATH if evolution_path is None else evolution_path
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
+    documents_path = painel_ia.DOCUMENTS if documents_path is None else documents_path
     data = load_evolution(evolution_path)
     applications_data = data.setdefault("applications", {})
     warnings, errors = [], []
@@ -626,23 +636,26 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
     return data
 
 
-def unseen(results: dict | None, seen_path: Path = scrape_run.SEEN, tracker_path: Path = scrape_run.TRACKER) -> dict:
+def unseen(results: dict | None, seen_path: Path | None = None, tracker_path: Path | None = None) -> dict:
     """O arquivo da busca sem as vagas que já foram marcadas (aqui ou no /scrape) depois dela."""
     if not results:
         return {"meta": None, "new": []}
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
     index = scrape_run.load_seen(seen_path, tracker_path)
     rows = [r for r in results.get("new", []) if isinstance(r, dict)
             and not index.match(r.get("company"), r.get("title"), r.get("url"))]
     return {**results, "new": rows}
 
 
-def mark(results: dict | None, urls: list, decision: str, seen_path: Path = scrape_run.SEEN,
+def mark(results: dict | None, urls: list, decision: str, seen_path: Path | None = None,
          job_data: dict | None = None) -> dict:
     """Grava a decisão das vagas escolhidas, achadas pela URL no arquivo da busca.
 
     Quando a vaga é externa (ex: EURES ou Google Careers), job_data pode ser fornecido
     para cadastrar os metadados da vaga caso ela não esteja em results.
     """
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     if decision not in DECISIONS:
         raise ValueError(f"decisão desconhecida: {decision}")
     by_url = {r.get("url"): r for r in (results or {}).get("new", []) if isinstance(r, dict) and r.get("url")}
@@ -685,8 +698,10 @@ def mark(results: dict | None, urls: list, decision: str, seen_path: Path = scra
 
 
 def record_applied(url: str, company: str, role: str, portal: str = "",
-                   tracker_path: Path = scrape_run.TRACKER, seen_path: Path = scrape_run.SEEN) -> dict:
+                   tracker_path: Path | None = None, seen_path: Path | None = None) -> dict:
     """Registra a candidatura no tracker.csv e atualiza o status para 'applied' no seen_jobs.json."""
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     today_iso = date.today().isoformat()
     # 1. Atualiza seen_jobs.json para que a vaga saia imediatamente de "Me interessam"
     try:
@@ -787,8 +802,9 @@ def _stored_row(entry: dict, fields: tuple[str, ...]) -> dict:
     return row
 
 
-def saved(seen_path: Path = scrape_run.SEEN) -> list:
+def saved(seen_path: Path | None = None) -> list:
     """As vagas marcadas como "me interessa" no painel, mais recentes primeiro."""
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     try:
         state = json.loads(seen_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -807,8 +823,9 @@ def saved(seen_path: Path = scrape_run.SEEN) -> list:
     return sorted(rows, key=lambda r: r.get("first_seen") or "", reverse=True)
 
 
-def discarded(seen_path: Path = scrape_run.SEEN) -> list:
+def discarded(seen_path: Path | None = None) -> list:
     """As vagas descartadas pelo painel ou pela triagem automática, mais recentes primeiro."""
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     try:
         state = json.loads(seen_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -828,8 +845,10 @@ def discarded(seen_path: Path = scrape_run.SEEN) -> list:
 
 
 def remove_application(url: str, to_status: str = "skipped", company: str = "", role: str = "",
-                       tracker_path: Path = scrape_run.TRACKER, seen_path: Path = scrape_run.SEEN) -> dict:
+                       tracker_path: Path | None = None, seen_path: Path | None = None) -> dict:
     """Remove uma vaga da lista de candidaturas no tracker.csv e atualiza seen_jobs.json."""
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     clean_url = (url or "").strip()
     if tracker_path.exists():
         try:
@@ -899,8 +918,9 @@ def _set_seen_url_state(
         return {result_key: False, "url": url}
 
 
-def restore_job(url: str, seen_path: Path = scrape_run.SEEN) -> dict:
+def restore_job(url: str, seen_path: Path | None = None) -> dict:
     """Restaura uma vaga descartada para 'Me interessam'."""
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     return _set_seen_url_state(
         url,
         result_key="restored",
@@ -910,8 +930,9 @@ def restore_job(url: str, seen_path: Path = scrape_run.SEEN) -> dict:
     )
 
 
-def discard_job(url: str, seen_path: Path = scrape_run.SEEN) -> dict:
+def discard_job(url: str, seen_path: Path | None = None) -> dict:
     """Move uma vaga de 'Me interessam' para 'Descartadas'."""
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     return _set_seen_url_state(
         url,
         result_key="discarded",
@@ -921,8 +942,9 @@ def discard_job(url: str, seen_path: Path = scrape_run.SEEN) -> dict:
     )
 
 
-def unmark_interested(url: str, seen_path: Path = scrape_run.SEEN) -> bool:
+def unmark_interested(url: str, seen_path: Path | None = None) -> bool:
     """Remove do seen_jobs.json uma vaga revertida pelo desfazer do Modo Automático."""
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
     if not url or not seen_path.exists():
         return False
     try:
@@ -1088,24 +1110,26 @@ def list_generated_documents() -> list:
     return items
 
 
-def claude_file(url: str, step: str, base: Path = CLAUDE_DIR) -> Path:
+def claude_file(url: str, step: str, base: Path | None = None) -> Path:
     """Onde fica a resposta do Claude para uma vaga: o nome vem de um hash da URL, nunca do texto dela."""
+    base = CLAUDE_DIR if base is None else base
     suffix = CLAUDE_STEPS[step][0]
     return base / f"{hashlib.sha256(url.encode('utf-8')).hexdigest()[:16]}_{suffix}.md"
 
 
-def claude_answer(url: str, step: str, base: Path = CLAUDE_DIR) -> str | None:
+def claude_answer(url: str, step: str, base: Path | None = None) -> str | None:
     try:
         return claude_file(url, step, base).read_text(encoding="utf-8")
     except OSError:
         return None
 
 
-def claude_answers(url: str, base: Path = CLAUDE_DIR) -> dict:
+def claude_answers(url: str, base: Path | None = None) -> dict:
     return {step: claude_answer(url, step, base) for step in ("avaliar", "curriculo", "carta", "redigir", "entrevista")}
 
 
-def applications(tracker_path: Path = scrape_run.TRACKER) -> list:
+def applications(tracker_path: Path | None = None) -> list:
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
     if not tracker_path.exists():
         return []
     with tracker_path.open(encoding="utf-8", newline="") as fh:
@@ -1159,10 +1183,14 @@ def get_cached_score(url: str, batch_results: dict | None = None) -> dict | None
     return None
 
 
-def enriched_applications(tracker_path: Path = scrape_run.TRACKER, seen_path: Path = scrape_run.SEEN,
-                          claude_base: Path = CLAUDE_DIR, batch_results: dict | None = None,
-                          evolution_path: Path = EVOLUTION_PATH) -> list:
+def enriched_applications(tracker_path: Path | None = None, seen_path: Path | None = None,
+                          claude_base: Path | None = None, batch_results: dict | None = None,
+                          evolution_path: Path | None = None) -> list:
     """Enriquece as candidaturas do tracker.csv (e seen_jobs.json) com avaliação, PDFs e notas."""
+    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
+    seen_path = scrape_run.SEEN if seen_path is None else seen_path
+    claude_base = CLAUDE_DIR if claude_base is None else claude_base
+    evolution_path = EVOLUTION_PATH if evolution_path is None else evolution_path
     raw_rows = applications(tracker_path)
     evolution_data = load_evolution(evolution_path)
     evolution_apps = evolution_data.get("applications", {})

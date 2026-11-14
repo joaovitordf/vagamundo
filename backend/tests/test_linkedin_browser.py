@@ -1152,4 +1152,84 @@ class LinkedInExtractionAndHydrationTests(unittest.TestCase):
         self.assertTrue(launched_urls and 'datePosted="past-24h"' in unquote(launched_urls[0]))
         self.assertTrue(any('datePosted="past-week"' in u for u in decoded_urls))
 
+    def test_expand_see_more_js_covers_shadow_dom_aria_hidden_and_glued_ver_mais(self):
+        from backend.core.linkedin_browser import _EXPAND_SEE_MORE_JS, _SCROLL_PAGE_JS
+
+        # Shadow DOM, ancestor dedup and non-destructive clone without stripping aria-hidden="true"
+        self.assertIn("shadowRoot", _EXPAND_SEE_MORE_JS)
+        self.assertIn("closest('button,[role=\"button\"],a')", _EXPAND_SEE_MORE_JS)
+        self.assertIn(".visually-hidden,.a11y-text", _EXPAND_SEE_MORE_JS)
+        self.assertNotIn('[aria-hidden="true"]', _EXPAND_SEE_MORE_JS)
+        # PT-BR and EN labels + glued "...ver mais" + reject "ver menos"/"see less"
+        self.assertIn("ver mais", _EXPAND_SEE_MORE_JS)
+        self.assertIn("exibir mais", _EXPAND_SEE_MORE_JS)
+        self.assertIn("mostrar mais", _EXPAND_SEE_MORE_JS)
+        self.assertIn("ler mais", _EXPAND_SEE_MORE_JS)
+        self.assertIn("see more", _EXPAND_SEE_MORE_JS)
+        self.assertIn("ver menos", _EXPAND_SEE_MORE_JS)
+        self.assertIn("scrollIntoView", _EXPAND_SEE_MORE_JS)
+        self.assertIn("WeakSet", _EXPAND_SEE_MORE_JS)
+        self.assertIn("remaining", _EXPAND_SEE_MORE_JS)
+        self.assertIn("window.scrollBy", _SCROLL_PAGE_JS)
+
+    def test_collect_visible_posts_performs_multi_pass_and_cdp_mouse_fallback(self):
+        expand_calls = {"n": 0}
+
+        class _MultiPassWs:
+            def __init__(self):
+                self._responses: list[str] = []
+                self.commands: list[dict] = []
+
+            def send(self, raw: str):
+                cmd = json.loads(raw)
+                self.commands.append(cmd)
+                req_id = cmd["id"]
+                method = cmd["method"]
+                params = cmd.get("params") or {}
+                if method == "Input.dispatchMouseEvent":
+                    self._responses.append(json.dumps({"id": req_id, "result": {}}))
+                    return
+                expr = params.get("expression", "")
+                if "see-more" in expr:
+                    expand_calls["n"] += 1
+                    if expand_calls["n"] == 1:
+                        val = {"clicked": 1, "remaining": [{"x": 240, "y": 410, "label": "ver mais"}]}
+                    elif expand_calls["n"] == 2:
+                        val = {"clicked": 0, "remaining": [{"x": 240, "y": 410, "label": "ver mais"}]}
+                    else:
+                        val = {"clicked": 0, "remaining": []}
+                else:
+                    val = {
+                        "cards_total": 1,
+                        "posts": [
+                            {
+                                "raw_text": "Vaga Java Spring Boot Sênior - envie CV para talentos@springboot.dev",
+                                "company": "Spring Labs",
+                                "url": "https://www.linkedin.com/feed/update/urn:li:activity:7400000000000000499/",
+                                "posted_age_text": "1 h",
+                            }
+                        ],
+                    }
+                self._responses.append(json.dumps({"id": req_id, "result": {"result": {"value": val}}}))
+
+            def recv(self, timeout: float | None = None) -> str:
+                return self._responses.pop(0)
+
+        ws = _MultiPassWs()
+        collected: dict[str, dict] = {}
+        with patch("backend.core.linkedin_browser.time.sleep"):
+            next_id, max_cards = LinkedInBrowserWorker._collect_visible_posts(ws, 100, collected, 0)
+
+        self.assertGreater(next_id, 103)
+        self.assertEqual(max_cards, 1)
+        self.assertEqual(expand_calls["n"], 3)
+        mouse_events = [c for c in ws.commands if c["method"] == "Input.dispatchMouseEvent"]
+        self.assertEqual([m["params"]["type"] for m in mouse_events], ["mouseMoved", "mousePressed", "mouseReleased"])
+        self.assertEqual(mouse_events[1]["params"]["x"], 240.0)
+        self.assertEqual(mouse_events[1]["params"]["y"], 410.0)
+        self.assertEqual(len(collected), 1)
+        only_post = next(iter(collected.values()))
+        self.assertIn("talentos@springboot.dev", only_post["raw_text"])
+
+
 

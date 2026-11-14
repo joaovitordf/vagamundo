@@ -140,4 +140,88 @@ describe('DescartadasComponent', () => {
     expect(cards[1].querySelector('.vc-badge-fit--med')?.textContent).toContain('Média Afinidade');
     expect(cards[1].querySelector('.vc-badge-gate')?.textContent).toContain('Local: FLAG');
   });
+
+  it('renders recruiter_emails, hides external link for synthetic recruiter:// URLs, and deletes a single discarded job from DB', () => {
+    fixture.detectChanges();
+    for (const req of httpMock.match('/api/token')) {
+      req.flush({ token: 'tok' });
+    }
+    for (const req of httpMock.match('/api/saved')) {
+      req.flush({ saved: [] });
+    }
+    for (const req of httpMock.match('/api/applications')) {
+      req.flush({ applications: [] });
+    }
+    for (const req of httpMock.match('/api/discarded')) {
+      req.flush({
+        discarded: [
+          {
+            title: 'Publicação Colada Java',
+            company: 'Spring Consultoria',
+            portal: 'linkedin_post',
+            url: 'recruiter://post/99',
+            location: 'Remoto',
+            recruiter_emails: ['talentos@springconsult.dev'],
+            screening: { score: 52, verdict: 'Moderate Fit' },
+          },
+          {
+            title: 'Dev Angular Remoto',
+            company: 'WebTech',
+            portal: 'gupy-search',
+            url: 'https://webtech.gupy.io/jobs/123',
+            location: 'São Paulo',
+            screening: { score: 41, verdict: 'Weak Fit' },
+          },
+        ],
+      });
+    }
+    fixture.detectChanges();
+
+    const cards = Array.from(
+      fixture.nativeElement.querySelectorAll('.job-card')
+    ) as HTMLElement[];
+    expect(cards.length).toBe(2);
+
+    // Card com recruiter://post/99 exibe email e oculta link externo clicável
+    expect(cards[0].textContent).toContain('talentos@springconsult.dev');
+    expect(cards[0].querySelector('.link-external')).toBeNull();
+    expect(cards[0].textContent).toContain('Publicação sem URL externa');
+
+    // Card com URL HTTP preserva link externo
+    expect(cards[1].querySelector('.link-external')?.getAttribute('href')).toBe('https://webtech.gupy.io/jobs/123');
+
+    const confirmSpy = spyOn(window, 'confirm').and.returnValue(true);
+    const delBtn = cards[0].querySelector('.btn-delete-db') as HTMLButtonElement;
+    expect(delBtn).not.toBeNull();
+    delBtn.click();
+    fixture.detectChanges();
+
+    expect(confirmSpy).toHaveBeenCalled();
+    const deleteReq = httpMock.expectOne('/api/discarded/delete');
+    expect(deleteReq.request.method).toBe('POST');
+    expect(deleteReq.request.body).toEqual({ urls: ['recruiter://post/99'] });
+    deleteReq.flush({ ok: true, deleted_db: 1, deleted_recruiter_posts: 1, cleared_seen: 0 });
+
+    for (const req of httpMock.match('/api/saved')) req.flush({ saved: [] });
+    for (const req of httpMock.match('/api/applications')) req.flush({ applications: [] });
+    for (const req of httpMock.match('/api/discarded')) {
+      req.flush({
+        discarded: [
+          {
+            title: 'Dev Angular Remoto',
+            company: 'WebTech',
+            portal: 'gupy-search',
+            url: 'https://webtech.gupy.io/jobs/123',
+            location: 'São Paulo',
+            screening: { score: 41, verdict: 'Weak Fit' },
+          },
+        ],
+      });
+    }
+    fixture.detectChanges();
+
+    const remainingCards = fixture.nativeElement.querySelectorAll('.job-card');
+    expect(remainingCards.length).toBe(1);
+    expect(remainingCards[0].textContent).toContain('Dev Angular Remoto');
+  });
 });

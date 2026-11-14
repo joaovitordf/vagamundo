@@ -181,6 +181,7 @@ class AutoModeService:
             "round": 0,
             "round_jobs_found": 0,
             "round_eligible_count": 0,
+            "round_post_ids": [],
             "round_screened": 0,
             "round_promoted": 0,
             "round_discarded": 0,
@@ -683,6 +684,7 @@ class AutoModeService:
                     self.state["phase"] = "picking_keywords"
                     self.state["round_jobs_found"] = 0
                     self.state["round_eligible_count"] = 0
+                    self.state["round_post_ids"] = []
                     self.state["round_screened"] = 0
                     self.state["round_promoted"] = 0
                     self.state["round_discarded"] = 0
@@ -1046,12 +1048,11 @@ class AutoModeService:
         def _execute_recruiters_round(
             _round_num: int, keywords: List[str]
         ) -> Optional[Tuple[int, int, int, int, int, bool]]:
-            linkedin_only = getattr(self.recruiter_service, "linkedin_worker", None) is not None
             try:
                 sync_res = self.recruiter_service.sync_all(
                     query=", ".join(keywords),
                     days=1,
-                    linkedin_only=linkedin_only,
+                    linkedin_only=False,
                     should_stop=self._should_stop,
                 )
             except TypeError:
@@ -1076,6 +1077,9 @@ class AutoModeService:
             collected_post_ids = {
                 int(pid) for pid in (sync_res.get("collected_post_ids") or []) if pid is not None
             }
+            matched_post_ids = {
+                int(pid) for pid in (sync_res.get("matched_post_ids") or []) if pid is not None
+            } | collected_post_ids
             rate_limited = bool(sync_res.get("rate_limited")) or int(sync_res.get("errors") or 0) > 0
             with self._lock:
                 queued_post_ids = set(self._queued_recruiter_post_ids)
@@ -1087,8 +1091,6 @@ class AutoModeService:
                     include_urls=collected_urls,
                     include_post_ids=collected_post_ids | queued_post_ids,
                 )
-            if linkedin_only:
-                candidates = [p for p in candidates if p.get("portal") == "linkedin_post"]
 
             if self._should_stop():
                 return None
@@ -1103,10 +1105,14 @@ class AutoModeService:
             )
             round_found = int(sync_res.get("posts_with_email", 0)) + external_synced
             round_eligible = len(candidates)
+            round_post_ids = sorted(
+                matched_post_ids | {int(p["id"]) for p in candidates if p.get("id") is not None}
+            )
 
             with self._lock:
                 self.state["round_jobs_found"] = round_found
                 self.state["round_eligible_count"] = round_eligible
+                self.state["round_post_ids"] = round_post_ids
                 self.state["counts"]["found"] += round_found
                 self.state["counts"]["to_screen"] += round_eligible
                 self.state["counts"]["pending"] = round_eligible
@@ -1144,6 +1150,7 @@ class AutoModeService:
             snap = {
                 **self.state,
                 "keywords": list(self.state.get("keywords") or []),
+                "round_post_ids": list(self.state.get("round_post_ids") or []),
                 "counts": dict(self.state.get("counts") or {}),
                 "promoted_items": list(self.state.get("promoted_items") or []),
                 "round_history": list(self.state.get("round_history") or []),

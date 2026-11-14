@@ -14,8 +14,8 @@
         </div>
       </div>
       <p class="panel-desc">
-        Publicações e vagas identificadas no <strong>LinkedIn</strong> com <strong>e-mail direto (&#64;)</strong>.
-        A compatibilidade com seu CV é avaliada pela IA local e os itens permanecem listados com a nota de triagem até você excluí-los manualmente (Limbo).
+        Publicações e vagas com <strong>e-mail direto (&#64;)</strong> buscadas simultaneamente no <strong>LinkedIn</strong> e nas demais plataformas (Hacker News, GitHub, Remotive, Remotar, FreeHire e RemoteOK).
+        A compatibilidade com seu CV é avaliada pela IA local e os itens permanecem listados com a nota de triagem até você movê-los manualmente para Descartadas.
       </p>
     </div>
 
@@ -370,19 +370,49 @@
       <div class="column-card-header">
         <div class="column-title-row">
           <h3>Histórico de vagas relevantes</h3>
-          <span class="column-count-badge column-count-badge--history">{{ relevantHistoryPosts().length }}</span>
+          <span class="column-count-badge column-count-badge--history">
+            @if (historyScoreFilter() !== 'all' && allRelevantHistoryPosts().length > 0) {
+              {{ relevantHistoryPosts().length }}/{{ allRelevantHistoryPosts().length }}
+            } @else {
+              {{ relevantHistoryPosts().length }}
+            }
+          </span>
         </div>
         <p class="column-card-desc">
-          Vagas ativas já avaliadas pela IA local com nota de triagem. Acumula entre rodadas e só sai por exclusão manual (Limbo).
+          Vagas ativas já avaliadas pela IA local com nota de triagem (mais recentes detectadas primeiro por padrão). Acumula entre rodadas e só sai ao mover manualmente para Descartadas.
         </p>
       </div>
 
-      @if (relevantHistoryPosts().length > 0) {
+      @if (allRelevantHistoryPosts().length > 0) {
+        <div class="history-controls-row" aria-label="Ordenação e filtro do histórico de vagas relevantes">
+          <label class="history-control-item">
+            <span>Ordenar</span>
+            <select class="history-control-select"
+                    aria-label="Ordenar histórico de vagas relevantes"
+                    [value]="historySortBy()"
+                    (change)="setHistorySortBy($any($event.target).value)">
+              <option value="recent" [selected]="historySortBy() === 'recent'">Mais recentes detectadas</option>
+              <option value="score-desc" [selected]="historySortBy() === 'score-desc'">Melhores notas (IA)</option>
+            </select>
+          </label>
+          <label class="history-control-item">
+            <span>Filtrar nota</span>
+            <select class="history-control-select"
+                    aria-label="Filtrar histórico por nota da IA"
+                    [value]="historyScoreFilter()"
+                    (change)="setHistoryScoreFilter($any($event.target).value)">
+              <option value="all" [selected]="historyScoreFilter() === 'all'">Todas ({{ allRelevantHistoryPosts().length }})</option>
+              <option value="60+" [selected]="historyScoreFilter() === '60+'">Boas e altas (&ge; 60)</option>
+              <option value="75+" [selected]="historyScoreFilter() === '75+'">Melhores notas (&ge; 75)</option>
+            </select>
+          </label>
+        </div>
+
         <div class="history-toolbar">
-          <label class="history-select-all" title="Selecionar ou desmarcar todas as vagas do histórico">
+          <label class="history-select-all" title="Selecionar ou desmarcar todas as vagas visíveis no histórico">
             <input type="checkbox"
                    [checked]="allHistorySelected()"
-                   [disabled]="bulkDismissing()"
+                   [disabled]="bulkDismissing() || relevantHistoryPosts().length === 0"
                    (change)="toggleSelectAllHistory($any($event.target).checked)" />
             <span>Selecionar todas ({{ selectedHistoryIdList().length }}/{{ relevantHistoryPosts().length }})</span>
           </label>
@@ -392,19 +422,59 @@
                     class="btn-bulk-warning"
                     [disabled]="lowScoreHistoryPosts().length === 0 || bulkDismissing()"
                     (click)="dismissLowScoreHistory()"
-                    title="Enviar para o Limbo todas as vagas do histórico com nota abaixo de {{ historyLowScoreThreshold }}">
-              <i class="bi bi-funnel"></i> Deletar nota &lt; {{ historyLowScoreThreshold }} ({{ lowScoreHistoryPosts().length }})
+                    title="Enviar para Descartadas todas as vagas do histórico com nota abaixo de {{ historyLowScoreThreshold }}">
+              <i class="bi bi-funnel"></i> Descartar nota &lt; {{ historyLowScoreThreshold }} ({{ lowScoreHistoryPosts().length }})
             </button>
 
             <button type="button"
                     class="btn-bulk-danger"
                     [disabled]="selectedHistoryIdList().length === 0 || bulkDismissing()"
                     (click)="dismissSelectedHistory()"
-                    title="Apagar as vagas selecionadas e enviar para o Limbo">
-              <i class="bi bi-trash3"></i> Apagar selecionadas ({{ selectedHistoryIdList().length }})
+                    title="Mover as vagas selecionadas para Descartadas">
+              <i class="bi bi-trash3"></i> Descartar selecionadas ({{ selectedHistoryIdList().length }})
             </button>
           </div>
         </div>
+
+        @if (relevantHistoryPosts().length > 0) {
+          <div class="history-pagination" aria-label="Paginação do histórico de vagas relevantes">
+            <span class="history-page-info">
+              Mostrando {{ historyPageRange().start }}–{{ historyPageRange().end }} de {{ historyPageRange().total }}
+            </span>
+            <div class="history-pagination-controls">
+              <label class="history-page-size-label">
+                <span>Por página</span>
+                <select class="history-page-size-select"
+                        aria-label="Vagas por página no histórico"
+                        [value]="historyPageSize()"
+                        (change)="setHistoryPageSize(+$any($event.target).value)">
+                  @for (opt of historyPageSizeOptions; track opt) {
+                    <option [value]="opt" [selected]="historyPageSize() === opt">{{ opt }}</option>
+                  }
+                </select>
+              </label>
+              <div class="history-page-nav">
+                <button type="button"
+                        class="btn-history-page"
+                        [disabled]="effectiveHistoryPage() <= 1"
+                        (click)="prevHistoryPage()"
+                        aria-label="Página anterior do histórico">
+                  <i class="bi bi-chevron-left"></i> Anterior
+                </button>
+                <span class="history-page-indicator">
+                  Página {{ effectiveHistoryPage() }} de {{ historyTotalPages() }}
+                </span>
+                <button type="button"
+                        class="btn-history-page"
+                        [disabled]="effectiveHistoryPage() >= historyTotalPages()"
+                        (click)="nextHistoryPage()"
+                        aria-label="Próxima página do histórico">
+                  Próxima <i class="bi bi-chevron-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        }
       }
 
       @if (loading() && allPosts().length === 0) {
@@ -412,18 +482,52 @@
           <span class="vc-spinner large"></span>
           <p>Carregando histórico de vagas relevantes...</p>
         </div>
-      } @else if (relevantHistoryPosts().length === 0) {
+      } @else if (allRelevantHistoryPosts().length === 0) {
         <div class="empty-state">
           <i class="bi bi-journal-check empty-icon"></i>
           <h3>Nenhuma vaga relevante triada ainda</h3>
-          <p>Assim que a IA local avaliar publicações do LinkedIn com e-mail como vaga ativa, elas ficarão salvas aqui com a nota de triagem até você excluí-las manualmente.</p>
+          <p>Assim que a IA local avaliar publicações com e-mail como vaga ativa, elas ficarão salvas aqui com a nota de triagem até você movê-las para Descartadas.</p>
+        </div>
+      } @else if (relevantHistoryPosts().length === 0) {
+        <div class="empty-state">
+          <i class="bi bi-sliders empty-icon"></i>
+          <h3>Nenhuma vaga nesta faixa de nota</h3>
+          <p>Nenhuma publicação do histórico atingiu a nota mínima selecionada no filtro acima.</p>
+          <button type="button" class="btn-clear-all-filters mt-3" (click)="resetHistoryFilters()">
+            <i class="bi bi-x-circle"></i> Mostrar todas as notas
+          </button>
         </div>
       } @else {
         <div class="posts-grid history-grid">
-          @for (post of relevantHistoryPosts(); track post.id) {
+          @for (post of pagedHistoryPosts(); track post.id) {
             <ng-container *ngTemplateOutlet="postCardTpl; context: { post: post, scope: 'history' }" />
           }
         </div>
+
+        @if (historyTotalPages() > 1) {
+          <div class="history-pagination history-pagination--bottom" aria-label="Navegação inferior do histórico">
+            <span class="history-page-info">
+              Mostrando {{ historyPageRange().start }}–{{ historyPageRange().end }} de {{ historyPageRange().total }}
+            </span>
+            <div class="history-page-nav">
+              <button type="button"
+                      class="btn-history-page"
+                      [disabled]="effectiveHistoryPage() <= 1"
+                      (click)="prevHistoryPage()">
+                <i class="bi bi-chevron-left"></i> Anterior
+              </button>
+              <span class="history-page-indicator">
+                Página {{ effectiveHistoryPage() }} de {{ historyTotalPages() }}
+              </span>
+              <button type="button"
+                      class="btn-history-page"
+                      [disabled]="effectiveHistoryPage() >= historyTotalPages()"
+                      (click)="nextHistoryPage()">
+                Próxima <i class="bi bi-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+        }
       }
     </section>
 
@@ -522,7 +626,7 @@
             </div>
           }
         </div>
-      } @else if (post.url) {
+      } @else if (isExternalPostUrl(post.url)) {
         <div class="email-highlight-banner email-highlight-banner--linkedin">
           <div class="emails-row">
             <span class="email-label"><i class="bi bi-linkedin"></i> Contato / candidatura direto na publicação do LinkedIn</span>
@@ -598,10 +702,10 @@
         } @else if (post.published_date) {
           <span class="meta-item"><i class="bi bi-calendar3"></i> {{ formatShortDate(post.published_date) }}</span>
         }
-        @if (post.url) {
-          <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
-            <i class="bi bi-box-arrow-up-right"></i> Ver post original
-          </a>
+        @if (!isExternalPostUrl(post.url)) {
+          <span class="meta-item chip-undated" title="Publicação importada sem link externo">
+            <i class="bi bi-link-45deg"></i> Sem URL externa
+          </span>
         }
       </div>
 
@@ -647,6 +751,16 @@
                 </button>
               </div>
             } @else {
+              @if (isExternalPostUrl(post.url)) {
+                <a [href]="post.url"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="btn-footer-view-post"
+                   [title]="'Abrir publicação original em ' + getPortalLabel(post.portal) + ' (nova aba)'">
+                  <i class="bi bi-box-arrow-up-right"></i> Ver post original
+                </a>
+              }
+
               <button type="button"
                       class="btn-footer-interested"
                       [class.btn-footer-interested--saved]="!!post.auto_promoted || post.job_status === 'interested'"
@@ -673,8 +787,8 @@
                       class="btn-dismiss"
                       (click)="dismissPost(post.id)"
                       [disabled]="isPostBusy(post.id) || bulkDismissing()"
-                      title="Enviar esta vaga para o Limbo (remove da lista e impede que a mesma vaga volte sem bloquear futuras vagas deste e-mail)">
-                <i class="bi bi-trash3"></i> Excluir (Limbo)
+                      title="Mover esta vaga para Descartadas (impede que a mesma publicação volte sem bloquear futuras vagas deste e-mail; lá você pode restaurar ou excluir do BD)">
+                <i class="bi bi-trash3"></i> Descartar
               </button>
             }
           </div>

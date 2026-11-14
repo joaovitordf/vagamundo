@@ -4,6 +4,7 @@ from __future__ import annotations
 import glob
 import hashlib
 import html
+import inspect
 import json
 import logging
 import os
@@ -524,11 +525,55 @@ class RecruiterService:
         if self._cache_dir is not None:
             self._load_github_disk_cache()
 
-    def sync_from_jobs(self) -> dict:
+    @staticmethod
+    def _is_row_visible_in_radar(
+        *,
+        portal: Optional[str],
+        dismissed: Any,
+        auto_promoted: Any,
+        job_status: Optional[str],
+    ) -> bool:
+        """Mirror repository.list_recruiter_posts visibility rules for active radar posts."""
+        if dismissed:
+            return False
+        if job_status in ("applied", "discarded", "skipped"):
+            return False
+        if portal != "linkedin_post" and (auto_promoted or job_status == "interested"):
+            return False
+        return True
+
+    def _is_post_visible_in_radar(self, post_id: int) -> bool:
+        """Check whether an upserted recruiter post is active and visible in the Recrutadores listing."""
+        cur = self.repo.conn.execute(
+            """
+            SELECT rp.portal, rp.dismissed, rp.auto_promoted, j.status AS job_status
+            FROM recruiter_posts rp
+            LEFT JOIN jobs j ON rp.job_id = j.id
+            WHERE rp.id = ?
+            """,
+            (post_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        return self._is_row_visible_in_radar(
+            portal=row["portal"],
+            dismissed=row["dismissed"],
+            auto_promoted=row["auto_promoted"],
+            job_status=row["job_status"],
+        )
+
+    def sync_from_jobs(
+        self,
+        query: Optional[str] = None,
+        *,
+        _matched_post_ids: Optional[Set[int]] = None,
+    ) -> dict:
         """Scan jobs in repository and sync any postings containing emails."""
         with self._repo_lock:
             candidates = self.repo.get_jobs_with_potential_emails()
         cv_keywords = get_all_cv_keywords()
+        tokens = _tokenize_search_keywords([q.strip() for q in (query or "").split(",") if q.strip()])
 
         found_count = 0
         new_count = 0
@@ -574,8 +619,17 @@ class RecruiterService:
             }
 
             with self._repo_lock:
-                self.repo.upsert_recruiter_post(post_data)
+                post_id = self.repo.upsert_recruiter_post(post_data)
+                is_visible = self._is_post_visible_in_radar(post_id) if (_matched_post_ids is not None and post_id) else False
             new_count += 1
+            if _matched_post_ids is not None and post_id and is_visible:
+                is_match = True
+                if tokens:
+                    hay = _strip_accents(f"{j.get('title', '')} {j.get('company', '')} {desc}")
+                    is_match = any(tok in hay for tok in tokens)
+                if is_match:
+                    with self._health_lock:
+                        _matched_post_ids.add(int(post_id))
 
         return {
             "scanned": len(candidates),
@@ -736,6 +790,7 @@ class RecruiterService:
         job_id: Optional[int] = None,
         match_tokens: Optional[List[str]] = None,
         collected_urls: Optional[Set[str]] = None,
+        matched_post_ids: Optional[Set[int]] = None,
         status_out: Optional[dict] = None,
     ) -> bool:
         """Extract clean emails from description, compute CV match score and upsert if valid."""
@@ -759,7 +814,7 @@ class RecruiterService:
                 effective_wm = "remoto"
 
         with self._repo_lock:
-            self.repo.upsert_recruiter_post({
+            post_id = self.repo.upsert_recruiter_post({
                 "emails": emails,
                 "email_context": context,
                 "title": (title or "Oportunidade")[:120],
@@ -774,13 +829,17 @@ class RecruiterService:
                 "match_score": score,
                 "job_id": job_id,
             })
+            is_visible = self._is_post_visible_in_radar(post_id) if (matched_post_ids is not None and post_id) else False
         is_match = True
         if match_tokens:
             hay = _strip_accents(f"{title} {company} {extra_text} {description}")
             is_match = any(tok in hay for tok in match_tokens)
-        if collected_urls is not None and url and is_match:
+        if is_match:
             with self._health_lock:
-                collected_urls.add(url)
+                if collected_urls is not None and url:
+                    collected_urls.add(url)
+                if matched_post_ids is not None and post_id and is_visible:
+                    matched_post_ids.add(int(post_id))
         self._record_source_hit(status_out, portal, matched=is_match)
         return True
 
@@ -791,6 +850,7 @@ class RecruiterService:
         cache_ttl_seconds: int = DEFAULT_FEED_CACHE_TTL,
         _collected_urls: Optional[Set[str]] = None,
         _status_out: Optional[dict] = None,
+        _matched_post_ids: Optional[Set[int]] = None,
     ) -> int:
         """Search Hacker News Who is Hiring threads for clean hiring posts with direct emails."""
         if not query or not query.strip():
@@ -871,6 +931,7 @@ class RecruiterService:
                         description=text,
                         cv_keywords=cv_keywords,
                         collected_urls=_collected_urls,
+                        matched_post_ids=_matched_post_ids,
                         status_out=_status_out,
                     )
                     if ok:
@@ -896,6 +957,7 @@ class RecruiterService:
         cache_ttl_seconds: int = DEFAULT_FEED_CACHE_TTL,
         _collected_urls: Optional[Set[str]] = None,
         _status_out: Optional[dict] = None,
+        _matched_post_ids: Optional[Set[int]] = None,
     ) -> int:
         """Mine active open issues with direct emails from Brazilian tech GitHub job boards."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
@@ -1033,6 +1095,7 @@ class RecruiterService:
                     extra_text=" ".join(labels),
                     match_tokens=tokens,
                     collected_urls=_collected_urls,
+                    matched_post_ids=_matched_post_ids,
                     status_out=_status_out,
                 )
                 if ok:
@@ -1045,6 +1108,7 @@ class RecruiterService:
         cache_ttl_seconds: int = DEFAULT_FEED_CACHE_TTL,
         _collected_urls: Optional[Set[str]] = None,
         _status_out: Optional[dict] = None,
+        _matched_post_ids: Optional[Set[int]] = None,
     ) -> int:
         """Scan public Remotive remote jobs feed for listings exposing direct contact emails."""
         cv_keywords = get_all_cv_keywords()
@@ -1090,6 +1154,7 @@ class RecruiterService:
                 extra_text=tags,
                 match_tokens=tokens,
                 collected_urls=_collected_urls,
+                matched_post_ids=_matched_post_ids,
                 status_out=_status_out,
             ):
                 synced += 1
@@ -1100,6 +1165,7 @@ class RecruiterService:
         query: Optional[str] = None,
         max_files: int = 3,
         _collected_urls: Optional[Set[str]] = None,
+        _matched_post_ids: Optional[Set[int]] = None,
     ) -> int:
         """Mine direct emails from recent painel_busca_*.json caches without re-importing discarded URLs."""
         pattern = os.path.join(tempfile.gettempdir(), "painel_busca_*.json")
@@ -1145,6 +1211,7 @@ class RecruiterService:
                     job_id=existing_job.get("id") if existing_job else None,
                     match_tokens=tokens,
                     collected_urls=_collected_urls,
+                    matched_post_ids=_matched_post_ids,
                 ):
                     synced += 1
         return synced
@@ -1179,6 +1246,7 @@ class RecruiterService:
         cache_ttl_seconds: int = DEFAULT_FEED_CACHE_TTL,
         _collected_urls: Optional[Set[str]] = None,
         _status_out: Optional[dict] = None,
+        _matched_post_ids: Optional[Set[int]] = None,
         country: Optional[str] = None,
     ) -> int:
         """Query email-rich installed portal CLIs (remotar, freehire, remoteok) with session caching."""
@@ -1283,6 +1351,7 @@ class RecruiterService:
                     job_id=existing_job.get("id") if existing_job else None,
                     match_tokens=tokens,
                     collected_urls=_collected_urls,
+                    matched_post_ids=_matched_post_ids,
                     status_out=_status_out,
                 ):
                     synced += 1
@@ -1294,6 +1363,7 @@ class RecruiterService:
         *,
         _collected_urls: Optional[Set[str]] = None,
         _collected_post_ids: Optional[Set[int]] = None,
+        _matched_post_ids: Optional[Set[int]] = None,
         _status_out: Optional[dict] = None,
         force: bool = False,
         should_stop: Optional[Callable[[], bool]] = None,
@@ -1386,14 +1456,22 @@ class RecruiterService:
             return 0
 
         saved_posts = batch_res.get("posts") or []
+        raw_matched_ids = batch_res.get("matched_post_ids") or []
         with self._health_lock, _HEALTH_SYNC_LOCK:
             for p in saved_posts:
                 u = p.get("url")
                 if _collected_urls is not None and u:
                     _collected_urls.add(str(u))
                 pid = p.get("id")
-                if _collected_post_ids is not None and pid is not None:
-                    _collected_post_ids.add(int(pid))
+                if pid is not None:
+                    if _collected_post_ids is not None:
+                        _collected_post_ids.add(int(pid))
+                    if _matched_post_ids is not None:
+                        _matched_post_ids.add(int(pid))
+            if _matched_post_ids is not None:
+                for pid in raw_matched_ids:
+                    if pid is not None:
+                        _matched_post_ids.add(int(pid))
 
             if _status_out is not None:
                 by_portal = _status_out.setdefault("by_portal", {})
@@ -1410,14 +1488,32 @@ class RecruiterService:
         fn: Callable[..., Any],
         *args: Any,
         status_out: Optional[dict] = None,
+        matched_post_ids: Optional[Set[int]] = None,
         **kwargs: Any,
     ) -> Any:
-        if status_out is not None:
-            try:
-                return fn(*args, _status_out=status_out, **kwargs)
-            except TypeError:
-                pass
-        return fn(*args, **kwargs)
+        call_kwargs = dict(kwargs)
+        side_effect = getattr(fn, "side_effect", None)
+        inspect_target = (
+            side_effect
+            if callable(side_effect)
+            and not (isinstance(side_effect, type) and issubclass(side_effect, BaseException))
+            else fn
+        )
+        try:
+            sig = inspect.signature(inspect_target)
+            has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+            params = sig.parameters
+        except (TypeError, ValueError):
+            has_var_kw = True
+            params = {}
+
+        if status_out is not None and (has_var_kw or "_status_out" in params):
+            call_kwargs["_status_out"] = status_out
+        if matched_post_ids is not None and (has_var_kw or "_matched_post_ids" in params):
+            call_kwargs["_matched_post_ids"] = matched_post_ids
+        if "query" in call_kwargs and not (has_var_kw or "query" in params):
+            call_kwargs.pop("query")
+        return fn(*args, **call_kwargs)
 
     def sync_all(
         self,
@@ -1430,7 +1526,16 @@ class RecruiterService:
         days: Optional[int] = None,
     ) -> dict:
         """Scan local jobs, recent caches, BR GitHub boards, Remotive, live portals, HN and LinkedIn in parallel."""
-        res = {"scanned": 0, "posts_with_email": 0, "synced": 0} if linkedin_only else self.sync_from_jobs()
+        matched_post_ids: Set[int] = set()
+        res = (
+            {"scanned": 0, "posts_with_email": 0, "synced": 0}
+            if linkedin_only
+            else self._call_sync_source(
+                self.sync_from_jobs,
+                query=query,
+                matched_post_ids=matched_post_ids,
+            )
+        )
         hn_urls: Set[str] = set()
         extra_urls: Set[str] = set()
         collected_post_ids: Set[int] = set()
@@ -1449,7 +1554,13 @@ class RecruiterService:
                 if should_stop and should_stop():
                     break
                 hn_term = _ROLE_PREFIX_RE.sub("", term).strip() or term
-                self._call_sync_source(self.sync_from_hn, hn_term, _collected_urls=hn_urls, status_out=health)
+                self._call_sync_source(
+                    self.sync_from_hn,
+                    hn_term,
+                    _collected_urls=hn_urls,
+                    status_out=health,
+                    matched_post_ids=matched_post_ids,
+                )
             return len(hn_urls)
 
         tasks: List[Tuple[str, Callable[[], int]]] = []
@@ -1457,35 +1568,57 @@ class RecruiterService:
             if self.enable_live_feeds:
                 if terms[:2]:
                     tasks.append(("hn", _run_hn))
-                tasks.append(("scrapes", lambda: self.sync_from_recent_scrapes(query=query, _collected_urls=extra_urls)))
+                tasks.append((
+                    "scrapes",
+                    lambda: self._call_sync_source(
+                        self.sync_from_recent_scrapes,
+                        query=query,
+                        _collected_urls=extra_urls,
+                        matched_post_ids=matched_post_ids,
+                    ),
+                ))
                 tasks.append((
                     "github",
                     lambda: self._call_sync_source(
-                        self.sync_from_github_repos, query=query, _collected_urls=extra_urls, status_out=health
+                        self.sync_from_github_repos,
+                        query=query,
+                        _collected_urls=extra_urls,
+                        status_out=health,
+                        matched_post_ids=matched_post_ids,
                     ),
                 ))
                 tasks.append((
                     "remotive",
                     lambda: self._call_sync_source(
-                        self.sync_from_remotive, query=query, _collected_urls=extra_urls, status_out=health
+                        self.sync_from_remotive,
+                        query=query,
+                        _collected_urls=extra_urls,
+                        status_out=health,
+                        matched_post_ids=matched_post_ids,
                     ),
                 ))
                 if terms:
                     tasks.append((
                         "portals",
                         lambda: self._call_sync_source(
-                            self.sync_from_live_portals, terms, _collected_urls=extra_urls, status_out=health
+                            self.sync_from_live_portals,
+                            terms,
+                            _collected_urls=extra_urls,
+                            status_out=health,
+                            matched_post_ids=matched_post_ids,
                         ),
                     ))
 
         if include_linkedin and self.linkedin_worker is not None:
             tasks.append((
                 "linkedin",
-                lambda: self.sync_from_linkedin_browser(
+                lambda: self._call_sync_source(
+                    self.sync_from_linkedin_browser,
                     query=query,
                     _collected_urls=extra_urls,
                     _collected_post_ids=collected_post_ids,
-                    _status_out=health,
+                    status_out=health,
+                    matched_post_ids=matched_post_ids,
                     force=force_linkedin,
                     should_stop=should_stop,
                     days=days,
@@ -1534,6 +1667,7 @@ class RecruiterService:
             res["linkedin_cooldown_remaining_seconds"] = health["linkedin_cooldown_remaining_seconds"]
         res["collected_urls"] = sorted(collected_urls)
         res["collected_post_ids"] = sorted(collected_post_ids)
+        res["matched_post_ids"] = sorted(matched_post_ids | collected_post_ids)
         res["portal_breakdown"] = health.get("by_portal") or {}
         res["warnings"] = list(health.get("warnings") or [])
         res["rate_limited"] = bool(health["rate_limited"])
@@ -1666,6 +1800,16 @@ class RecruiterService:
         skipped = 0
         invalid = 0
         saved_posts: List[dict] = []
+        matched_post_ids: List[int] = []
+        seen_matched_ids: Set[int] = set()
+
+        def _record_matched_id(raw_id: Any) -> None:
+            if raw_id is None:
+                return
+            pid_int = int(raw_id)
+            if pid_int not in seen_matched_ids:
+                seen_matched_ids.add(pid_int)
+                matched_post_ids.append(pid_int)
 
         for entry in entries:
             try:
@@ -1695,6 +1839,14 @@ class RecruiterService:
                     title=post_data.get("title"),
                 )
                 if existing:
+                    if self._is_row_visible_in_radar(
+                        portal=existing.get("portal"),
+                        dismissed=existing.get("dismissed"),
+                        auto_promoted=existing.get("auto_promoted"),
+                        job_status=existing.get("job_status"),
+                    ):
+                        _record_matched_id(existing.get("id"))
+
                     is_closed = bool(existing.get("dismissed")) or bool(existing.get("auto_promoted")) or (
                         existing.get("job_status") in ("applied", "interested", "discarded", "skipped")
                     )
@@ -1713,6 +1865,7 @@ class RecruiterService:
                         post_id = self.repo.upsert_recruiter_post(post_data)
                         post_data["id"] = post_id
                         saved_posts.append(post_data)
+                        _record_matched_id(post_id)
                         updated += 1
                     else:
                         skipped += 1
@@ -1721,6 +1874,7 @@ class RecruiterService:
                 post_id = self.repo.upsert_recruiter_post(post_data)
                 post_data["id"] = post_id
                 saved_posts.append(post_data)
+                _record_matched_id(post_id)
                 imported += 1
 
         if imported == 0 and updated == 0 and skipped == 0 and invalid > 0:
@@ -1732,6 +1886,7 @@ class RecruiterService:
             "skipped": skipped,
             "invalid": invalid,
             "posts": saved_posts,
+            "matched_post_ids": matched_post_ids,
         }
 
     def list_posts(
@@ -1904,6 +2059,36 @@ class RecruiterService:
             jid = existing["id"]
             if score is not None or verdict:
                 self.repo.update_job_ranking(jid, score, verdict)
+            merged_loc = (existing.get("location") or "").strip() or job_payload.get("location")
+            merged_wm = (existing.get("work_model") or "").strip() or job_payload.get("work_model")
+            merged_pd = (existing.get("posted_date") or "").strip() or job_payload.get("posted_date")
+            merged_desc = (existing.get("description") or "").strip() or job_payload.get("description")
+            merged_portal = (existing.get("portal") or "").strip() or job_payload.get("portal")
+            with self.repo.conn:
+                self.repo.conn.execute(
+                    """
+                    UPDATE jobs SET
+                        location = COALESCE(NULLIF(TRIM(location), ''), ?),
+                        work_model = COALESCE(NULLIF(TRIM(work_model), ''), ?),
+                        posted_date = COALESCE(NULLIF(TRIM(posted_date), ''), ?),
+                        description = COALESCE(NULLIF(TRIM(description), ''), ?),
+                        portal = COALESCE(NULLIF(TRIM(portal), ''), ?)
+                    WHERE id = ?
+                    """,
+                    (
+                        job_payload.get("location"),
+                        job_payload.get("work_model"),
+                        job_payload.get("posted_date"),
+                        job_payload.get("description"),
+                        job_payload.get("portal"),
+                        jid,
+                    ),
+                )
+            job_payload["location"] = merged_loc
+            job_payload["work_model"] = merged_wm
+            job_payload["posted_date"] = merged_pd
+            job_payload["description"] = merged_desc
+            job_payload["portal"] = merged_portal
         else:
             jid = self.repo.upsert_job({**job_payload, "source": "recruiter_radar", "status": "new"})
 
@@ -1955,10 +2140,67 @@ class RecruiterService:
         guard_alert: Optional[str] = None,
     ) -> None:
         """Persist evaluation metadata and quick evaluation markdown for promoted/saved recruiter posts."""
-        model_used = (ai_model or "").strip() or painel_ia.get_active_model_name()
-        email_note = f" | E-mail direto: {best_email}" if best_email else ""
-        full_summary = f"{summary or 'Triagem concluída.'}{email_note}".strip()
-        subs = subscores if isinstance(subscores, dict) else {}
+        prev_db: dict[str, Any] = {}
+        try:
+            prev_db = self.repo.get_latest_evaluation_details([job_id]).get(job_id) or {}
+        except sqlite3.Error as exc:
+            logger.warning("Failed to load prior evaluation details for %s: %s", job_id, exc)
+
+        prev_cached: dict[str, Any] = {}
+        eval_file: Optional[Path] = None
+        try:
+            h = hashlib.sha256(job_url.encode("utf-8")).hexdigest()[:16]
+            eval_file = painel_ia.PAINEL_DIR / f"{h}_avaliacao.md"
+        except (TypeError, ValueError):
+            eval_file = None
+
+        if job_url and not (subscores and strengths and gaps) and eval_file is not None and eval_file.exists():
+            try:
+                content = eval_file.read_text(encoding="utf-8")
+                details = painel_ia.extract_eval_details_from_md(content)
+                if isinstance(details, dict):
+                    prev_cached.update({k: v for k, v in details.items() if v})
+                m_model = re.search(r"Modelo(?:\s+IA)?\s*[:=]\s*[*`]*\s*([^\n*`]+)", content, re.IGNORECASE)
+                if m_model and not prev_cached.get("ai_model"):
+                    prev_cached["ai_model"] = m_model.group(1).strip(" *`")
+                m_sum = re.search(
+                    r"##+\s*Resumo[^\n]*\n+(.+?)(?:\n\n|\n-\s*URL:|\nURL:|$)",
+                    content,
+                    re.IGNORECASE | re.DOTALL,
+                )
+                if m_sum and not prev_cached.get("summary"):
+                    prev_cached["summary"] = m_sum.group(1).strip()
+            except (OSError, ValueError, TypeError) as exc:
+                logger.warning("Failed to inspect cached evaluation markdown for %s: %s", job_url, exc)
+
+        resolved_subscores = (
+            subscores
+            if isinstance(subscores, dict) and subscores
+            else (prev_db.get("subscores") or prev_cached.get("subscores") or {})
+        )
+        resolved_strengths = strengths if strengths else (prev_db.get("strengths") or prev_cached.get("strengths") or [])
+        resolved_gaps = gaps if gaps else (prev_db.get("gaps") or prev_cached.get("gaps") or [])
+        resolved_location_verdict = (
+            location_verdict or prev_db.get("location_verdict") or prev_cached.get("location_verdict")
+        )
+        resolved_language_gate = (
+            language_gate or prev_db.get("language_gate") or prev_cached.get("language_gate")
+        )
+        resolved_language_note = (
+            language_note or prev_db.get("language_note") or prev_cached.get("language_note")
+        )
+        resolved_guard_alert = guard_alert or prev_cached.get("guard_alert")
+
+        model_used = (
+            (ai_model or "").strip()
+            or (prev_db.get("ai_model") or "").strip()
+            or (prev_cached.get("ai_model") or "").strip()
+            or painel_ia.get_active_model_name()
+        )
+        clean_summary = (summary or "").strip() or (prev_cached.get("summary") or "").strip() or "Triagem concluída."
+        email_note = f" | E-mail direto: {best_email}" if (best_email and best_email.lower() not in clean_summary.lower()) else ""
+        full_summary = f"{clean_summary}{email_note}".strip()
+        subs = resolved_subscores if isinstance(resolved_subscores, dict) else {}
 
         try:
             self.repo.insert_evaluation({
@@ -1966,14 +2208,14 @@ class RecruiterService:
                 "score_technical": subs.get("technical"),
                 "score_experience": subs.get("experience"),
                 "score_behavioral": subs.get("behavioral"),
-                "score_location": location_verdict,
+                "score_location": resolved_location_verdict,
                 "score_career": subs.get("career"),
                 "score_global": int(score),
                 "verdict": verdict,
-                "language_gate": language_gate,
-                "language_note": language_note,
-                "strengths": strengths or [],
-                "gaps": gaps or [],
+                "language_gate": resolved_language_gate,
+                "language_note": resolved_language_note,
+                "strengths": resolved_strengths,
+                "gaps": resolved_gaps,
                 "report_md": full_summary,
                 "ai_provider": model_used,
             })
@@ -1981,28 +2223,27 @@ class RecruiterService:
             logger.warning("Failed to record recruiter evaluation for job %s: %s", job_id, exc)
 
         try:
-            h = hashlib.sha256(job_url.encode("utf-8")).hexdigest()[:16]
-            eval_file = painel_ia.PAINEL_DIR / f"{h}_avaliacao.md"
-            eval_file.parent.mkdir(parents=True, exist_ok=True)
-            if not eval_file.exists() or eval_file.read_text(encoding="utf-8").startswith("## Triagem rápida"):
-                rendered = painel_ia._render_quick_eval_md(
-                    job_url,
-                    portal,
-                    model_used,
-                    {
-                        "score": int(score),
-                        "verdict": verdict,
-                        "summary": full_summary,
-                        "subscores": subs,
-                        "location_verdict": location_verdict or "PASS",
-                        "language_gate": language_gate or "PASS",
-                        "language_note": language_note or "",
-                        "strengths": strengths or [],
-                        "gaps": gaps or [],
-                        "guard_alert": guard_alert or "",
-                    },
-                )
-                eval_file.write_text(rendered, encoding="utf-8")
+            if eval_file is not None:
+                eval_file.parent.mkdir(parents=True, exist_ok=True)
+                if not eval_file.exists() or eval_file.read_text(encoding="utf-8").startswith("## Triagem rápida"):
+                    rendered = painel_ia._render_quick_eval_md(
+                        job_url,
+                        portal,
+                        model_used,
+                        {
+                            "score": int(score),
+                            "verdict": verdict,
+                            "summary": full_summary,
+                            "subscores": subs,
+                            "location_verdict": resolved_location_verdict or "PASS",
+                            "language_gate": resolved_language_gate or "PASS",
+                            "language_note": resolved_language_note or "",
+                            "strengths": resolved_strengths,
+                            "gaps": resolved_gaps,
+                            "guard_alert": resolved_guard_alert or "",
+                        },
+                    )
+                    eval_file.write_text(rendered, encoding="utf-8")
         except OSError as exc:
             logger.warning("Failed to write recruiter quick evaluation markdown for %s: %s", job_url, exc)
 
@@ -2310,10 +2551,88 @@ class RecruiterService:
             "posts": updated_posts,
         }
 
+    def _move_post_to_discarded(self, post_id: int) -> bool:
+        """Move a recruiter post into Descartadas (jobs.status='discarded') while preserving dedup protection."""
+        post = self.repo.get_recruiter_post(post_id)
+        if not post or post.get("dismissed"):
+            return False
+
+        existing = self._find_existing_job_for_post(post)
+        if existing and existing.get("status") in ("discarded", "skipped"):
+            already_linked = post.get("job_id") == existing["id"]
+            if not already_linked:
+                with self.repo.conn:
+                    self.repo.conn.execute(
+                        "UPDATE recruiter_posts SET job_id = ?, dismissed = 0 WHERE id = ?",
+                        (existing["id"], post_id),
+                    )
+                return True
+            return False
+
+        if existing and existing.get("status") == "applied":
+            return self.repo.dismiss_recruiter_post(post_id)
+
+        best_email = (post.get("ai_best_email") or ((post.get("emails") or [""])[0]) or "").strip()
+        has_real_ai = self._has_real_ai_evaluation(post)
+        score = int(post["ai_score"]) if has_real_ai else None
+        verdict = post.get("ai_verdict") if has_real_ai else None
+
+        jid, job_url, job_payload = self._prepare_job_from_post(
+            post,
+            score=score,
+            verdict=verdict,
+            best_email=best_email,
+            existing=existing,
+        )
+
+        if has_real_ai and score is not None:
+            self._record_post_evaluation(
+                job_id=jid,
+                job_url=job_payload["url"],
+                portal=job_payload["portal"],
+                score=score,
+                verdict=str(verdict or ""),
+                summary=str(post.get("ai_summary") or ""),
+                best_email=best_email,
+                ai_model=post.get("ai_model"),
+            )
+
+        note = f"Descartado em Recrutadores ({best_email})" if best_email else "Descartado em Recrutadores"
+        self.repo.mark_jobs(
+            [jid],
+            decision="discarded",
+            source="recruiter_discard",
+            note=note,
+        )
+
+        with self.repo.conn:
+            self.repo.conn.execute(
+                "UPDATE recruiter_posts SET job_id = ?, dismissed = 0 WHERE id = ?",
+                (jid, post_id),
+            )
+        return True
+
     def dismiss_post(self, post_id: int) -> bool:
-        """Dismiss a recruiter post."""
-        return self.repo.dismiss_recruiter_post(post_id)
+        """Move a recruiter post to Descartadas."""
+        with self._repo_lock:
+            return self._move_post_to_discarded(post_id)
 
     def dismiss_posts(self, post_ids: list[int]) -> list[int]:
-        """Dismiss multiple recruiter posts to Limbo."""
-        return self.repo.dismiss_recruiter_posts(post_ids)
+        """Move multiple recruiter posts to Descartadas in one idempotent batch."""
+        clean_ids: list[int] = []
+        seen: set[int] = set()
+        for raw_id in post_ids or []:
+            try:
+                pid = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if pid > 0 and pid not in seen:
+                seen.add(pid)
+                clean_ids.append(pid)
+
+        moved_ids: list[int] = []
+        with self._repo_lock:
+            for pid in clean_ids:
+                if self._move_post_to_discarded(pid):
+                    moved_ids.append(pid)
+        return moved_ids

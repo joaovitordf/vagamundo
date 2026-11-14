@@ -143,9 +143,18 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
   margin-top: auto;
   padding-top: 0.75rem;
   border-top: 1px solid var(--vc-border);
+}
+
+.job-card__footer-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .btn-restore {
@@ -163,8 +172,52 @@
   transition: all 0.2s;
 }
 
-.btn-restore:hover {
+.btn-restore:hover:not(:disabled) {
   background: rgba(16, 185, 129, 0.2);
+}
+
+.btn-restore:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-delete-db {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.btn-delete-db:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.24);
+  border-color: #ef4444;
+}
+
+.btn-delete-db:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chip--email {
+  color: var(--vc-green);
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.chip--muted {
+  opacity: 0.8;
+}
+
+:host-context([data-theme="light"]) .btn-delete-db {
+  color: #b91c1c;
 }
 
 .link-external {

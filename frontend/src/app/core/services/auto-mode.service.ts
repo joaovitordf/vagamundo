@@ -52,6 +52,7 @@ export interface AutoModeStatus {
   round?: number;
   round_jobs_found?: number;
   round_eligible_count?: number;
+  round_post_ids?: number[];
   round_screened?: number;
   round_promoted?: number;
   round_discarded?: number;
@@ -329,12 +330,15 @@ export class AutoModeService implements OnDestroy {
 
   applyStatusUpdate(next: AutoModeStatus): void {
     const prev = this.status();
+    const prevRoundIds = (prev?.round_post_ids || []).join(',');
+    const nextRoundIds = (next?.round_post_ids || []).join(',');
     const prevChanged =
       (prev?.counts?.promoted ?? 0) !== (next?.counts?.promoted ?? 0) ||
       (prev?.counts?.discarded ?? 0) !== (next?.counts?.discarded ?? 0) ||
       (prev?.counts?.not_a_job ?? 0) !== (next?.counts?.not_a_job ?? 0) ||
       (prev?.counts?.kept_low_score ?? 0) !== (next?.counts?.kept_low_score ?? 0) ||
       (prev?.round ?? 0) !== (next?.round ?? 0) ||
+      prevRoundIds !== nextRoundIds ||
       prev?.phase !== next?.phase;
 
     if (next?.running) {

@@ -334,6 +334,38 @@
   color: var(--vc-muted, #94a3b8);
 }
 
+.history-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 0.85rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid var(--vc-border, #334155);
+  border-radius: 9px;
+}
+
+.history-control-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--vc-muted, #94a3b8);
+}
+
+.history-control-select {
+  background: var(--vc-bg-2, #0f172a);
+  color: var(--vc-text, #f1f5f9);
+  border: 1px solid var(--vc-border, #334155);
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .history-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -411,6 +443,86 @@
 .btn-bulk-warning:disabled,
 .btn-bulk-danger:disabled {
   opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.history-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.85rem;
+  background: rgba(15, 23, 42, 0.36);
+  border: 1px solid var(--vc-border, #334155);
+  border-radius: 9px;
+}
+
+.history-pagination--bottom {
+  margin-top: 0.25rem;
+}
+
+.history-page-info,
+.history-page-indicator {
+  font-size: 0.8rem;
+  color: var(--vc-muted, #94a3b8);
+  font-weight: 500;
+}
+
+.history-pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.history-page-size-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--vc-muted, #94a3b8);
+}
+
+.history-page-size-select {
+  background: var(--vc-bg-2, #0f172a);
+  color: var(--vc-text, #f1f5f9);
+  border: 1px solid var(--vc-border, #334155);
+  border-radius: 6px;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-page-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.btn-history-page {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #7dd3fc;
+  border-radius: 6px;
+  padding: 0.3rem 0.62rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.2s;
+}
+
+.btn-history-page:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+}
+
+.btn-history-page:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -804,8 +916,10 @@
 
 .post-footer-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 0.6rem;
   margin-top: 0.5rem;
 }
 
@@ -1039,6 +1153,7 @@
   gap: 0.5rem;
 }
 
+.btn-footer-view-post,
 .btn-footer-interested,
 .btn-footer-contacted {
   border-radius: 6px;
@@ -1049,7 +1164,21 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  text-decoration: none;
   transition: all 0.2s;
+}
+
+.btn-footer-view-post {
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(99, 102, 241, 0.42);
+  color: #a5b4fc;
+}
+
+.btn-footer-view-post:hover {
+  background: rgba(99, 102, 241, 0.26);
+  border-color: #818cf8;
+  color: #e0e7ff;
+  text-decoration: none;
 }
 
 .btn-footer-interested {
@@ -1281,8 +1410,25 @@
   color: #047857;
 }
 
-:host-context([data-theme="light"]) .history-toolbar {
+:host-context([data-theme="light"]) .history-controls-row,
+:host-context([data-theme="light"]) .history-toolbar,
+:host-context([data-theme="light"]) .history-pagination {
   background: rgba(241, 245, 249, 0.9);
+}
+
+:host-context([data-theme="light"]) .btn-footer-view-post {
+  color: #4338ca;
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+:host-context([data-theme="light"]) .btn-footer-view-post:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: #312e81;
+}
+
+:host-context([data-theme="light"]) .btn-history-page {
+  color: #0369a1;
 }
 
 :host-context([data-theme="light"]) .btn-bulk-warning,

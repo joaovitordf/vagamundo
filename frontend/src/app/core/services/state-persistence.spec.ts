@@ -7,6 +7,7 @@ import {
   RECRUITER_STATE_STORAGE_KEY,
   RecruiterStateService,
   filterAndSortRecruiterPosts,
+  filterAndSortRelevantHistoryPosts,
 } from './recruiter-state.service';
 import {
   SEARCH_STATE_STORAGE_KEY,
@@ -75,7 +76,7 @@ describe('State persistence services', () => {
     expect(svc.savedDay()).toBe(localTodayIso());
   });
 
-  it('persists RecruiterStateService and enforces keyword gate on empty filterText', () => {
+  it('persists filter preferences in RecruiterStateService without restoring hasSearched across sessions', () => {
     const svc = new RecruiterStateService();
     svc.filterText.set('devops');
     svc.workModelFilter.set('remote');
@@ -89,6 +90,10 @@ describe('State persistence services', () => {
     expect(restored.workModelFilter()).toBe('remote');
     expect(restored.regionFilter()).toBe('brasil');
     expect(restored.hideUndated()).toBeTrue();
+    expect(restored.hasSearched()).toBeFalse();
+    expect(restored.hasActiveKeywordSearch()).toBeFalse();
+
+    restored.hasSearched.set(true);
     expect(restored.hasActiveKeywordSearch()).toBeTrue();
 
     restored.resetSecondaryFilters();
@@ -289,5 +294,88 @@ describe('State persistence services', () => {
       JSON.stringify({ autoCooldownSeconds: 2 })
     );
     expect(new RecruiterStateService().autoCooldownSeconds()).toBe(15);
+  });
+
+  it('orders relevant history posts by most recently detected by default, supports best-score sorting/filtering, and persists preferences', () => {
+    const olderHighScore: RecruiterPost = {
+      id: 10,
+      emails: ['rh@oldhigh.dev'],
+      title: 'Java Pleno',
+      company: 'OldHigh',
+      portal: 'linkedin_post',
+      url: 'https://www.linkedin.com/feed/update/urn:li:activity:10/',
+      description: 'Vaga Java Pleno',
+      matched_keywords: ['Java'],
+      match_score: 90,
+      ai_classification: 'vaga_ativa',
+      ai_score: 92,
+      ai_verdict: 'Strong Fit',
+      ai_evaluated_at: '2026-11-10T10:00:00Z',
+      created_at: '2026-11-10T09:50:00Z',
+    };
+    const midScore: RecruiterPost = {
+      id: 20,
+      emails: ['jobs@mid.dev'],
+      title: 'Python Backend',
+      company: 'MidCorp',
+      portal: 'hn-search',
+      url: 'https://news.ycombinator.com/item?id=20',
+      description: 'Python role',
+      matched_keywords: ['Python'],
+      match_score: 70,
+      ai_classification: 'vaga_ativa',
+      ai_score: 68,
+      ai_verdict: 'Good Fit',
+      ai_evaluated_at: '2026-11-12T15:00:00Z',
+      created_at: '2026-11-12T14:55:00Z',
+    };
+    const newestLowScore: RecruiterPost = {
+      id: 30,
+      emails: ['careers@sap.com'],
+      title: 'Senior AI Engineer',
+      company: 'SAP',
+      portal: 'freehire-search',
+      url: 'https://freehire.me/jobs/sap-30',
+      description: 'Senior role',
+      matched_keywords: ['Python'],
+      match_score: 60,
+      ai_classification: 'vaga_ativa',
+      ai_score: 45,
+      ai_verdict: 'Weak Fit',
+      ai_evaluated_at: '2026-11-14T21:10:00Z',
+      created_at: '2026-11-14T21:05:00Z',
+    };
+
+    const recentOrdered = filterAndSortRelevantHistoryPosts([olderHighScore, midScore, newestLowScore]);
+    expect(recentOrdered.map(p => p.id)).toEqual([30, 20, 10]);
+
+    const bestScoreOrdered = filterAndSortRelevantHistoryPosts(
+      [olderHighScore, midScore, newestLowScore],
+      { sortBy: 'score-desc', scoreFilter: 'all' }
+    );
+    expect(bestScoreOrdered.map(p => p.id)).toEqual([10, 20, 30]);
+
+    const filtered60 = filterAndSortRelevantHistoryPosts(
+      [olderHighScore, midScore, newestLowScore],
+      { sortBy: 'recent', scoreFilter: '60+' }
+    );
+    expect(filtered60.map(p => p.id)).toEqual([20, 10]);
+
+    const filtered75 = filterAndSortRelevantHistoryPosts(
+      [olderHighScore, midScore, newestLowScore],
+      { sortBy: 'recent', scoreFilter: '75+' }
+    );
+    expect(filtered75.map(p => p.id)).toEqual([10]);
+
+    const svc = new RecruiterStateService();
+    expect(svc.historySortBy()).toBe('recent');
+    expect(svc.historyScoreFilter()).toBe('all');
+    svc.historySortBy.set('score-desc');
+    svc.historyScoreFilter.set('75+');
+    svc.persist();
+
+    const restored = new RecruiterStateService();
+    expect(restored.historySortBy()).toBe('score-desc');
+    expect(restored.historyScoreFilter()).toBe('75+');
   });
 });

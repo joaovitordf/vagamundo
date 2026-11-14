@@ -878,11 +878,27 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         self.assertEqual(st["counts"]["to_screen"], 1)
         self.assertEqual(st["counts"]["promoted"], 1)
 
-    def test_recruiters_auto_round_triages_urlless_linkedin_post_via_collected_post_ids(self):
+    def test_recruiters_auto_round_runs_all_platforms_simultaneously_and_scopes_round_post_ids(self):
         import time
         from types import SimpleNamespace
 
-        # Non-LinkedIn post must be skipped when linkedin_worker is active (linkedin_only=True)
+        # Unrelated previously evaluated post in DB must NOT leak into round_post_ids of a new round
+        old_evaluated = self.recruiter_service.add_pasted_post(
+            raw_text="Vaga Flutter Sênior antiga! Envie CV para flutter@antigo.dev",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7400000000000000001/",
+            title="Flutter Sênior Antigo",
+            company="AntigoCo",
+        )
+        self.repo.update_recruiter_post_ai(
+            old_evaluated["id"],
+            "vaga_ativa",
+            88,
+            "Strong Fit",
+            "Avaliada anteriormente.",
+            "flutter@antigo.dev",
+        )
+
+        # Non-LinkedIn post matching the round keyword must run/triage simultaneously with LinkedIn
         other_portal_post = self.recruiter_service.add_pasted_post(
             raw_text="Vaga Angular em outro portal. Envie CV para externo@freehire.dev",
             url="https://freehire.me/jobs/angular-999",
@@ -924,20 +940,28 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         client = TestClient(app)
         token = get_token()
 
+        sync_calls = []
+
+        def _rec(name, ret=0):
+            def _fn(*_a, **_kw):
+                sync_calls.append(name)
+                return ret
+            return _fn
+
         with patch.object(auto_live, "validate_ready"), \
              patch("backend.tools.painel_ia.sortear_palavras_chave_busca", return_value={"keywords": ["Angular"], "rationale": "Front", "source": "ai"}), \
-             patch.object(live_recruiter, "sync_from_jobs", side_effect=AssertionError("sync_from_jobs should not run when linkedin_only=True")), \
-             patch.object(live_recruiter, "sync_from_hn", side_effect=AssertionError("sync_from_hn should not run when linkedin_only=True")), \
-             patch.object(live_recruiter, "sync_from_recent_scrapes", side_effect=AssertionError("sync_from_recent_scrapes should not run when linkedin_only=True")), \
-             patch.object(live_recruiter, "sync_from_github_repos", side_effect=AssertionError("sync_from_github_repos should not run when linkedin_only=True")), \
-             patch.object(live_recruiter, "sync_from_remotive", side_effect=AssertionError("sync_from_remotive should not run when linkedin_only=True")), \
-             patch.object(live_recruiter, "sync_from_live_portals", side_effect=AssertionError("sync_from_live_portals should not run when linkedin_only=True")), \
-             patch("backend.tools.painel_ia.triar_post_recrutador", return_value={
+             patch.object(live_recruiter, "sync_from_jobs", side_effect=_rec("jobs", {"scanned": 0, "posts_with_email": 0, "synced": 0})), \
+             patch.object(live_recruiter, "sync_from_hn", side_effect=_rec("hn")), \
+             patch.object(live_recruiter, "sync_from_recent_scrapes", side_effect=_rec("scrapes")), \
+             patch.object(live_recruiter, "sync_from_github_repos", side_effect=_rec("github")), \
+             patch.object(live_recruiter, "sync_from_remotive", side_effect=_rec("remotive")), \
+             patch.object(live_recruiter, "sync_from_live_portals", side_effect=_rec("portals")), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", side_effect=lambda p: {
                  "classification": "vaga_ativa",
-                 "best_email": "rustjobs@nouri.dev",
+                 "best_email": (p.get("emails") or [""])[0],
                  "score": 81,
                  "verdict": "Strong Fit",
-                 "summary": "Post do LinkedIn sem URL capturado por ID.",
+                 "summary": "Vaga capturada na rodada multiplataforma.",
              }), \
              patch("backend.tools.painel.unmark_interested", return_value=True):
             res = client.post(
@@ -954,18 +978,27 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
                 time.sleep(0.04)
 
         self.assertEqual(st["phase"], "done")
-        self.assertEqual(st["counts"]["to_screen"], 1)
-        self.assertEqual(st["counts"]["promoted"], 1)
+        # Todas as outras plataformas precisam rodar simultaneamente ao LinkedIn também no Modo Automático
+        self.assertEqual(set(sync_calls), {"jobs", "hn", "scrapes", "github", "remotive", "portals"})
+        self.assertEqual(st["counts"]["to_screen"], 2)
+        self.assertEqual(st["counts"]["promoted"], 2)
+
+        # round_post_ids inclui apenas os posts da rodada atual e NÃO vaza vaga Flutter antiga
+        self.assertIn(other_portal_post["id"], st["round_post_ids"])
+        self.assertNotIn(old_evaluated["id"], st["round_post_ids"])
+        self.assertEqual(len(st["round_post_ids"]), 2)
+
         interested = self.repo.list_jobs(status="interested")
-        self.assertEqual(len(interested), 1)
-        self.assertEqual(interested[0]["portal"], "linkedin_post")
-        self.assertEqual(interested[0]["rank_score"], 81)
+        self.assertEqual(len(interested), 2)
+        self.assertEqual({j["portal"] for j in interested}, {"linkedin_post", "freehire-search"})
 
         # Promoted LinkedIn post remains listed in Recrutadores with job_status='interested' and AI score
         li_posts = client.get("/api/recruiters?portal=linkedin_post").json()["posts"]
-        self.assertEqual(len(li_posts), 1)
-        self.assertEqual(li_posts[0]["ai_score"], 81)
-        self.assertEqual(li_posts[0]["job_status"], "interested")
+        li_by_id = {p["id"]: p for p in li_posts}
+        new_li_id = next(pid for pid in st["round_post_ids"] if pid != other_portal_post["id"])
+        self.assertIn(new_li_id, li_by_id)
+        self.assertEqual(li_by_id[new_li_id]["ai_score"], 81)
+        self.assertEqual(li_by_id[new_li_id]["job_status"], "interested")
 
 
 if __name__ == "__main__":

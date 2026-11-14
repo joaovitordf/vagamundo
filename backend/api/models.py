@@ -60,6 +60,10 @@ class BatchScreenRequest(BaseModel):
     urls: List[str]
 
 
+class DeleteDiscardedRequest(BaseModel):
+    urls: List[str]
+
+
 class ProviderSettingsInput(BaseModel):
     model: Optional[str] = None
     api_key: Optional[str] = None

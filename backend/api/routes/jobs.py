@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.api.deps import get_evaluator, get_liveness, get_scanner, get_tracker
-from backend.api.models import BatchScreenRequest, MarkRequest, SingleUrlRequest
+from backend.api.models import BatchScreenRequest, DeleteDiscardedRequest, MarkRequest, SingleUrlRequest
 from backend.api.security import verify_csrf_token
 from backend.core.evaluator import EvaluatorService
 from backend.core.liveness import LivenessService
@@ -186,6 +186,17 @@ async def check_liveness(
     urls = req.urls or []
     results = await liveness_svc.check(urls)
     return {"results": results, "total": len(results)}
+
+
+@router.post("/discarded/delete")
+def delete_discarded_jobs(
+    req: DeleteDiscardedRequest,
+    tracker: TrackerService = Depends(get_tracker),
+    _csrf: str = Depends(verify_csrf_token),
+) -> Dict[str, Any]:
+    """Permanently delete specific discarded jobs from SQLite, recruiter_posts, and seen_jobs.json."""
+    stats = tracker.delete_discarded_with_legacy(req.urls)
+    return {"ok": True, **stats}
 
 
 @router.post("/discarded/clear")

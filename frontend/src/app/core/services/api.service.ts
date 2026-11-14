@@ -30,6 +30,7 @@ export interface SyncRecruiterPostsResponse {
   linkedin_alert?: string | null;
   collected_urls?: string[];
   collected_post_ids?: number[];
+  matched_post_ids?: number[];
   portal_breakdown?: Record<string, SyncRecruiterPortalStats>;
   warnings?: string[];
   rate_limited?: boolean;
@@ -378,6 +379,22 @@ export class ApiService {
 
   clearDiscarded(): Observable<{ ok: boolean; deleted_db?: number; cleared_seen?: number }> {
     return this.http.post<{ ok: boolean; deleted_db?: number; cleared_seen?: number }>(`${this.baseUrl}/discarded/clear`, {}).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  deleteDiscardedFromDb(urls: string[]): Observable<{
+    ok: boolean;
+    deleted_db?: number;
+    deleted_recruiter_posts?: number;
+    cleared_seen?: number;
+  }> {
+    return this.http.post<{
+      ok: boolean;
+      deleted_db?: number;
+      deleted_recruiter_posts?: number;
+      cleared_seen?: number;
+    }>(`${this.baseUrl}/discarded/delete`, { urls }).pipe(
       tap(() => this.refreshCounts())
     );
   }

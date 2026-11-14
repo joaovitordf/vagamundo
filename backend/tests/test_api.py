@@ -588,6 +588,84 @@ class TestFastAPI(unittest.TestCase):
         self.assertIsNotNone(self.repo.get_job_by_url("https://example.com/keep-me"))
         self.assertIsNone(self.repo.get_job_by_url("https://example.com/drop-me"))
 
+    def test_delete_discarded_by_url_and_clear_also_removes_linked_recruiter_posts(self):
+        keep_url = "https://example.com/keep-interested"
+        self.repo.upsert_job({
+            "title": "Vaga Interessante",
+            "company": "Emp Keep",
+            "url": keep_url,
+            "status": "interested",
+        })
+        p1_id = self.repo.upsert_recruiter_post({
+            "portal": "linkedin_post",
+            "company": "Disc Tech 1",
+            "title": "Dev Python Disc 1",
+            "description": "Envie CV para rh1@disctech.dev",
+            "emails": ["rh1@disctech.dev"],
+            "matched_keywords": ["Python"],
+            "match_score": 80,
+            "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000901/",
+        })
+        p2_id = self.repo.upsert_recruiter_post({
+            "portal": "linkedin_post",
+            "company": "Disc Tech 2",
+            "title": "Dev Java Disc 2",
+            "description": "Envie CV para rh2@disctech.dev",
+            "emails": ["rh2@disctech.dev"],
+            "matched_keywords": ["Java"],
+            "match_score": 82,
+            "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000902/",
+        })
+
+        dismiss_resp = self.client.post(
+            "/api/recruiters/dismiss-batch",
+            json={"post_ids": [p1_id, p2_id]},
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(dismiss_resp.status_code, 200)
+
+        discarded_before = self.client.get("/api/discarded").json()["discarded"]
+        self.assertEqual(len(discarded_before), 2)
+
+        url_1 = "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000901/"
+        url_2 = "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000902/"
+
+        # CSRF obrigatório em /api/discarded/delete
+        forbidden = self.client.post("/api/discarded/delete", json={"urls": [url_1]})
+        self.assertEqual(forbidden.status_code, 403)
+
+        # Exclui apenas url_1 do BD (incluindo vínculo recruiter_posts, sem ressuscitar em /api/recruiters)
+        del_resp = self.client.post(
+            "/api/discarded/delete",
+            json={"urls": [url_1, keep_url]},
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(del_resp.status_code, 200)
+        body = del_resp.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["deleted_db"], 1)
+        self.assertEqual(body["deleted_recruiter_posts"], 1)
+
+        self.assertIsNone(self.repo.get_job_by_url(url_1))
+        self.assertIsNotNone(self.repo.get_job_by_url(url_2))
+        self.assertIsNotNone(self.repo.get_job_by_url(keep_url))
+
+        rp_1 = self.repo.conn.execute("SELECT id FROM recruiter_posts WHERE id = ?", (p1_id,)).fetchone()
+        rp_2 = self.repo.conn.execute("SELECT id FROM recruiter_posts WHERE id = ?", (p2_id,)).fetchone()
+        self.assertIsNone(rp_1)
+        self.assertIsNotNone(rp_2)
+        self.assertEqual(self.client.get("/api/recruiters").json()["posts"], [])
+
+        # Limpar lista restante também remove recruiter_posts vinculado a p2, mantendo interessadas
+        clear_resp = self.client.post("/api/discarded/clear", headers={"X-Painel-Token": self.token})
+        self.assertEqual(clear_resp.status_code, 200)
+        self.assertEqual(clear_resp.json().get("deleted_db"), 1)
+        self.assertIsNone(self.repo.get_job_by_url(url_2))
+        self.assertIsNotNone(self.repo.get_job_by_url(keep_url))
+        rp_2_after = self.repo.conn.execute("SELECT id FROM recruiter_posts WHERE id = ?", (p2_id,)).fetchone()
+        self.assertIsNone(rp_2_after)
+        self.assertEqual(self.client.get("/api/recruiters").json()["posts"], [])
+
     def test_claude_non_profile_step_requires_url(self):
         resp = self.client.post(
             "/api/claude",

@@ -1946,9 +1946,90 @@ class Repository:
             }
         return saved_at_map, auto_meta_map
 
-    def clear_discarded_jobs(self) -> int:
-        """Delete discarded/low-skipped jobs and their discarded status log entries."""
+    def _delete_linked_recruiter_posts(
+        self,
+        job_ids: list[str],
+        urls: list[str],
+    ) -> int:
+        """Delete recruiter_posts rows linked to permanently deleted discarded jobs."""
+        clean_jids = [jid for jid in dict.fromkeys(job_ids) if jid]
+        clean_urls = [u.strip() for u in dict.fromkeys(urls) if u and u.strip()]
+        synthetic_ids: list[int] = []
+        for u in clean_urls:
+            if u.startswith("recruiter://post/"):
+                tail = u.split("recruiter://post/", 1)[1].strip()
+                if tail.isdigit():
+                    synthetic_ids.append(int(tail))
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        for idx in range(0, len(clean_jids), 400):
+            chunk = clean_jids[idx:idx + 400]
+            ph = ",".join("?" for _ in chunk)
+            clauses.append(f"job_id IN ({ph})")
+            params.extend(chunk)
+        for idx in range(0, len(clean_urls), 400):
+            chunk = clean_urls[idx:idx + 400]
+            ph = ",".join("?" for _ in chunk)
+            clauses.append(f"url IN ({ph})")
+            params.extend(chunk)
+        for idx in range(0, len(synthetic_ids), 400):
+            chunk = synthetic_ids[idx:idx + 400]
+            ph = ",".join("?" for _ in chunk)
+            clauses.append(f"id IN ({ph})")
+            params.extend(chunk)
+
+        if not clauses:
+            return 0
+        cur = self.conn.execute(
+            f"DELETE FROM recruiter_posts WHERE {' OR '.join(clauses)}",
+            params,
+        )
+        return cur.rowcount
+
+    def delete_discarded_jobs_by_urls(self, urls: list[str]) -> dict[str, int]:
+        """Permanently delete specific discarded/low-skipped jobs and linked recruiter_posts from SQLite."""
+        clean_urls = [u.strip() for u in dict.fromkeys(urls or []) if isinstance(u, str) and u.strip()]
+        if not clean_urls:
+            return {"deleted_db": 0, "deleted_recruiter_posts": 0}
+
+        deleted_jobs = 0
+        deleted_posts = 0
         with self.conn:
+            for idx in range(0, len(clean_urls), 400):
+                chunk = clean_urls[idx:idx + 400]
+                ph = ",".join("?" for _ in chunk)
+                rows = self.conn.execute(
+                    f"""
+                    SELECT id, url FROM jobs
+                    WHERE url IN ({ph})
+                      AND (status = 'discarded' OR (status = 'skipped' AND fit = 'low'))
+                    """,
+                    chunk,
+                ).fetchall()
+                target_jids = [r["id"] for r in rows]
+                target_urls = [r["url"] for r in rows if r["url"]]
+                if not target_jids:
+                    continue
+                deleted_posts += self._delete_linked_recruiter_posts(target_jids, target_urls)
+                j_ph = ",".join("?" for _ in target_jids)
+                cur = self.conn.execute(
+                    f"DELETE FROM jobs WHERE id IN ({j_ph})",
+                    target_jids,
+                )
+                deleted_jobs += cur.rowcount
+        return {"deleted_db": deleted_jobs, "deleted_recruiter_posts": deleted_posts}
+
+    def clear_discarded_jobs(self) -> int:
+        """Delete discarded/low-skipped jobs, linked recruiter_posts, and their discarded status log entries."""
+        with self.conn:
+            rows = self.conn.execute(
+                "SELECT id, url FROM jobs WHERE status = 'discarded' OR (status = 'skipped' AND fit = 'low')"
+            ).fetchall()
+            target_jids = [r["id"] for r in rows]
+            target_urls = [r["url"] for r in rows if r["url"]]
+            if target_jids or target_urls:
+                self._delete_linked_recruiter_posts(target_jids, target_urls)
             cur = self.conn.execute(
                 "DELETE FROM jobs WHERE status = 'discarded' OR (status = 'skipped' AND fit = 'low')"
             )

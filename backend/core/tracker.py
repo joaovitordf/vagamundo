@@ -333,17 +333,28 @@ class TrackerService:
         return rows
 
     def list_enriched_discarded_jobs(self) -> list[dict[str, Any]]:
-        """List discarded jobs merged across SQLite and legacy cache with AI screening."""
+        """List discarded jobs merged across SQLite and legacy cache with AI screening and recruiter emails."""
         raw_discarded = self._merge_sqlite_and_legacy_jobs("discarded", painel.discarded, "discarded")
         disc_ids = [d.get("id") for d in raw_discarded if d.get("id")]
+        disc_urls = [d.get("url") for d in raw_discarded if d.get("url")]
         eval_provider_map, eval_details_map = self._load_eval_maps(disc_ids, "discarded")
+        try:
+            recruiter_email_map = self.repo.get_recruiter_emails_for_jobs(disc_ids, disc_urls)
+        except sqlite3.Error as exc:
+            logger.warning("Failed to load recruiter emails for discarded jobs: %s", exc)
+            recruiter_email_map = {}
 
         rows: list[dict[str, Any]] = []
         for d in raw_discarded:
             u = d.get("url")
+            jid = d.get("id")
             cached_score = self._safe_load_cached_score(u, "discarded job") if u else None
             screening = self.build_screening(d, cached_score, eval_provider_map, eval_details_map)
-            rows.append(self._normalize_enriched_job_fields(d, screening=screening))
+            rec_emails = recruiter_email_map.get(f"id:{jid}") or recruiter_email_map.get(f"url:{u}") or []
+            row = self._normalize_enriched_job_fields(d, screening=screening)
+            if rec_emails:
+                row["recruiter_emails"] = rec_emails
+            rows.append(row)
 
         rows.sort(key=lambda r: r.get("first_seen") or "", reverse=True)
         return rows
@@ -400,6 +411,36 @@ class TrackerService:
         if job:
             self.mark_jobs([job["id"]], decision="interested", source="painel")
         painel.restore_job(url)
+
+    def delete_discarded_with_legacy(self, urls: list[str]) -> dict[str, int]:
+        """Permanently delete selected discarded jobs from SQLite, recruiter_posts, and seen_jobs.json."""
+        clean_urls = [u.strip() for u in dict.fromkeys(urls or []) if isinstance(u, str) and u.strip()]
+        if not clean_urls:
+            return {"deleted_db": 0, "deleted_recruiter_posts": 0, "cleared_seen": 0}
+
+        stats = self.repo.delete_discarded_jobs_by_urls(clean_urls)
+        seen_path = painel.scrape_run.SEEN
+        cleared_seen = 0
+        url_set = set(clean_urls)
+        if seen_path.exists():
+            try:
+                state = json.loads(seen_path.read_text(encoding="utf-8"))
+                seen = state.get("seen", {})
+                keys_to_remove = [
+                    k
+                    for k, v in seen.items()
+                    if isinstance(v, dict)
+                    and (v.get("url") or "").strip() in url_set
+                    and (v.get("status") in ("skipped", "discarded") or v.get("fit") == "low")
+                ]
+                for k in keys_to_remove:
+                    del seen[k]
+                    cleared_seen += 1
+                if cleared_seen > 0:
+                    seen_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                logger.warning("Failed to delete legacy discarded keys from %s: %s", seen_path, exc)
+        return {**stats, "cleared_seen": cleared_seen}
 
     def clear_discarded_with_legacy(self) -> dict[str, int]:
         """Permanently clear discarded jobs from SQLite and legacy seen_jobs.json."""

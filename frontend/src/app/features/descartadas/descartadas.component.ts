@@ -29,6 +29,7 @@ export class DescartadasComponent implements OnInit {
   filteredJobs = signal<Vaga[]>([]);
   filterText = '';
   loading = signal<boolean>(true);
+  deletingUrls = signal<Set<string>>(new Set());
 
   ngOnInit(): void {
     this.loadDiscarded();
@@ -68,6 +69,15 @@ export class DescartadasComponent implements OnInit {
 
   readonly getPortalName = getPortalDisplayName;
 
+  isDeleting(url?: string | null): boolean {
+    if (!url) return false;
+    return this.deletingUrls().has(url);
+  }
+
+  isExternalHttpUrl(url?: string | null): boolean {
+    return !!url && /^https?:\/\//i.test(url.trim());
+  }
+
   restoreJob(job: Vaga): void {
     this.api.restoreJob(job.url).subscribe({
       next: () => {
@@ -78,9 +88,45 @@ export class DescartadasComponent implements OnInit {
     });
   }
 
+  deleteFromDb(job: Vaga): void {
+    const targetUrl = (job.url || '').trim();
+    if (!targetUrl || this.isDeleting(targetUrl)) return;
+    const label = job.title || targetUrl;
+    const ok = confirm(
+      `Excluir definitivamente "${label}" do banco de dados? Esta ação apaga a vaga, avaliações e o vínculo no histórico de recrutadores e não pode ser desfeita.`
+    );
+    if (!ok) return;
+
+    this.deletingUrls.update(set => {
+      const next = new Set(set);
+      next.add(targetUrl);
+      return next;
+    });
+
+    this.api.deleteDiscardedFromDb([targetUrl]).subscribe({
+      next: () => {
+        this.deletingUrls.update(set => {
+          const next = new Set(set);
+          next.delete(targetUrl);
+          return next;
+        });
+        this.toast.success(`Vaga "${job.title || 'selecionada'}" excluída do BD.`);
+        this.loadDiscarded();
+      },
+      error: (err) => {
+        this.deletingUrls.update(set => {
+          const next = new Set(set);
+          next.delete(targetUrl);
+          return next;
+        });
+        this.toast.error('Erro ao excluir vaga do BD: ' + (err?.error?.detail || err?.message || 'Falha na requisição'));
+      }
+    });
+  }
+
   clearDiscarded(): void {
     if (!this.allDiscarded().length) return;
-    const ok = confirm(`Tem certeza que deseja limpar permanentemente ${this.allDiscarded().length} vagas descartadas da memória do sistema?`);
+    const ok = confirm(`Tem certeza que deseja excluir definitivamente todas as ${this.allDiscarded().length} vagas descartadas do banco de dados?`);
     if (!ok) return;
 
     this.loading.set(true);

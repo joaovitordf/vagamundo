@@ -6,7 +6,7 @@
         <span class="badge-total">{{ allDiscarded().length }} {{ allDiscarded().length === 1 ? 'vaga' : 'vagas' }}</span>
       </div>
       <p class="panel-desc">
-        Vagas descartadas manualmente ou pela triagem automática (abaixo da nota de corte configurada). Se quiser recuperar alguma vaga, clique em <strong>Restaurar</strong>.
+        Vagas descartadas manualmente, movidas da aba Recrutadores ou filtradas pela triagem automática. Se quiser recuperar alguma vaga, clique em <strong>Restaurar</strong>, ou use <strong>Excluir do BD</strong> para removê-la permanentemente.
       </p>
     </div>
     <div class="header-actions">
@@ -17,7 +17,7 @@
           [(ngModel)]="filterText"
           (ngModelChange)="onFilterChange()">
       </div>
-      <button type="button" class="btn-clear-all" (click)="clearDiscarded()" [disabled]="allDiscarded().length === 0" title="Apagar permanentemente todas as vagas descartadas da lista">
+      <button type="button" class="btn-clear-all" (click)="clearDiscarded()" [disabled]="allDiscarded().length === 0" title="Excluir definitivamente do banco de dados todas as vagas descartadas">
         <i class="bi bi-trash3"></i> Limpar lista
       </button>
     </div>
@@ -53,15 +53,36 @@
           @if (job.date) {
             <span class="chip"><i class="bi bi-calendar3"></i> {{ job.date }}</span>
           }
+          @if (job.recruiter_emails && job.recruiter_emails.length > 0) {
+            <span class="chip chip--email" title="E-mail(s) de contato da publicação">
+              <i class="bi bi-envelope"></i> {{ job.recruiter_emails.join(', ') }}
+            </span>
+          }
         </div>
 
         <div class="job-card__footer">
-          <button type="button" class="btn-restore" (click)="restoreJob(job)">
-            <i class="bi bi-arrow-counterclockwise"></i> Restaurar
-          </button>
-          <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="link-external">
-            Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
-          </a>
+          <div class="job-card__footer-actions">
+            <button type="button"
+                    class="btn-restore"
+                    (click)="restoreJob(job)"
+                    [disabled]="isDeleting(job.url)">
+              <i class="bi bi-arrow-counterclockwise"></i> Restaurar
+            </button>
+            <button type="button"
+                    class="btn-delete-db"
+                    (click)="deleteFromDb(job)"
+                    [disabled]="!job.url || isDeleting(job.url)"
+                    title="Excluir esta vaga definitivamente do banco de dados">
+              <i class="bi bi-trash3"></i> {{ isDeleting(job.url) ? 'Excluindo...' : 'Excluir do BD' }}
+            </button>
+          </div>
+          @if (isExternalHttpUrl(job.url)) {
+            <a [href]="job.url" target="_blank" rel="noopener noreferrer" class="link-external">
+              Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+          } @else {
+            <span class="chip chip--muted">Publicação sem URL externa</span>
+          }
         </div>
       </article>
     }

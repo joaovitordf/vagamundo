@@ -7,7 +7,12 @@ import { PortalBadgeComponent } from '../../shared/components/portal-badge.compo
 import { CvRandomControlComponent } from '../../shared/components/cv-random-control/cv-random-control.component';
 import { createCvPickerState, pickNextCvKeyword } from '../../shared/utils/cv-area-picker.util';
 import { AutoModeService } from '../../core/services/auto-mode.service';
-import { RecruiterSortMode, RecruiterStateService } from '../../core/services/recruiter-state.service';
+import {
+  RecruiterHistoryScoreFilter,
+  RecruiterHistorySortMode,
+  RecruiterSortMode,
+  RecruiterStateService,
+} from '../../core/services/recruiter-state.service';
 import { ToastService } from '../../core/services/toast.service';
 import { CvAreaItem, CvAreasSource, PreviouslyContactedEmail, RecruiterPost } from '../../core/models/vaga.model';
 
@@ -126,6 +131,9 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
   readonly fitThresholds = FIT_THRESHOLDS;
   private lastSeenAutoTick = this.autoMode.resultsRefreshTick();
   private lastAutoKeywords = '';
+  private lastAutoRunId = '';
+  private lastAutoRound = 0;
+  private lastRoundPostIdsKey = '';
   private copyEmailTimer: ReturnType<typeof setTimeout> | null = null;
   private linkedInPollTimer: ReturnType<typeof setInterval> | null = null;
   private autoVerifyingLogin = false;
@@ -137,22 +145,58 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
       const tick = this.autoMode.resultsRefreshTick();
       if (st?.mode === 'recruiters') {
         const kwStr = (st.keywords || []).join(', ');
-        if (st.phase !== 'cooldown' && kwStr && kwStr !== this.lastAutoKeywords && (!this.filterText.trim() || this.state.autoRunFilterApplied())) {
-          this.lastAutoKeywords = kwStr;
-          this.state.filterText.set(kwStr);
-          this.state.autoRunFilterApplied.set(true);
-          this.state.cvAreaBadge.set('Sorteado pela IA (Modo Automático)');
-          this.state.hasSearched.set(true);
-          this.state.persist();
-          this.fetchPosts(false);
-        }
-        if (!st.running) {
+        const roundIds = Array.isArray(st.round_post_ids) ? st.round_post_ids : null;
+        const roundIdsKey = roundIds ? roundIds.join(',') : '';
+        const runChanged = Boolean(st.run_id && st.run_id !== this.lastAutoRunId);
+        const roundNum = Number(st.round ?? 0);
+        const roundChanged = roundNum > 0 && roundNum !== this.lastAutoRound;
+
+        if (st.running) {
+          if (runChanged || roundChanged) {
+            this.lastAutoRunId = st.run_id || '';
+            this.lastAutoRound = roundNum;
+            this.state.activeAutoRunId.set(st.run_id ?? null);
+            this.state.autoRunFilterApplied.set(true);
+            this.state.hasSearched.set(true);
+            this.state.currentRoundPostIds.set(roundIds ? [...roundIds] : []);
+            this.lastRoundPostIdsKey = roundIdsKey;
+            this.state.persist();
+          }
+
+          if (roundIds && roundIdsKey !== this.lastRoundPostIdsKey) {
+            this.lastRoundPostIdsKey = roundIdsKey;
+            this.state.currentRoundPostIds.set([...roundIds]);
+            this.fetchPosts(false);
+          }
+
+          if (st.phase !== 'cooldown' && kwStr && kwStr !== this.lastAutoKeywords && (!this.filterText.trim() || this.state.autoRunFilterApplied())) {
+            this.lastAutoKeywords = kwStr;
+            this.state.filterText.set(kwStr);
+            this.state.autoRunFilterApplied.set(true);
+            this.state.cvAreaBadge.set('Sorteado pela IA (Modo Automático)');
+            this.state.hasSearched.set(true);
+            this.state.persist();
+            this.fetchPosts(false);
+          }
+        } else {
           this.lastAutoKeywords = '';
+          this.lastAutoRound = 0;
+          const isSessionRun = Boolean(st.run_id && st.run_id === this.state.activeAutoRunId());
+          if (isSessionRun && roundIds && roundIdsKey !== this.lastRoundPostIdsKey) {
+            this.lastRoundPostIdsKey = roundIdsKey;
+            this.state.currentRoundPostIds.set([...roundIds]);
+          }
         }
+
         if (tick > this.lastSeenAutoTick) {
           this.lastSeenAutoTick = tick;
-          if (this.filterText.trim()) {
+          const isSessionRun = Boolean(st.run_id && st.run_id === this.state.activeAutoRunId());
+          if (st.running || isSessionRun) {
             this.state.hasSearched.set(true);
+            if (roundIds) {
+              this.lastRoundPostIdsKey = roundIdsKey;
+              this.state.currentRoundPostIds.set([...roundIds]);
+            }
             this.state.persist();
           }
           this.fetchPosts(false);
@@ -200,9 +244,41 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     }
   });
   readonly filteredPosts = this.state.filteredPosts;
+  readonly allRelevantHistoryPosts = this.state.allRelevantHistoryPosts;
   readonly relevantHistoryPosts = this.state.historyPosts;
+  readonly historySortBy = this.state.historySortBy;
+  readonly historyScoreFilter = this.state.historyScoreFilter;
+  readonly historyPageSizeOptions = [10, 20, 50] as const;
+  readonly historyPage = signal<number>(1);
+  readonly historyPageSize = signal<number>(10);
+  readonly historyTotalPages = computed(() => {
+    const total = this.relevantHistoryPosts().length;
+    const size = this.historyPageSize();
+    return Math.max(1, Math.ceil(total / size));
+  });
+  readonly effectiveHistoryPage = computed(() =>
+    Math.min(Math.max(1, this.historyPage()), this.historyTotalPages())
+  );
+  readonly pagedHistoryPosts = computed(() => {
+    const items = this.relevantHistoryPosts();
+    const size = this.historyPageSize();
+    const page = this.effectiveHistoryPage();
+    const start = (page - 1) * size;
+    return items.slice(start, start + size);
+  });
+  readonly historyPageRange = computed(() => {
+    const total = this.relevantHistoryPosts().length;
+    if (total === 0) {
+      return { start: 0, end: 0, total: 0 };
+    }
+    const size = this.historyPageSize();
+    const page = this.effectiveHistoryPage();
+    const start = (page - 1) * size + 1;
+    const end = Math.min(total, page * size);
+    return { start, end, total };
+  });
   readonly lowScoreHistoryPosts = computed(() =>
-    this.relevantHistoryPosts().filter(
+    this.allRelevantHistoryPosts().filter(
       p => typeof p.ai_score === 'number' && p.ai_score < this.historyLowScoreThreshold
     )
   );
@@ -299,13 +375,17 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
   readonly cvAreasSource = signal<CvAreasSource>('fallback');
   private cvPickerState = createCvPickerState();
 
-  // Subconjunto que bate com as palavras-chave da busca (base antes dos filtros secundários)
+  // Subconjunto que bate com a rodada/busca atual (base antes dos filtros secundários)
   readonly keywordMatchedPosts = computed(() => {
     if (!this.hasSearched()) return [];
-    if (this.state.autoRunFilterApplied()) return this.allPosts();
+    const roundIds = this.state.currentRoundPostIds();
+    const base = Array.isArray(roundIds)
+      ? this.allPosts().filter(p => roundIds.includes(p.id))
+      : this.allPosts();
+    if (this.state.autoRunFilterApplied()) return base;
     const query = this.state.filterText().trim();
-    if (!query) return this.allPosts();
-    return this.allPosts().filter(p => {
+    if (!query) return base;
+    return base.filter(p => {
       const hay = `${p.title || ''} ${p.company || ''} ${p.location || ''} ${p.description || ''} ${p.portal || ''} ${getPortalDisplayName(p.portal)} ${getWorkModelLabel(resolveEffectiveWorkModel(p))} ${(p.emails || []).join(' ')} ${(p.matched_keywords || []).join(' ')}`;
       return matchesTextFilter(hay, query);
     });
@@ -334,8 +414,19 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     this.loadCvAreas();
     this.loadAutoConfig();
     const st = this.autoMode.status();
-    if (st?.mode === 'recruiters' && st.keywords?.length && st.running) {
-      this.state.filterText.set(st.keywords.join(', '));
+    if (st?.mode === 'recruiters' && st.running) {
+      this.lastAutoRunId = st.run_id || '';
+      this.lastAutoRound = Number(st.round ?? 0);
+      this.state.activeAutoRunId.set(st.run_id ?? null);
+      if (st.keywords?.length) {
+        const kwStr = st.keywords.join(', ');
+        this.lastAutoKeywords = kwStr;
+        this.state.filterText.set(kwStr);
+        this.state.cvAreaBadge.set('Sorteado pela IA (Modo Automático)');
+      }
+      const roundIds = Array.isArray(st.round_post_ids) ? [...st.round_post_ids] : [];
+      this.lastRoundPostIdsKey = roundIds.join(',');
+      this.state.currentRoundPostIds.set(roundIds);
       this.state.autoRunFilterApplied.set(true);
       this.state.hasSearched.set(true);
       this.state.persist();
@@ -343,9 +434,7 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Mantém a lista de publicações do LinkedIn com e-mail sempre carregada até exclusão manual
-    this.state.hasSearched.set(true);
-    this.state.persist();
+    // Carrega o Histórico de vagas relevantes (coluna direita) sem preencher "Atuais encontrados" antes da busca/rodada
     this.fetchPosts(this.allPosts().length === 0);
   }
 
@@ -516,7 +605,13 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     this.cvAreaBadge.set('');
     this.state.scoreFilter.set('');
     this.state.portalFilter.set('');
+    this.lastAutoRunId = '';
+    this.lastAutoRound = 0;
+    this.lastRoundPostIdsKey = '';
+    this.state.activeAutoRunId.set(null);
     this.state.autoRunFilterApplied.set(true);
+    this.state.currentRoundPostIds.set([]);
+    this.state.hasSearched.set(true);
     const minScore = Math.max(45, Math.min(95, Math.round(Number(this.autoMinScore) || 60)));
     const cooldownSeconds = Math.max(15, Math.min(300, Math.round(Number(this.autoCooldownSeconds) || 30)));
     this.autoMinScore = minScore;
@@ -528,14 +623,19 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
       continuous: this.autoContinuous,
       cooldown_seconds: cooldownSeconds,
     }).subscribe({
-      next: () => {
-        if (this.filterText.trim()) {
-          this.hasSearched.set(true);
+      next: (res) => {
+        if (res?.run_id) {
+          this.lastAutoRunId = String(res.run_id);
+          this.state.activeAutoRunId.set(String(res.run_id));
         }
+        this.hasSearched.set(true);
         this.state.persist();
       },
       error: (err) => {
         this.state.autoRunFilterApplied.set(false);
+        this.state.activeAutoRunId.set(null);
+        this.state.currentRoundPostIds.set(null);
+        this.state.hasSearched.set(false);
         this.state.persist();
         this.errorMessage.set(err?.error?.detail || err?.message || 'Não foi possível iniciar o Modo Automático em Recrutadores.');
       },
@@ -550,6 +650,11 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     }
 
     this.state.autoRunFilterApplied.set(false);
+    this.state.activeAutoRunId.set(null);
+    this.lastAutoRunId = '';
+    this.lastAutoRound = 0;
+    this.lastRoundPostIdsKey = '';
+    this.state.currentRoundPostIds.set([]);
     this.hasSearched.set(true);
     this.state.persist();
     this.loading.set(true);
@@ -562,6 +667,13 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
       : this.api.syncRecruiterPosts(term);
     sync$.subscribe({
       next: (res) => {
+        if (Array.isArray(res?.matched_post_ids)) {
+          this.state.currentRoundPostIds.set(res.matched_post_ids);
+        } else if (Array.isArray(res?.collected_post_ids)) {
+          this.state.currentRoundPostIds.set(res.collected_post_ids);
+        } else {
+          this.state.currentRoundPostIds.set(null);
+        }
         const { status, warning } = summarizeRecruiterSync(res);
         if (status) {
           this.statusMessage.set(status);
@@ -574,7 +686,7 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.warn('Falha parcial ao sincronizar recrutadores:', err);
-        this.toast.warning('Sincronização parcial concluída; carregando publicações locais.');
+        this.toast.warning('Falha ao consultar fontes externas; nenhum resultado da rodada atual disponível.');
         this.fetchPosts(true);
         this.loadLinkedInStatus();
       }
@@ -616,10 +728,10 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     if (showSpinner) {
       this.loading.set(true);
     }
-    this.api.getRecruiterPosts(undefined, false, 'linkedin_post').pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.api.getRecruiterPosts(undefined, false).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res) => {
         const posts = (res.posts || []).filter(
-          p => p.portal === 'linkedin_post' && Array.isArray(p.emails) && p.emails.length > 0
+          p => Array.isArray(p.emails) && p.emails.length > 0
         );
         this.allPosts.set(posts);
         this.loading.set(false);
@@ -645,20 +757,18 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     this.cvAreaBadge.set(result.badgeText);
     this.errorMessage.set('');
     this.statusMessage.set('');
-    if (this.allPosts().length > 0) {
-      this.hasSearched.set(true);
-      this.state.persist();
-    } else if (chosen && !this.loading()) {
-      this.onSearch();
-    } else {
-      this.state.persist();
-    }
+    this.state.persist();
   }
 
   clearTextFilter(): void {
     this.filterText = '';
     this.cvAreaBadge.set('');
     this.hasSearched.set(false);
+    this.state.currentRoundPostIds.set(null);
+    this.state.activeAutoRunId.set(null);
+    this.lastAutoRunId = '';
+    this.lastAutoRound = 0;
+    this.lastRoundPostIdsKey = '';
     this.errorMessage.set('');
     this.statusMessage.set('');
     this.state.persist();
@@ -785,11 +895,61 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
         }
         this.pruneHistorySelection([postId]);
         this.allPosts.update(posts => posts.filter(p => p.id !== postId));
+        this.historyPage.set(this.effectiveHistoryPage());
+        this.statusMessage.set('Vaga movida para Descartadas.');
       },
       error: (err) => {
         this.errorMessage.set('Erro ao remover publicação: ' + (err?.error?.detail || err?.message || 'Falha'));
       }
     });
+  }
+
+  setHistoryPage(page: number): void {
+    const max = this.historyTotalPages();
+    const normalized = Number.isFinite(page) ? Math.trunc(page) : 1;
+    this.historyPage.set(Math.min(Math.max(1, normalized), max));
+  }
+
+  prevHistoryPage(): void {
+    this.setHistoryPage(this.effectiveHistoryPage() - 1);
+  }
+
+  nextHistoryPage(): void {
+    this.setHistoryPage(this.effectiveHistoryPage() + 1);
+  }
+
+  setHistoryPageSize(size: number): void {
+    const parsed = Number(size);
+    if (!this.historyPageSizeOptions.includes(parsed as 10 | 20 | 50)) return;
+    this.historyPageSize.set(parsed);
+    this.historyPage.set(1);
+  }
+
+  setHistorySortBy(sortBy: string): void {
+    const next: RecruiterHistorySortMode = sortBy === 'score-desc' ? 'score-desc' : 'recent';
+    this.state.historySortBy.set(next);
+    this.state.persist();
+    this.historyPage.set(1);
+  }
+
+  setHistoryScoreFilter(filter: string): void {
+    const next: RecruiterHistoryScoreFilter =
+      filter === '75+' ? '75+' : filter === '60+' ? '60+' : 'all';
+    this.state.historyScoreFilter.set(next);
+    this.state.persist();
+    this.historyPage.set(1);
+    const visibleIds = new Set(this.relevantHistoryPosts().map(p => p.id));
+    this.selectedHistoryIds.update(set => {
+      const pruned = new Set<number>();
+      for (const id of set) {
+        if (visibleIds.has(id)) pruned.add(id);
+      }
+      return pruned;
+    });
+  }
+
+  resetHistoryFilters(): void {
+    this.setHistoryScoreFilter('all');
   }
 
   isHistorySelected(postId: number): boolean {
@@ -819,20 +979,20 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
   dismissLowScoreHistory(): void {
     const ids = this.lowScoreHistoryPosts().map(p => p.id);
     if (!ids.length || this.bulkDismissing()) return;
-    const msg = `Enviar ${ids.length} ${ids.length === 1 ? 'vaga com nota menor que' : 'vagas com nota menor que'} ${this.historyLowScoreThreshold} para o Limbo?`;
+    const msg = `Enviar ${ids.length} ${ids.length === 1 ? 'vaga com nota menor que' : 'vagas com nota menor que'} ${this.historyLowScoreThreshold} para Descartadas?`;
     if (!confirm(msg)) return;
-    this.executeBatchLimboDismiss(ids, `nota < ${this.historyLowScoreThreshold}`);
+    this.executeBatchDiscardDismiss(ids, `nota < ${this.historyLowScoreThreshold}`);
   }
 
   dismissSelectedHistory(): void {
     const ids = this.selectedHistoryIdList();
     if (!ids.length || this.bulkDismissing()) return;
-    const msg = `Apagar ${ids.length} ${ids.length === 1 ? 'vaga selecionada' : 'vagas selecionadas'} e enviar para o Limbo?`;
+    const msg = `Mover ${ids.length} ${ids.length === 1 ? 'vaga selecionada' : 'vagas selecionadas'} para Descartadas?`;
     if (!confirm(msg)) return;
-    this.executeBatchLimboDismiss(ids, 'seleção');
+    this.executeBatchDiscardDismiss(ids, 'seleção');
   }
 
-  private executeBatchLimboDismiss(ids: number[], reasonLabel: string): void {
+  private executeBatchDiscardDismiss(ids: number[], reasonLabel: string): void {
     this.errorMessage.set('');
     this.bulkDismissing.set(true);
 
@@ -850,12 +1010,13 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
         }
         this.pruneHistorySelection(removedSet);
         this.allPosts.update(posts => posts.filter(p => !removedSet.has(p.id)));
+        this.historyPage.set(this.effectiveHistoryPage());
         const count = res?.dismissed_count ?? removedSet.size;
-        this.statusMessage.set(`${count} ${count === 1 ? 'vaga enviada' : 'vagas enviadas'} para o Limbo (${reasonLabel}).`);
+        this.statusMessage.set(`${count} ${count === 1 ? 'vaga movida' : 'vagas movidas'} para Descartadas (${reasonLabel}).`);
       },
       error: (err) => {
         this.bulkDismissing.set(false);
-        this.errorMessage.set('Erro ao excluir vagas em lote: ' + (err?.error?.detail || err?.message || 'Falha'));
+        this.errorMessage.set('Erro ao mover vagas em lote para Descartadas: ' + (err?.error?.detail || err?.message || 'Falha'));
       }
     });
   }
@@ -1053,6 +1214,10 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
   isExpanded(postId: number, scope: 'current' | 'history' = 'current'): boolean {
     const target = scope === 'history' ? this.expandedHistoryPosts : this.expandedPosts;
     return target().has(postId);
+  }
+
+  isExternalPostUrl(url?: string | null): boolean {
+    return /^https?:\/\//i.test(String(url || '').trim());
   }
 
   getPortalLabel(portal: string): string {

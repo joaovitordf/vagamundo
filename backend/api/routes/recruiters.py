@@ -226,7 +226,7 @@ def dismiss_recruiter_posts_batch(
     service: RecruiterService = Depends(get_recruiter_service),
     _csrf: str = Depends(verify_csrf_token),
 ) -> Dict[str, Any]:
-    """Dismiss multiple recruiter publications to Limbo in one batch."""
+    """Move multiple recruiter publications to Descartadas in one batch."""
     dismissed_ids = service.dismiss_posts(req.post_ids)
     return {
         "ok": True,
@@ -276,7 +276,7 @@ def dismiss_recruiter_post(
     service: RecruiterService = Depends(get_recruiter_service),
     _csrf: str = Depends(verify_csrf_token),
 ) -> Dict[str, Any]:
-    """Dismiss a publication from the radar."""
+    """Move a publication from the radar to Descartadas."""
     ok = service.dismiss_post(post_id)
     if not ok:
         raise HTTPException(

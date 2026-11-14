@@ -82,76 +82,210 @@ _CHECK_BLOCK_JS = """
 _EXPAND_SEE_MORE_JS = """
 (() => {
   const seen = new Set();
-  const root = document.querySelector('main') || document.body;
-  if (!root) return 0;
-  const candidates = Array.from(root.querySelectorAll(
-    'button.feed-shared-inline-show-more-text__see-more-less-toggle,'
-    + 'button[data-testid="expandable-text-button"],'
-    + '[data-testid="expandable-text-button"],'
-    + '[data-testid="expandable-text-box"] button,'
-    + '[data-testid="expandable-text-box"] [role="button"],'
-    + '[data-testid="expandable-text-box"] a,'
-    + '[data-view-name="feed-commentary"] button,'
-    + '[data-view-name="feed-commentary"] [role="button"],'
-    + '[data-testid="expandable-text-box"] span,'
-    + '[data-view-name="feed-commentary"] a,'
-    + '[data-view-name="feed-commentary"] span,'
-    + '.feed-shared-inline-show-more-text button,'
-    + '.feed-shared-inline-show-more-text [role="button"],'
-    + '.feed-shared-inline-show-more-text a,'
-    + '.feed-shared-inline-show-more-text span,'
-    + '.update-components-text button,'
-    + '.update-components-text a,'
-    + '.update-components-text span,'
-    + '[class*="see-more"],'
-    + '[class*="show-more"],'
-    + 'button[aria-label*="ver mais" i],button[aria-label*="see more" i],button[aria-label*="mais" i],button[aria-label*="expand" i],'
-    + 'button,[role="button"]'
-  ));
-  const textMatchRe = /^[…\\.\u2026\\s]*(?:ver mais|mais|see more|more)[…\\.\u2026\\s]*$/i;
+  const mainRoot = document.querySelector('main') || document.body;
+  if (!mainRoot) return { clicked: 0, remaining: [] };
+  if (!window.__vmExpandTried) {
+    try { window.__vmExpandTried = new WeakSet(); } catch (_e) {}
+  }
+  const tried = window.__vmExpandTried;
+
+  const selector = [
+    'button.feed-shared-inline-show-more-text__see-more-less-toggle',
+    'button[data-testid="expandable-text-button"]',
+    '[data-testid="expandable-text-button"]',
+    '[data-testid="expandable-text-box"] button',
+    '[data-testid="expandable-text-box"] [role="button"]',
+    '[data-testid="expandable-text-box"] a',
+    '[data-testid="expandable-text-box"] span',
+    '[data-view-name="feed-commentary"] button',
+    '[data-view-name="feed-commentary"] [role="button"]',
+    '[data-view-name="feed-commentary"] a',
+    '[data-view-name="feed-commentary"] span',
+    '[data-view-name*="commentary"] button',
+    '[data-view-name*="commentary"] [role="button"]',
+    '[data-view-name*="commentary"] span',
+    '.feed-shared-inline-show-more-text button',
+    '.feed-shared-inline-show-more-text [role="button"]',
+    '.feed-shared-inline-show-more-text a',
+    '.feed-shared-inline-show-more-text span',
+    '.update-components-text button',
+    '.update-components-text [role="button"]',
+    '.update-components-text a',
+    '.update-components-text span',
+    '[class*="see-more"]',
+    '[class*="show-more"]',
+    '[aria-expanded="false"]',
+    'button[aria-label*="ver mais" i]',
+    'button[aria-label*="see more" i]',
+    'button[aria-label*="exibir mais" i]',
+    'button[aria-label*="mostrar mais" i]',
+    'button[aria-label*="ler mais" i]',
+    'button[aria-label*="show more" i]',
+    'button[aria-label*="mais" i]',
+    'button[aria-label*="expand" i]',
+    'button',
+    '[role="button"]'
+  ].join(',');
+
+  const collectCandidates = (root, out, depth) => {
+    if (!root || depth > 4) return;
+    try {
+      out.push(...root.querySelectorAll(selector));
+    } catch (_e) {}
+    try {
+      const all = root.querySelectorAll('*');
+      for (const el of all) {
+        if (el && el.shadowRoot) {
+          collectCandidates(el.shadowRoot, out, depth + 1);
+        }
+      }
+    } catch (_e) {}
+  };
+
+  const candidates = [];
+  collectCandidates(mainRoot, candidates, 0);
+
+  const exactMoreRe = /^[…\\.\\u2026\\s•\\-]*(?:ver mais|ver tudo|mais|exibir mais|mostrar mais|ler mais|see more|show more|read more|more)[…\\.\\u2026\\s]*$/i;
+  const trailingMoreRe = /(?:^|\\s|[…\\.\\u2026])[…\\.\\u2026\\s]*(?:ver mais|mais|exibir mais|mostrar mais|ler mais|see more|show more|more)[…\\.\\u2026\\s]*$/i;
+  const lessRe = /(?:ver menos|mostrar menos|ocultar texto|see less|show less|less)\\b/i;
+
+  const cleanStr = (s) => String(s || '')
+    .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+    .replace(/\\s+/g, ' ')
+    .trim();
+
   const getVisibleLabel = (el) => {
     try {
       const clone = el.cloneNode(true);
-      clone.querySelectorAll('.visually-hidden,.a11y-text,[aria-hidden="true"]').forEach((n) => n.remove());
-      const cleaned = String(clone.innerText || clone.textContent || '')
-        .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-        .replace(/\\s+/g, ' ')
-        .trim();
-      if (cleaned) return cleaned;
+      clone.querySelectorAll('.visually-hidden,.a11y-text').forEach((n) => n.remove());
+      const withoutSr = cleanStr(clone.innerText || clone.textContent || '');
+      if (withoutSr) return withoutSr;
     } catch (_e) {}
-    return String(el.innerText || el.textContent || '')
-      .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
-      .replace(/\\s+/g, ' ')
-      .trim();
+    return cleanStr(el.innerText || el.textContent || '');
   };
+
+  const isVisible = (el) => {
+    const rects = typeof el.getClientRects === 'function' ? el.getClientRects() : null;
+    if (rects && rects.length === 0) return false;
+    if (!rects && el.offsetParent === null) return false;
+    if (typeof el.getBoundingClientRect === 'function') {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+    }
+    return true;
+  };
+
+  const knownMatchSelector = 'button.feed-shared-inline-show-more-text__see-more-less-toggle,button[data-testid="expandable-text-button"],[data-testid="expandable-text-button"],button[aria-label*="ver mais" i],button[aria-label*="see more" i],button[aria-label*="exibir mais" i],button[aria-label*="mostrar mais" i],button[aria-label*="show more" i]';
+
   let clicked = 0;
-  for (const btn of candidates) {
+  const remaining = [];
+  for (const rawCandidate of candidates) {
+    if (!rawCandidate) continue;
+    let btn = rawCandidate;
+    const tag = String(btn.tagName || '').toLowerCase();
+    const role = String((btn.getAttribute && btn.getAttribute('role')) || '').toLowerCase();
+    const isInteractive = tag === 'button' || tag === 'a' || role === 'button';
+    if (!isInteractive && typeof btn.closest === 'function') {
+      const ancestorCtrl = btn.closest('button,[role="button"],a');
+      if (ancestorCtrl && cleanStr(ancestorCtrl.innerText || ancestorCtrl.textContent || '').length <= 80) {
+        btn = ancestorCtrl;
+      }
+    }
     if (!btn || seen.has(btn)) continue;
     seen.add(btn);
-    if (clicked >= 40) break;
-    if (btn.closest('nav, header')) continue;
-    if (btn.getAttribute('aria-expanded') === 'true') continue;
+    if (btn.closest && btn.closest('nav, header')) continue;
+    if (btn.getAttribute && btn.getAttribute('aria-expanded') === 'true') continue;
     if (btn.querySelector && btn.querySelector('button,[role="button"],a')) continue;
-    const rects = typeof btn.getClientRects === 'function' ? btn.getClientRects() : null;
-    if (rects && rects.length === 0) continue;
-    if (!rects && btn.offsetParent === null) continue;
+    if (!isVisible(btn)) continue;
+
     const cls = String(btn.className || '');
-    const isKnown = btn.matches(
-      'button.feed-shared-inline-show-more-text__see-more-less-toggle,button[data-testid="expandable-text-button"],[data-testid="expandable-text-button"],button[aria-label*="ver mais" i],button[aria-label*="see more" i]'
-    ) || /see-more|show-more/i.test(cls);
+    const ariaLabel = cleanStr((btn.getAttribute && btn.getAttribute('aria-label')) || '');
+    const isKnown = (typeof btn.matches === 'function' && btn.matches(knownMatchSelector))
+      || /see-more|show-more/i.test(cls)
+      || /(?:ver mais|see more|exibir mais|mostrar mais|ler mais|show more)/i.test(ariaLabel);
     const labelTxt = getVisibleLabel(btn);
-    const matchesText = textMatchRe.test(labelTxt) || /(?:^|\\s)[…\\.\\u2026]*(?:ver mais|mais|see more)[…\\.\\u2026]*$/i.test(labelTxt);
+    if (lessRe.test(labelTxt) || lessRe.test(ariaLabel)) continue;
+
+    const btnTag = String(btn.tagName || '').toLowerCase();
+    const btnRole = String((btn.getAttribute && btn.getAttribute('role')) || '').toLowerCase();
+    const btnInteractive = btnTag === 'button' || btnTag === 'a' || btnRole === 'button';
+    const matchesText = exactMoreRe.test(labelTxt)
+      || (labelTxt.length <= (btnInteractive ? 45 : 30) && trailingMoreRe.test(labelTxt));
     if (!isKnown && !matchesText) continue;
-    if (isKnown && /(?:ver menos|see less|mostrar menos|less)/i.test(labelTxt)) continue;
+
+    if (tried && typeof tried.has === 'function' && tried.has(btn)) {
+      if (typeof btn.getBoundingClientRect === 'function' && remaining.length < 15) {
+        try {
+          if (typeof btn.scrollIntoView === 'function') {
+            btn.scrollIntoView({ block: 'center', inline: 'nearest' });
+          }
+          const rect = btn.getBoundingClientRect();
+          if (rect.width >= 2 && rect.height >= 2 && rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth) {
+            remaining.push({
+              x: Math.round(rect.left + rect.width / 2),
+              y: Math.round(rect.top + rect.height / 2),
+              label: labelTxt || ariaLabel
+            });
+          }
+        } catch (_e) {}
+      }
+      continue;
+    }
+
+    if (clicked >= 100) break;
+    if (tried && typeof tried.add === 'function') tried.add(btn);
+
     try {
-      btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      if (typeof btn.scrollIntoView === 'function') {
+        btn.scrollIntoView({ block: 'center', inline: 'nearest' });
+      }
     } catch (_e) {}
     try {
-      if (typeof btn.click === 'function') btn.click();
-    } catch (_e) {}
-    clicked++;
+      if (typeof btn.click === 'function') {
+        btn.click();
+      } else {
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      }
+      clicked++;
+    } catch (_e) {
+      try {
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        clicked++;
+      } catch (_e2) {}
+    }
   }
-  return clicked;
+  return { clicked, remaining };
+})()
+"""
+
+_SCROLL_PAGE_JS = """
+(() => {
+  const step = Math.round((window.innerHeight || 800) * 0.85);
+  const prevY = window.scrollY || window.pageYOffset || 0;
+  window.scrollBy(0, step);
+  const nextY = window.scrollY || window.pageYOffset || 0;
+  if (Math.abs(nextY - prevY) >= 5) return true;
+  const mainEl = document.querySelector('main');
+  if (mainEl) {
+    const candidates = [mainEl, ...Array.from(mainEl.querySelectorAll('div,section'))];
+    let best = null;
+    let bestSpan = 0;
+    for (const el of candidates) {
+      const span = (el.scrollHeight || 0) - (el.clientHeight || 0);
+      if (span > 20 && span > bestSpan) {
+        const st = window.getComputedStyle ? window.getComputedStyle(el) : null;
+        if (!st || /(auto|scroll)/i.test(String(st.overflowY || st.overflow || ''))) {
+          best = el;
+          bestSpan = span;
+        }
+      }
+    }
+    if (best) {
+      best.scrollTop = (best.scrollTop || 0) + step;
+      return true;
+    }
+  }
+  return false;
 })()
 """
 
@@ -249,6 +383,7 @@ _EXTRACT_POSTS_JS = """
         const lm = cand.match(urnRe);
         if (lm) { url = `https://www.linkedin.com/feed/update/urn:li:activity:${lm[1]}/`; break; }
         if (/linkedin\\.com\\/posts\\//i.test(cand)) { url = cand.split('?')[0]; break; }
+        if (/^\\/(?:posts|feed\\/update)\\//i.test(cand)) { url = `https://www.linkedin.com${cand.split('?')[0]}`; break; }
       }
     }
     const hasEmail = Boolean(text && emailRe.test(text));
@@ -867,7 +1002,49 @@ class LinkedInBrowserWorker:
         return last_info
 
     @staticmethod
+    def _parse_expand_result(raw: Any) -> Tuple[int, List[dict]]:
+        if isinstance(raw, dict):
+            clicked = int(raw.get("clicked") or 0)
+            remaining = [r for r in (raw.get("remaining") or []) if isinstance(r, dict)]
+            return clicked, remaining
+        if isinstance(raw, (int, float)):
+            return int(raw), []
+        return 0, []
+
+    @staticmethod
+    def _click_coordinates_via_cdp(ws: Any, req_id: int, targets: List[dict]) -> Tuple[int, int]:
+        """Fallback real trusted mouse clicks via CDP when synthetic DOM .click() leaves buttons unexpanded."""
+        dispatched = 0
+        for item in targets[:15]:
+            try:
+                x = float(item["x"])
+                y = float(item["y"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            try:
+                for event_type, btn, click_count in (
+                    ("mouseMoved", "none", 0),
+                    ("mousePressed", "left", 1),
+                    ("mouseReleased", "left", 1),
+                ):
+                    req_id += 1
+                    params: Dict[str, Any] = {
+                        "type": event_type,
+                        "x": x,
+                        "y": y,
+                        "button": btn,
+                    }
+                    if click_count:
+                        params["clickCount"] = click_count
+                    _cdp_call(ws, req_id, "Input.dispatchMouseEvent", params, timeout=4.0)
+                dispatched += 1
+            except Exception as exc:
+                logger.debug("Fallback Input.dispatchMouseEvent falhou em (%.0f, %.0f): %s", x, y, exc)
+        return req_id, dispatched
+
+    @classmethod
     def _collect_visible_posts(
+        cls,
         ws: Any,
         req_id: int,
         posts_by_key: Dict[str, dict],
@@ -875,13 +1052,27 @@ class LinkedInBrowserWorker:
     ) -> Tuple[int, int]:
         """Expand 'see more' buttons, extract visible LinkedIn cards, and deduplicate by URN/prefix."""
         req_id += 1
-        expanded = _cdp_eval(ws, req_id, _EXPAND_SEE_MORE_JS, timeout=6.0)
-        if isinstance(expanded, (int, float)) and expanded > 0:
-            time.sleep(0.55)
+        clicked_1, remaining_1 = cls._parse_expand_result(
+            _cdp_eval(ws, req_id, _EXPAND_SEE_MORE_JS, timeout=6.0)
+        )
+        if clicked_1 > 0 or remaining_1:
+            time.sleep(0.75)
             req_id += 1
-            expanded_2 = _cdp_eval(ws, req_id, _EXPAND_SEE_MORE_JS, timeout=6.0)
-            if isinstance(expanded_2, (int, float)) and expanded_2 > 0:
-                time.sleep(0.35)
+            clicked_2, remaining_2 = cls._parse_expand_result(
+                _cdp_eval(ws, req_id, _EXPAND_SEE_MORE_JS, timeout=6.0)
+            )
+            cdp_targets = remaining_2 or remaining_1
+            cdp_clicked = 0
+            if cdp_targets:
+                req_id, cdp_clicked = cls._click_coordinates_via_cdp(ws, req_id, cdp_targets)
+            if clicked_2 > 0 or cdp_clicked > 0:
+                time.sleep(0.65 if cdp_clicked > 0 else 0.45)
+                req_id += 1
+                clicked_3, _ = cls._parse_expand_result(
+                    _cdp_eval(ws, req_id, _EXPAND_SEE_MORE_JS, timeout=6.0)
+                )
+                if clicked_3 > 0:
+                    time.sleep(0.45)
         req_id += 1
         extracted = _cdp_eval(ws, req_id, _EXTRACT_POSTS_JS, timeout=10.0)
         if isinstance(extracted, dict):
@@ -1068,7 +1259,7 @@ class LinkedInBrowserWorker:
                         break
                     req_id, max_cards_total = self._collect_visible_posts(ws, req_id, posts_by_key, max_cards_total)
                     req_id += 1
-                    _cdp_eval(ws, req_id, "window.scrollBy(0, Math.round(window.innerHeight * 0.85))", timeout=5.0)
+                    _cdp_eval(ws, req_id, _SCROLL_PAGE_JS, timeout=5.0)
                     pause = random.uniform(2.2, 3.8)
                     end_wait = time.monotonic() + pause
                     while time.monotonic() < end_wait:
@@ -1127,8 +1318,12 @@ class LinkedInBrowserWorker:
                             if posts_by_key:
                                 break
                             req_id += 1
-                            _cdp_eval(ws, req_id, "window.scrollBy(0, Math.round(window.innerHeight * 0.85))", timeout=5.0)
+                            _cdp_eval(ws, req_id, _SCROLL_PAGE_JS, timeout=5.0)
                             time.sleep(0.5)
+                        if not posts_by_key and not (should_stop and should_stop()):
+                            req_id, max_cards_total = self._collect_visible_posts(
+                                ws, req_id, posts_by_key, max_cards_total
+                            )
                         if posts_by_key:
                             break
 

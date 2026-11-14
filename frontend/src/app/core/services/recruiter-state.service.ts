@@ -15,6 +15,8 @@ import {
 export const RECRUITER_STATE_STORAGE_KEY = 'vagamundo.recruiterState.v1';
 
 export type RecruiterSortMode = 'relevance' | 'date' | 'score-desc' | 'score-asc';
+export type RecruiterHistorySortMode = 'recent' | 'score-desc';
+export type RecruiterHistoryScoreFilter = 'all' | '60+' | '75+';
 
 interface PersistedRecruiterState {
   filterText?: string;
@@ -30,6 +32,8 @@ interface PersistedRecruiterState {
   sortBy?: RecruiterSortMode;
   onlyCvMatch?: boolean;
   hideNonJobs?: boolean;
+  historySortBy?: RecruiterHistorySortMode;
+  historyScoreFilter?: RecruiterHistoryScoreFilter;
   autoMinScore?: number;
   autoContinuous?: boolean;
   autoCooldownSeconds?: number;
@@ -52,6 +56,7 @@ export function filterAndSortRecruiterPosts(
     hideNonJobs: boolean;
     autoMinScore?: number;
     ignoreTextFilter?: boolean;
+    roundPostIds?: number[] | null;
   }
 ): RecruiterPost[] {
   if (!opts.hasSearched) return [];
@@ -59,8 +64,13 @@ export function filterAndSortRecruiterPosts(
   const query = opts.filterText.trim();
   const days = opts.jobAgeFilter ? Number(opts.jobAgeFilter) : null;
   const minScore = opts.autoMinScore ?? 60;
+  const roundIds = Array.isArray(opts.roundPostIds) ? opts.roundPostIds : null;
 
   let posts = allPosts.filter(p => {
+    if (roundIds !== null && !roundIds.includes(p.id)) {
+      return false;
+    }
+
     if (opts.hideNonJobs && p.ai_classification === 'nao_e_vaga') {
       return false;
     }
@@ -101,8 +111,7 @@ export function filterAndSortRecruiterPosts(
         if (opts.hideUndated) return false;
       } else if (days && !within) {
         const createdWithin = isWithinDays(p.created_at, days);
-        const keepAutoLinkedIn = Boolean(opts.ignoreTextFilter && p.portal === 'linkedin_post');
-        if (createdWithin !== true && !keepAutoLinkedIn) {
+        if (createdWithin !== true) {
           return false;
         }
       }
@@ -183,24 +192,49 @@ export function filterAndSortRecruiterPosts(
  * Inclui todas as `vaga_ativa` com nota atribuída (inclusive < 45 para limpeza manual),
  * ignorando os filtros temporários do console de busca.
  */
-export function filterAndSortRelevantHistoryPosts(posts: RecruiterPost[]): RecruiterPost[] {
+export function parseRecruiterDetectionTimestampMs(post: RecruiterPost): number {
+  const candidates = [post.created_at, post.ai_evaluated_at];
+  for (const raw of candidates) {
+    const trimmed = String(raw ?? '').trim();
+    if (!trimmed) continue;
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return parseCalendarDateMs(post.published_date) ?? -1;
+}
+
+export function filterAndSortRelevantHistoryPosts(
+  posts: RecruiterPost[],
+  opts?: {
+    sortBy?: RecruiterHistorySortMode;
+    scoreFilter?: RecruiterHistoryScoreFilter;
+  }
+): RecruiterPost[] {
+  const sortBy: RecruiterHistorySortMode = opts?.sortBy ?? 'recent';
+  const scoreFilter: RecruiterHistoryScoreFilter = opts?.scoreFilter ?? 'all';
+  const minScore = scoreFilter === '75+' ? 75 : scoreFilter === '60+' ? 60 : null;
+
   return [...posts]
     .filter(
       p =>
-        p.portal === 'linkedin_post' &&
         Array.isArray(p.emails) &&
         p.emails.length > 0 &&
         Boolean(p.ai_evaluated_at) &&
         p.ai_classification === 'vaga_ativa' &&
-        typeof p.ai_score === 'number'
+        typeof p.ai_score === 'number' &&
+        (minScore === null || p.ai_score >= minScore)
     )
     .sort((a, b) => {
-      const scoreDiff = (b.ai_score ?? -1) - (a.ai_score ?? -1);
-      if (scoreDiff !== 0) return scoreDiff;
-      const da = parseCalendarDateMs(a.published_date || a.created_at) ?? -1;
-      const db = parseCalendarDateMs(b.published_date || b.created_at) ?? -1;
-      if (db !== da) return db - da;
-      return b.id - a.id;
+      if (sortBy === 'score-desc') {
+        const scoreDiff = (b.ai_score ?? -1) - (a.ai_score ?? -1);
+        if (scoreDiff !== 0) return scoreDiff;
+      }
+      const detectedDiff =
+        parseRecruiterDetectionTimestampMs(b) - parseRecruiterDetectionTimestampMs(a);
+      if (detectedDiff !== 0) return detectedDiff;
+      const idDiff = b.id - a.id;
+      if (idDiff !== 0) return idDiff;
+      return (b.ai_score ?? -1) - (a.ai_score ?? -1);
     });
 }
 
@@ -221,6 +255,8 @@ export class RecruiterStateService {
   readonly sortBy = signal<RecruiterSortMode>('relevance');
   readonly onlyCvMatch = signal<boolean>(false);
   readonly hideNonJobs = signal<boolean>(false);
+  readonly historySortBy = signal<RecruiterHistorySortMode>('recent');
+  readonly historyScoreFilter = signal<RecruiterHistoryScoreFilter>('all');
   readonly autoMinScore = signal<number>(60);
   readonly autoContinuous = signal<boolean>(true);
   readonly autoCooldownSeconds = signal<number>(30);
@@ -228,6 +264,8 @@ export class RecruiterStateService {
 
   // Estado em memória durante a sessão
   readonly allPosts = signal<RecruiterPost[]>([]);
+  readonly currentRoundPostIds = signal<number[] | null>(null);
+  readonly activeAutoRunId = signal<string | null>(null);
   readonly expandedPosts = signal<Set<number>>(new Set());
   readonly loading = signal<boolean>(false);
   readonly statusMessage = signal<string>('');
@@ -248,11 +286,22 @@ export class RecruiterStateService {
       hideNonJobs: this.hideNonJobs(),
       autoMinScore: this.autoMinScore(),
       ignoreTextFilter: this.autoRunFilterApplied(),
+      roundPostIds: this.currentRoundPostIds(),
+    })
+  );
+
+  readonly allRelevantHistoryPosts = computed(() =>
+    filterAndSortRelevantHistoryPosts(this.allPosts(), {
+      sortBy: 'recent',
+      scoreFilter: 'all',
     })
   );
 
   readonly historyPosts = computed(() =>
-    filterAndSortRelevantHistoryPosts(this.allPosts())
+    filterAndSortRelevantHistoryPosts(this.allPosts(), {
+      sortBy: this.historySortBy(),
+      scoreFilter: this.historyScoreFilter(),
+    })
   );
 
   readonly hasSecondaryFilters = computed(() => {
@@ -274,7 +323,10 @@ export class RecruiterStateService {
   }
 
   hasActiveKeywordSearch(): boolean {
-    return this.hasSearched() && this.filterText().trim().length > 0;
+    return (
+      this.hasSearched() &&
+      (this.filterText().trim().length > 0 || this.autoRunFilterApplied())
+    );
   }
 
   resetSecondaryFilters(): void {
@@ -292,11 +344,10 @@ export class RecruiterStateService {
 
   persist(): void {
     try {
-      const effectiveHasSearched = this.hasSearched() && this.filterText().trim().length > 0;
       const payload: PersistedRecruiterState = {
         filterText: this.filterText(),
         cvAreaBadge: this.cvAreaBadge(),
-        autoRunFilterApplied: this.autoRunFilterApplied(),
+        autoRunFilterApplied: false,
         portalFilter: this.portalFilter(),
         workModelFilter: this.workModelFilter(),
         regionFilter: this.regionFilter(),
@@ -307,10 +358,12 @@ export class RecruiterStateService {
         sortBy: this.sortBy(),
         onlyCvMatch: this.onlyCvMatch(),
         hideNonJobs: this.hideNonJobs(),
+        historySortBy: this.historySortBy(),
+        historyScoreFilter: this.historyScoreFilter(),
         autoMinScore: this.autoMinScore(),
         autoContinuous: this.autoContinuous(),
         autoCooldownSeconds: this.autoCooldownSeconds(),
-        hasSearched: effectiveHasSearched,
+        hasSearched: false,
       };
       localStorage.setItem(RECRUITER_STATE_STORAGE_KEY, JSON.stringify(payload));
     } catch {
@@ -327,7 +380,7 @@ export class RecruiterStateService {
 
       if (typeof parsed.filterText === 'string') this.filterText.set(parsed.filterText);
       if (typeof parsed.cvAreaBadge === 'string') this.cvAreaBadge.set(parsed.cvAreaBadge);
-      if (typeof parsed.autoRunFilterApplied === 'boolean') this.autoRunFilterApplied.set(parsed.autoRunFilterApplied);
+      this.autoRunFilterApplied.set(false);
       if (typeof parsed.portalFilter === 'string') this.portalFilter.set(parsed.portalFilter);
       if (typeof parsed.workModelFilter === 'string') this.workModelFilter.set(parsed.workModelFilter);
       if (typeof parsed.regionFilter === 'string') this.regionFilter.set(parsed.regionFilter);
@@ -364,6 +417,22 @@ export class RecruiterStateService {
       if (typeof parsed.onlyCvMatch === 'boolean') this.onlyCvMatch.set(parsed.onlyCvMatch);
       if (typeof parsed.hideNonJobs === 'boolean') this.hideNonJobs.set(parsed.hideNonJobs);
 
+      if (parsed.historySortBy === 'recent' || parsed.historySortBy === 'score-desc') {
+        this.historySortBy.set(parsed.historySortBy);
+      } else {
+        this.historySortBy.set('recent');
+      }
+
+      if (
+        parsed.historyScoreFilter === 'all' ||
+        parsed.historyScoreFilter === '60+' ||
+        parsed.historyScoreFilter === '75+'
+      ) {
+        this.historyScoreFilter.set(parsed.historyScoreFilter);
+      } else {
+        this.historyScoreFilter.set('all');
+      }
+
       if (typeof parsed.autoMinScore === 'number' && !Number.isNaN(parsed.autoMinScore)) {
         this.autoMinScore.set(Math.max(45, Math.min(95, parsed.autoMinScore)));
       }
@@ -374,10 +443,7 @@ export class RecruiterStateService {
         this.autoCooldownSeconds.set(Math.max(15, Math.min(300, Math.round(parsed.autoCooldownSeconds))));
       }
 
-      if (typeof parsed.hasSearched === 'boolean') {
-        const hasTerms = this.filterText().trim().length > 0;
-        this.hasSearched.set(parsed.hasSearched && hasTerms);
-      }
+      this.hasSearched.set(false);
     } catch {
       // Mantém defaults seguros
     }

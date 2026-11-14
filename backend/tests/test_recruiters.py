@@ -5,7 +5,7 @@ import os
 import sqlite3
 import unittest
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
@@ -17,7 +17,7 @@ from backend.core.recruiter_service import (
     match_cv_keywords,
     RecruiterService,
 )
-from backend.tools import painel, painel_ia
+from backend.tools import painel, painel_ia, scrape_run
 from backend.api.app import app
 from backend.api.deps import get_auto_mode, get_repository, get_recruiter_service, get_tracker
 from backend.api.security import get_token
@@ -340,6 +340,28 @@ class TestRecruiterService(unittest.TestCase):
 
 class TestRecruitersApi(unittest.TestCase):
     def setUp(self):
+        self.tmp_dir_obj = TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.tmp_dir_obj.cleanup)
+        tmp_dir = Path(self.tmp_dir_obj.name)
+        fake_root = tmp_dir / "backend"
+        fake_root.mkdir(parents=True, exist_ok=True)
+        fake_claude = fake_root / "documents" / "applications" / "_painel"
+        fake_seen = fake_root / "job_scraper" / "seen_jobs.json"
+        fake_tracker = fake_root / "documents" / "job_search_tracker.csv"
+        for target, attr, val in (
+            (painel, "ROOT", fake_root),
+            (painel, "CLAUDE_DIR", fake_claude),
+            (painel, "EVOLUTION_PATH", fake_root / "documents" / "evolucao.json"),
+            (painel_ia, "PAINEL_DIR", fake_claude),
+            (scrape_run, "SEEN", fake_seen),
+            (scrape_run, "TRACKER", fake_tracker),
+            (painel.scrape_run, "SEEN", fake_seen),
+            (painel.scrape_run, "TRACKER", fake_tracker),
+        ):
+            p = patch.object(target, attr, val)
+            p.start()
+            self.addCleanup(p.stop)
+
         self.tmp_db = NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp_db.close()
         self.repo = Repository(db_path=self.tmp_db.name)
@@ -508,7 +530,7 @@ class TestRecruitersApi(unittest.TestCase):
             self.assertEqual(apps[0]["contact_channel"], "recruiter_email")
             self.assertEqual(apps[0]["contacted_email"], "vagas@studio.dev")
 
-    def test_api_dismiss_batch_requires_csrf_and_moves_only_target_ids_to_limbo(self):
+    def test_api_dismiss_batch_requires_csrf_and_moves_only_target_ids_to_discarded(self):
         p1 = self.service.add_pasted_post(
             raw_text="Dev Java Sênior remoto. CV para rh@alpha.dev",
             title="Dev Java Sênior",
@@ -547,9 +569,13 @@ class TestRecruitersApi(unittest.TestCase):
         self.assertEqual(body["dismissed_count"], 2)
         self.assertEqual(body["dismissed_ids"], [p1["id"], p2["id"]])
 
-        # Apenas p3 permanece listado no radar
+        # Apenas p3 permanece listado no radar; p1 e p2 foram movidos para Descartadas
         remaining = self.client.get("/api/recruiters").json()["posts"]
         self.assertEqual([p["id"] for p in remaining], [p3["id"]])
+        discarded_urls = {j["url"] for j in self.client.get("/api/discarded").json()["discarded"]}
+        self.assertIn(p1["url"], discarded_urls)
+        self.assertIn(p2["url"], discarded_urls)
+        self.assertNotIn(p3["url"], discarded_urls)
 
         # Segunda chamada nos mesmos IDs é idempotente
         again = self.client.post(
@@ -1222,7 +1248,7 @@ class TestRecruitersApi(unittest.TestCase):
         remaining_ids = [p["id"] for p in self.service.list_posts(portal="linkedin_post")]
         self.assertEqual(remaining_ids, [p_low["id"]])
 
-    def test_dismiss_to_limbo_blocks_same_vacancy_without_blocking_other_jobs_same_email(self):
+    def test_dismiss_to_discarded_blocks_same_vacancy_without_blocking_other_jobs_same_email(self):
         vaga_java = self.service.add_pasted_post(
             raw_text="Vaga Desenvolvedor Java Sênior com Spring Boot e Kafka. Envie CV para rh@consultoria.dev",
             title="Desenvolvedor Java Sênior",
@@ -1230,6 +1256,9 @@ class TestRecruitersApi(unittest.TestCase):
             url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000101/",
         )
         self.assertTrue(self.service.dismiss_post(vaga_java["id"]))
+        discarded = self.client.get("/api/discarded").json()["discarded"]
+        self.assertEqual([d["url"] for d in discarded], [vaga_java["url"]])
+        self.assertEqual(discarded[0]["recruiter_emails"], ["rh@consultoria.dev"])
 
         batch_res = self.service.add_pasted_posts_batch(
             [
@@ -1274,7 +1303,7 @@ class TestRecruitersApi(unittest.TestCase):
         self.assertEqual(dismissed, [v1["id"], v2["id"]])
         self.assertEqual(self.service.list_posts(portal="linkedin_post"), [])
 
-        # Reimportar a mesma vaga já descartada em lote continua bloqueado no Limbo
+        # Reimportar a mesma vaga já descartada em lote continua bloqueado em Descartadas
         reimport = self.service.add_pasted_posts_batch(
             [
                 {
@@ -1288,6 +1317,248 @@ class TestRecruitersApi(unittest.TestCase):
         )
         self.assertEqual(reimport["skipped"], 1)
         self.assertEqual(reimport["imported"], 0)
+
+    def test_dismiss_moves_to_discarded_restore_returns_and_applied_stays_protected(self):
+        p_norm = self.service.add_pasted_post(
+            raw_text="Dev Spring Boot Sênior. Envie CV para vagas@disc-norm.dev",
+            title="Dev Spring Boot Sênior",
+            company="SpringCo",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000701/",
+        )
+        headers = {"X-Painel-Token": self.token}
+        del_resp = self.client.delete(f"/api/recruiters/{p_norm['id']}", headers=headers)
+        self.assertEqual(del_resp.status_code, 200)
+        self.assertEqual(self.service.list_posts(portal="linkedin_post"), [])
+
+        discarded = self.client.get("/api/discarded").json()["discarded"]
+        self.assertEqual(len(discarded), 1)
+        self.assertEqual(discarded[0]["url"], p_norm["url"])
+        self.assertEqual(discarded[0]["recruiter_emails"], ["vagas@disc-norm.dev"])
+
+        # Restaurar em Descartadas devolve para Me Interessam e tira de Descartadas
+        restore_resp = self.client.post("/api/restore", json={"url": p_norm["url"]}, headers=headers)
+        self.assertEqual(restore_resp.status_code, 200)
+        self.assertEqual(self.client.get("/api/discarded").json()["discarded"], [])
+        restored_job = self.repo.get_job_by_url(p_norm["url"])
+        self.assertIsNotNone(restored_job)
+        self.assertEqual(restored_job["status"], "interested")
+
+        # Post já aplicado/contacted não tem status rebaixado para discarded ao ser ocultado
+        p_applied = self.service.add_pasted_post(
+            raw_text="Dev Kotlin Pleno. Envie CV para jobs@kotlincorp.dev",
+            title="Dev Kotlin Pleno",
+            company="KotlinCorp",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000702/",
+        )
+        self.service.mark_post_contacted(p_applied["id"], email="jobs@kotlincorp.dev")
+        self.assertTrue(self.service.dismiss_post(p_applied["id"]))
+        self.assertEqual(self.client.get("/api/discarded").json()["discarded"], [])
+        applied_job = self.repo.get_job_by_url(p_applied["url"])
+        self.assertIsNotNone(applied_job)
+        self.assertEqual(applied_job["status"], "applied")
+
+    def test_api_sync_runs_all_platforms_simultaneously_and_tracks_round_matched_post_ids(self):
+        from types import SimpleNamespace
+
+        unrelated = self.service.add_pasted_post(
+            raw_text="Vaga PHP antiga em cache. Envie CV para php@old.dev",
+            title="PHP Sênior",
+            company="OldPHP",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000501/",
+        )
+        dismissed_li = self.service.add_pasted_post(
+            raw_text="Vaga descartada anteriormente Angular. CV para trash@li.dev",
+            title="Angular Descartada",
+            company="TrashCo",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000502/",
+        )
+        self.service.dismiss_post(dismissed_li["id"])
+
+        evaluated_li = self.service.add_pasted_post(
+            raw_text="Vaga Angular já avaliada! Envie CV para evaluated@li.dev",
+            title="Angular Já Avaliada",
+            company="EvalCo",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000503/",
+        )
+        self.repo.update_recruiter_post_ai(
+            evaluated_li["id"],
+            "vaga_ativa",
+            85,
+            "Strong Fit",
+            "Compatível.",
+            "evaluated@li.dev",
+        )
+
+        self.service.linkedin_worker = SimpleNamespace(
+            search_content_posts=lambda q, force=False, should_stop=None, days=None: {
+                "ok": True,
+                "cards_total": 3,
+                "posts": [
+                    {
+                        "raw_text": "Vaga Angular já avaliada! Envie CV para evaluated@li.dev",
+                        "company": "EvalCo",
+                        "title": "Angular Já Avaliada",
+                        "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000503/",
+                    },
+                    {
+                        "raw_text": "Vaga descartada anteriormente Angular. CV para trash@li.dev",
+                        "company": "TrashCo",
+                        "title": "Angular Descartada",
+                        "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000502/",
+                    },
+                    {
+                        "raw_text": "Vaga Angular Pleno nova no LinkedIn! CV para novo@li.dev",
+                        "company": "NewLICo",
+                        "title": "Angular Pleno",
+                        "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000504/",
+                    },
+                ],
+            }
+        )
+
+        fake_remotar = ([
+            {
+                "url": "https://remotar.com.br/job/ang-sync-1",
+                "title": "Dev Angular Remoto",
+                "company": "RemotarCorp",
+                "work_model": "remoto",
+                "description": "Envie CV para jobs@remotarcorp.dev",
+            },
+            {
+                "url": "https://remotar.com.br/job/java-other",
+                "title": "Dev Java Sênior",
+                "company": "JavaCorp",
+                "work_model": "remoto",
+                "description": "Envie CV para jobs@javacorp.dev",
+            },
+        ], None)
+
+        headers = {"X-Painel-Token": self.token}
+        with patch.object(self.service, "sync_from_hn", return_value=0) as hn_mock, \
+             patch.object(self.service, "sync_from_github_repos", return_value=0) as gh_mock, \
+             patch.object(self.service, "sync_from_remotive", return_value=0) as rem_mock, \
+             patch.object(self.service, "sync_from_recent_scrapes", return_value=0), \
+             patch("backend.tools.scrape_run.installed_portals", return_value={"remotar-search": True}), \
+             patch("backend.tools.scrape_run.run_cli", return_value=fake_remotar):
+            resp = self.client.post("/api/recruiters/sync?q=Angular", headers=headers)
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(hn_mock.called)
+        self.assertTrue(gh_mock.called)
+        self.assertTrue(rem_mock.called)
+
+        listed_by_url = {p.get("url"): p for p in self.service.list_posts()}
+        new_li = listed_by_url["https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000504/"]
+        rem_ang = listed_by_url["https://remotar.com.br/job/ang-sync-1"]
+        rem_java = listed_by_url["https://remotar.com.br/job/java-other"]
+
+        matched_ids = set(data["matched_post_ids"])
+        self.assertIn(evaluated_li["id"], matched_ids)  # Reencontrada ativa sem re-triar
+        self.assertIn(new_li["id"], matched_ids)
+        self.assertIn(rem_ang["id"], matched_ids)
+        self.assertNotIn(dismissed_li["id"], matched_ids)  # Descartada/oculta nunca vaza
+        self.assertNotIn(unrelated["id"], matched_ids)     # Post antigo PHP fora da busca
+        self.assertNotIn(rem_java["id"], matched_ids)      # Java do Remotar não casa 'Angular'
+        # collected_post_ids continua restrito a novos/atualizados sem re-triar evaluated_li
+        self.assertNotIn(evaluated_li["id"], data["collected_post_ids"])
+
+    def test_move_between_interested_and_discarded_preserves_triage_metadata_and_subscores(self):
+        from tempfile import TemporaryDirectory
+        from backend.core.tracker import TrackerService
+        from backend.tools import painel
+
+        post = self.service.add_pasted_post(
+            raw_text="Vaga Python Pleno remota! Envie CV para rh@preserve-triage.dev",
+            title="Dev Python Pleno",
+            company="PreserveTech",
+            location="São Paulo, SP",
+            work_model="remoto",
+            published_date="2026-11-12",
+            url="https://freehire.me/jobs/preserve-triage-1",
+        )
+        self.repo.update_recruiter_post_ai(
+            post["id"],
+            "vaga_ativa",
+            82,
+            "Strong Fit",
+            "Excelente encaixe com Python e APIs.",
+            "rh@preserve-triage.dev",
+            ai_model="gemini-3-flash-preview",
+        )
+
+        # Simula vaga que já tinha subnotas detalhadas antes de nova movimentação
+        jid = self.repo.upsert_job({
+            "title": post["title"],
+            "company": post["company"],
+            "url": post["url"],
+            "status": "new",
+            "source": "recruiter_radar",
+        })
+        self.repo.insert_evaluation({
+            "job_id": jid,
+            "score_technical": 88,
+            "score_experience": 80,
+            "score_behavioral": 78,
+            "score_location": "PASS",
+            "score_career": 82,
+            "score_global": 82,
+            "verdict": "Strong Fit",
+            "language_gate": "PASS",
+            "strengths": ["Python sólido"],
+            "gaps": ["Ajustar stack auxiliar"],
+            "report_md": "Excelente encaixe com Python e APIs.",
+            "ai_provider": "gemini-3-flash-preview",
+        })
+
+        headers = {"X-Painel-Token": self.token}
+        with TemporaryDirectory() as tmpdir, \
+             patch("backend.tools.painel_ia.PAINEL_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel.CLAUDE_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel_ia.save_job_cache"), \
+             patch("backend.tools.painel.saved", return_value=[]), \
+             patch("backend.tools.painel.discarded", return_value=[]), \
+             patch("backend.tools.painel.discard_job", return_value={"discarded": True}), \
+             patch("backend.tools.painel.restore_job"):
+            # 1) Mover para Me Interessam sem perder subnotas/localidade/modelo/resumo/e-mail
+            res_int = self.client.post(f"/api/recruiters/{post['id']}/interested", headers=headers)
+            self.assertEqual(res_int.status_code, 200)
+
+            tracker = TrackerService(self.repo)
+            saved_rows = tracker.list_enriched_saved_jobs()
+            self.assertEqual(len(saved_rows), 1)
+            saved = saved_rows[0]
+            self.assertEqual(saved["url"], "https://freehire.me/jobs/preserve-triage-1")
+            self.assertEqual(saved["location"], "São Paulo, SP")
+            self.assertEqual(saved["work_model"], "remoto")
+            self.assertEqual(saved["posted_date"], "2026-11-12")
+            self.assertEqual(saved["recruiter_emails"], ["rh@preserve-triage.dev"])
+            self.assertEqual(saved["screening"]["score"], 82)
+            self.assertEqual(saved["screening"]["verdict"], "Strong Fit")
+            self.assertEqual(saved["screening"]["ai_model"], "gemini-3-flash-preview")
+            self.assertIn("Excelente encaixe", saved["screening"]["summary"])
+            self.assertEqual(saved["screening"]["subscores"]["technical"], 88)
+            self.assertEqual(saved["screening"]["strengths"], ["Python sólido"])
+
+            # 2) Mover para Descartadas -> preserva triagem e subnotas em Descartadas
+            res_del = self.client.delete(f"/api/recruiters/{post['id']}", headers=headers)
+            self.assertEqual(res_del.status_code, 200)
+            disc_rows = tracker.list_enriched_discarded_jobs()
+            self.assertEqual(len(disc_rows), 1)
+            disc = disc_rows[0]
+            self.assertEqual(disc["url"], "https://freehire.me/jobs/preserve-triage-1")
+            self.assertEqual(disc["recruiter_emails"], ["rh@preserve-triage.dev"])
+            self.assertEqual(disc["screening"]["score"], 82)
+            self.assertEqual(disc["screening"]["subscores"]["technical"], 88)
+            self.assertEqual(disc["screening"]["ai_model"], "gemini-3-flash-preview")
+
+            # 3) Restaurar de Descartadas -> retorna a Me Interessam com toda a referência de triagem íntegra
+            tracker.restore_by_url(post["url"])
+            restored_rows = tracker.list_enriched_saved_jobs()
+            self.assertEqual(len(restored_rows), 1)
+            self.assertEqual(restored_rows[0]["screening"]["score"], 82)
+            self.assertEqual(restored_rows[0]["screening"]["subscores"]["technical"], 88)
+            self.assertEqual(restored_rows[0]["recruiter_emails"], ["rh@preserve-triage.dev"])
 
 
 if __name__ == "__main__":

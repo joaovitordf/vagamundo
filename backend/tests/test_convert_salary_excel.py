@@ -392,10 +392,6 @@ class DetectColumnTypeTests(unittest.TestCase):
         self.assertIn("No salary data columns detected", stderr.getvalue())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ParseNumericCellLocaleTests(unittest.TestCase):
     # The separator that appears LAST is the decimal separator. Assuming
     # European ("." thousands, "," decimal) for every both-separator string

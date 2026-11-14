@@ -1,6 +1,7 @@
 import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 import { ApiService } from './api.service';
+import { ToastService } from './toast.service';
 
 export type AutoModePhase =
   | 'idle'
@@ -76,6 +77,7 @@ export interface AutoModeStatus {
 @Injectable({ providedIn: 'root' })
 export class AutoModeService implements OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly toast = inject(ToastService);
 
   status = signal<AutoModeStatus | null>(null);
   bannerDismissed = signal<boolean>(false);
@@ -138,7 +140,7 @@ export class AutoModeService implements OnDestroy {
           this.ensurePolling();
         }
       },
-      error: () => {},
+      error: (err) => console.warn('Falha ao consultar status do Modo Automático:', err),
     });
   }
 
@@ -182,7 +184,10 @@ export class AutoModeService implements OnDestroy {
     this.cancelling.set(true);
     this.api.cancelAutoMode().subscribe({
       next: () => this.fetchStatusOnce(),
-      error: () => this.cancelling.set(false),
+      error: (err) => {
+        this.cancelling.set(false);
+        this.toast.error('Erro ao parar Modo Automático: ' + (err?.error?.detail || err?.message || 'Falha na requisição'));
+      },
     });
   }
 
@@ -190,7 +195,10 @@ export class AutoModeService implements OnDestroy {
     this.skippingCooldown.set(true);
     this.api.skipAutoModeCooldown().subscribe({
       next: () => this.fetchStatusOnce(),
-      error: () => this.skippingCooldown.set(false),
+      error: (err) => {
+        this.skippingCooldown.set(false);
+        this.toast.error('Erro ao pular intervalo: ' + (err?.error?.detail || err?.message || 'Falha na requisição'));
+      },
     });
   }
 
@@ -260,6 +268,7 @@ export class AutoModeService implements OnDestroy {
                 error: 'Conexão com o servidor perdida (backend inacessível ou reiniciado).',
               });
             }
+            this.toast.error('Conexão com o servidor perdida no Modo Automático.');
           }
         },
       });

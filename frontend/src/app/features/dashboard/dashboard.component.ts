@@ -1,18 +1,21 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal, computed } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { DashboardStats, DashboardMonthlyPoint, DashboardDailyPoint, DashboardStatusPoint, DashboardPortalPoint, DashboardActivityPoint } from '../../core/models/vaga.model';
+import { PortalBadgeComponent } from '../../shared/components/portal-badge.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, PortalBadgeComponent],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.css'
 })
 export class DashboardComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
   stats = signal<DashboardStats | null>(null);
   loading = signal<boolean>(true);
@@ -37,7 +40,7 @@ export class DashboardComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    this.loadStats();
+    this.loadStats(1);
   }
 
   toggleSortDirection(): void {
@@ -50,12 +53,13 @@ export class DashboardComponent implements OnInit {
     this.loadStats(months);
   }
 
-  loadStats(months: number = 6): void {
+  loadStats(months?: number): void {
     this.loading.set(true);
     this.errorMsg.set('');
 
-    const queryMonths = this.selectedPeriod() === '12m' ? 12 : 6;
-    this.api.getDashboardStats(queryMonths).subscribe({
+    const period = this.selectedPeriod();
+    const queryMonths = months ?? (period === '1m' ? 1 : (period === '12m' ? 12 : 6));
+    this.api.getDashboardStats(queryMonths).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.stats.set(data);
         this.loading.set(false);

@@ -1,3 +1,23 @@
+export interface ScreeningResult {
+  score?: number;
+  verdict?: string;
+  summary?: string;
+  ai_model?: string | null;
+  error?: string;
+  subscores?: {
+    technical: number;
+    experience: number;
+    behavioral: number;
+    career: number;
+  };
+  language_gate?: 'PASS' | 'FLAG' | 'FAIL' | string;
+  language_note?: string;
+  location_verdict?: 'PASS' | 'FLAG' | 'FAIL' | string;
+  strengths?: string[];
+  gaps?: string[];
+  guard_alert?: string;
+}
+
 export interface Vaga {
   id?: string;
   url: string;
@@ -16,16 +36,29 @@ export interface Vaga {
   tags?: string[];
   skills?: string[];
   visa_sponsorship?: boolean | string | number;
-  screening?: {
-    score?: number;
-    verdict?: string;
-    summary?: string;
-    error?: string;
-  };
+  screening?: ScreeningResult;
   screening_error?: string;
   signals?: {
     warnings?: string[];
   };
+  role?: string;
+  posted_date?: string;
+  saved_at?: string;
+  first_seen?: string;
+  created_at?: string;
+  updated_at?: string;
+  auto_promoted?: boolean | number;
+  auto_origin?: string;
+  recruiter_emails?: string[];
+  claude?: {
+    avaliar?: any;
+    curriculo?: any;
+    carta?: any;
+    entrevista?: any;
+  };
+  pdf_cv?: string;
+  pdf_carta?: string;
+  pdf_entrevista?: string;
 }
 
 export interface ProfileResponse {
@@ -44,13 +77,80 @@ export interface ProfileResponse {
   report?: string;
 }
 
+export interface ActiveProviderInfo {
+  provider: string;
+  via?: string;
+  label: string;
+  short?: string;
+  model: string;
+  available: boolean;
+}
+
+export interface ProviderSettingsItem {
+  id: string;
+  label: string;
+  short?: string;
+  model: string;
+  default_model: string;
+  suggested_models: string[];
+  has_key: boolean;
+  key_hint: string;
+  key_url?: string;
+  cli_name?: string;
+  cli_found: boolean;
+  mode: string;
+  base_url: string;
+  supports_base_url: boolean;
+}
+
 export interface SettingsResponse {
   provider: string;
-  model: string;
-  models: string[];
-  providers: Array<{ id: string; name: string }>;
-  has_key: boolean;
   consent: boolean;
+  active?: ActiveProviderInfo;
+  providers: ProviderSettingsItem[];
+  // Legacy optional fields for test compatibility
+  model?: string;
+  models?: string[];
+  has_key?: boolean;
+}
+
+export interface ApplicationRecord {
+  id?: number;
+  job_id?: string;
+  company: string;
+  role?: string;
+  title?: string;
+  job_title?: string;
+  channel?: string;
+  portal?: string;
+  url?: string;
+  job_url?: string;
+  source?: string;
+  status: string;
+  applied_date?: string;
+  date?: string;
+  created_at?: string;
+  job_posted_date?: string;
+  posted_date?: string;
+  notes?: string;
+  contact_channel?: string;
+  contacted_email?: string;
+  recruiter_emails?: string[];
+  pdf_cv?: string;
+  pdf_carta?: string;
+  timeline?: ApplicationTimelineEvent[];
+}
+
+export interface GeneratedDoc {
+  id?: number | string;
+  name: string;
+  kind: 'cv' | 'carta' | 'entrevista' | string;
+  path: string;
+  date: string;
+  web_path?: string;
+  company?: string;
+  role?: string;
+  size_kb?: number;
 }
 
 export interface EvolutionMetrics {
@@ -217,6 +317,7 @@ export interface RecruiterPost {
   ai_verdict?: string | null;
   ai_summary?: string | null;
   ai_best_email?: string | null;
+  ai_model?: string | null;
   ai_evaluated_at?: string | null;
   auto_promoted?: number;
   auto_run_id?: string | null;

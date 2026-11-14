@@ -7,25 +7,15 @@ from fastapi import Header, HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from backend.core.constants import DEFAULT_ALLOWED_HOSTS, get_allowed_hosts
+
 # Global session CSRF token
 SESSION_TOKEN = secrets.token_hex(16)
 
-ALLOWED_HOSTS = {
-    "localhost",
-    "127.0.0.1",
-    "[::1]",
-    "::1",
-    "testserver",
-}
+ALLOWED_HOSTS = set(DEFAULT_ALLOWED_HOSTS)
 
 
 def get_token() -> str:
-    return SESSION_TOKEN
-
-
-def refresh_token() -> str:
-    global SESSION_TOKEN
-    SESSION_TOKEN = secrets.token_hex(16)
     return SESSION_TOKEN
 
 
@@ -45,7 +35,8 @@ class HostCheckMiddleware(BaseHTTPMiddleware):
         else:
             host_header = raw_host.partition(":")[0]
 
-        if not host_header or host_header not in ALLOWED_HOSTS:
+        allowed_hosts = ALLOWED_HOSTS | get_allowed_hosts()
+        if not host_header or host_header not in allowed_hosts:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 content={"error": f"Host '{host_header or raw_host}' não permitido."},

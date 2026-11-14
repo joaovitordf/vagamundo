@@ -12,8 +12,8 @@
       <div>
         <strong>Motor em uso:</strong>
         <span class="active-provider-name">{{ activeProviderLabel() }}</span>
-        @if (settingsData()?.model; as model) {
-          <span class="active-model-tag">({{ model }})</span>
+        @if (activeModelLabel(); as model) {
+          <span class="active-model-tag">({{ model }}@if (settingsData()?.active?.via; as via) { · {{ via }}})</span>
         }
       </div>
     </div>
@@ -22,74 +22,83 @@
       <div class="setting-field">
         <label for="cfg-provider"><strong>Usar Provedor</strong></label>
         <select id="cfg-provider" class="vc-select" [(ngModel)]="chosenProvider" name="provider">
-          <option value="auto">Automático (o primeiro que estiver configurado)</option>
-          <option value="gemini">Google Gemini</option>
-          <option value="openai">OpenAI (ChatGPT)</option>
-          <option value="claude">Anthropic Claude</option>
+          <option value="auto">Automático (o primeiro que estiver disponível)</option>
+          @for (p of settingsData()?.providers || []; track p.id) {
+            <option [value]="p.id">{{ p.label }}</option>
+          }
         </select>
       </div>
 
-      <!-- Credenciais por Provedor -->
+      <!-- Credenciais e Modelos por Provedor (dinâmico) -->
       <div class="providers-credentials-grid">
-        <!-- Gemini Card -->
-        <div class="provider-card" [class.highlight]="chosenProvider === 'gemini' || chosenProvider === 'auto'">
-          <div class="provider-header">
-            <span class="provider-title">
-              <i class="bi bi-stars"></i> Google Gemini
-            </span>
-            @if (hasProviderKey('gemini')) {
-              <span class="badge-configured">Configurado no .env</span>
-            } @else {
-              <span class="badge-missing">Não configurado</span>
-            }
-          </div>
-          <p class="provider-help">Chave de API do Google AI Studio (GEMINI_API_KEY).</p>
-          <input type="password"
-            class="vc-input"
-            placeholder="Nova chave (ou deixe em branco para manter a atual)"
-            [(ngModel)]="keys.gemini"
-            name="geminiKey">
-        </div>
+        @for (p of settingsData()?.providers || []; track p.id) {
+          <div class="provider-card" [class.highlight]="isProviderHighlighted(p)">
+            <div class="provider-header">
+              <span class="provider-title">
+                <i class="bi" [class]="providerIcon(p.id)"></i> {{ p.label }}
+              </span>
+              @if (hasProviderKey(p.id)) {
+                <span class="badge-configured">Chave salva @if (p.key_hint) { ({{ p.key_hint }}) }</span>
+              } @else if (p.cli_found) {
+                <span class="badge-configured">CLI local ({{ p.cli_name || p.id }})</span>
+              } @else {
+                <span class="badge-missing">Não configurado</span>
+              }
+            </div>
 
-        <!-- OpenAI Card -->
-        <div class="provider-card" [class.highlight]="chosenProvider === 'openai'">
-          <div class="provider-header">
-            <span class="provider-title">
-              <i class="bi bi-robot"></i> OpenAI (ChatGPT)
-            </span>
-            @if (hasProviderKey('openai')) {
-              <span class="badge-configured">Configurado no .env</span>
-            } @else {
-              <span class="badge-missing">Não configurado</span>
-            }
-          </div>
-          <p class="provider-help">Chave de API da OpenAI (OPENAI_API_KEY).</p>
-          <input type="password"
-            class="vc-input"
-            placeholder="Nova chave (ou deixe em branco para manter a atual)"
-            [(ngModel)]="keys.openai"
-            name="openaiKey">
-        </div>
+            <p class="provider-help">
+              @if (p.cli_name && p.cli_found) {
+                CLI local detectada (<code>{{ p.cli_name }}</code>) ou use chave de API abaixo.
+              } @else if (p.cli_name) {
+                Chave de API ou CLI local (<code>{{ p.cli_name }}</code>).
+              } @else {
+                Chave de API para {{ p.label }}.
+              }
+              @if (p.key_url) {
+                <a class="provider-key-link" [href]="p.key_url" target="_blank" rel="noopener noreferrer">Obter chave ↗</a>
+              }
+            </p>
 
-        <!-- Claude Card -->
-        <div class="provider-card" [class.highlight]="chosenProvider === 'claude'">
-          <div class="provider-header">
-            <span class="provider-title">
-              <i class="bi bi-chat-square-text"></i> Anthropic Claude
-            </span>
-            @if (hasProviderKey('claude')) {
-              <span class="badge-configured">Configurado</span>
-            } @else {
-              <span class="badge-missing">Não configurado</span>
+            <label class="provider-sublabel" [for]="'model-' + p.id">Modelo</label>
+            <input type="text"
+              [id]="'model-' + p.id"
+              class="vc-input"
+              [attr.list]="'models-' + p.id"
+              [placeholder]="p.default_model"
+              [(ngModel)]="providerModels[p.id]"
+              [name]="'model_' + p.id">
+            <datalist [id]="'models-' + p.id">
+              @for (m of p.suggested_models || []; track m) {
+                <option [value]="m"></option>
+              }
+            </datalist>
+
+            <label class="provider-sublabel" [for]="'key-' + p.id">Chave de API</label>
+            <input type="password"
+              [id]="'key-' + p.id"
+              class="vc-input"
+              [placeholder]="p.has_key ? 'Nova chave (deixe em branco para manter a atual)' : 'Cole a chave de API aqui'"
+              [(ngModel)]="providerKeys[p.id]"
+              [name]="'key_' + p.id">
+
+            @if (p.has_key) {
+              <label class="clear-key-toggle">
+                <input type="checkbox" [(ngModel)]="clearKeyFlags[p.id]" [name]="'clear_key_' + p.id">
+                <span>Remover chave salva deste provedor</span>
+              </label>
+            }
+
+            @if (p.supports_base_url) {
+              <label class="provider-sublabel" [for]="'baseurl-' + p.id">Base URL (opcional)</label>
+              <input type="text"
+                [id]="'baseurl-' + p.id"
+                class="vc-input"
+                placeholder="https://api.openai.com/v1"
+                [(ngModel)]="providerBaseUrls[p.id]"
+                [name]="'base_url_' + p.id">
             }
           </div>
-          <p class="provider-help">Chave de API Anthropic (ANTHROPIC_API_KEY) ou CLI local do Claude.</p>
-          <input type="password"
-            class="vc-input"
-            placeholder="Nova chave (ou deixe em branco para manter a atual)"
-            [(ngModel)]="keys.claude"
-            name="claudeKey">
-        </div>
+        }
       </div>
 
       <!-- Aviso de Consentimento de Terceiros -->

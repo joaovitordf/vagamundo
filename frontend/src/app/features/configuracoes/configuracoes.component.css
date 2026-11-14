@@ -80,7 +80,7 @@
 
 .providers-credentials-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 1rem;
 }
 
@@ -142,7 +142,7 @@
 }
 
 .vc-input {
-  background: #0b1120;
+  background: var(--vc-surface);
   border: 1px solid var(--vc-border);
   color: var(--vc-text);
   padding: 0.55rem 0.75rem;
@@ -213,5 +213,32 @@
   font-size: 0.88rem;
   color: var(--vc-green);
   font-weight: 500;
+}
+
+.provider-sublabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--vc-muted);
+  margin-top: 0.25rem;
+}
+
+.provider-key-link {
+  color: var(--vc-blue);
+  margin-left: 0.4rem;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.provider-key-link:hover {
+  text-decoration: underline;
+}
+
+.clear-key-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: #f87171;
+  cursor: pointer;
 }
 

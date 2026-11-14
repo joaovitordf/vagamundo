@@ -60,8 +60,7 @@ interface RemoteOkItem {
   description?: string
 }
 
-async function fetchRemoteOkJobs(query?: string): Promise<RemoteOkItem[]> {
-  const url = query ? `${API_BASE}?tag=${encodeURIComponent(query.toLowerCase().trim())}` : API_BASE
+async function fetchRemoteOkFeed(url: string): Promise<RemoteOkItem[]> {
   const res = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -78,6 +77,15 @@ async function fetchRemoteOkJobs(query?: string): Promise<RemoteOkItem[]> {
   if (!Array.isArray(raw)) return []
   // Primeiro item do RemoteOK costuma ser aviso legal
   return raw.filter((item): item is RemoteOkItem => Boolean(item && item.id && item.position))
+}
+
+async function fetchRemoteOkJobs(query?: string): Promise<RemoteOkItem[]> {
+  const clean = (query || "").toLowerCase().trim()
+  if (clean && !/\s/.test(clean)) {
+    const tagged = await fetchRemoteOkFeed(`${API_BASE}?tag=${encodeURIComponent(clean)}`)
+    if (tagged.length > 0) return tagged
+  }
+  return fetchRemoteOkFeed(API_BASE)
 }
 
 function formatSalaryUSD(min?: number, max?: number): string | undefined {

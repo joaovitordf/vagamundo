@@ -1,6 +1,11 @@
 import {
   AVAILABLE_PORTALS,
+  FIT_THRESHOLDS,
+  PORTAL_LABELS,
+  formatDisplayDate,
   getPortalDisplayName,
+  getPrimaryEmail,
+  isWithinDateRange,
   isWithinDays,
   matchesRegionFilter,
   matchesScoreFilter,
@@ -111,5 +116,56 @@ describe('job-filters.util', () => {
 
     const brSuffix = resolveGeo({ location: 'Curitiba, br', portal: 'freehire-search', work_model: null });
     expect(brSuffix.scope).toBe('brasil');
+  });
+
+  it('exposes canonical portal registry labels, fit thresholds, dates, and email helpers', () => {
+    expect(FIT_THRESHOLDS.high).toBe(75);
+    expect(FIT_THRESHOLDS.medium).toBe(60);
+    expect(PORTAL_LABELS['eures']).toBe('EURES (Europa)');
+    expect(formatDisplayDate('2026-11-12T10:00:00Z')).toBe('12/11/2026');
+    expect(getPrimaryEmail({ contacted_email: 'a@x.com', emails: ['b@x.com'] })).toBe('a@x.com');
+    expect(getPrimaryEmail({ emails: ['b@x.com'] })).toBe('b@x.com');
+    expect(getPrimaryEmail({})).toBeNull();
+  });
+
+  it('matches multi-word queries regardless of word order, accents, gender markers, or role prefixes', () => {
+    expect(matchesTextFilter('[Remoto] Desenvolvedor(a) Backend Java Júnior', 'Desenvolvedor Java')).toBeTrue();
+    expect(matchesTextFilter('Engenharia de Software (Spring Boot)', 'engenharia spring')).toBeTrue();
+    expect(matchesTextFilter('Vaga Frontend React Pleno em São Paulo', 'Desenvolvedor React')).toBeTrue();
+    expect(matchesTextFilter('Analista de Dados Python | São Paulo', 'python, golang')).toBeTrue();
+    expect(matchesTextFilter('Analista de Dados Python', 'Desenvolvedor Java')).toBeFalse();
+  });
+
+  it('distinguishes med_plus (60+) from med (60-74)', () => {
+    expect(matchesScoreFilter(82, 'med_plus', true)).toBeTrue();
+    expect(matchesScoreFilter(65, 'med_plus', true)).toBeTrue();
+    expect(matchesScoreFilter(59, 'med_plus', true)).toBeFalse();
+    expect(matchesScoreFilter(82, 'med', true)).toBeFalse();
+    expect(matchesScoreFilter(65, 'med', true)).toBeTrue();
+  });
+
+  it('avoids false Brazilian UF matches on English phrases and uses BR_NACIONAL for generic non-remote BR jobs', () => {
+    const remoteUs = resolveGeo({ location: 'Remote (open to US)', portal: 'hn-search' });
+    expect(remoteUs.countryCode).toBe('US');
+    expect(remoteUs.code).not.toBe('TO');
+
+    const candidateSe = resolveGeo({ location: 'Candidate-se agora', portal: 'linkedin-search' });
+    expect(candidateSe.code).not.toBe('SE');
+
+    const brNational = resolveGeo({ location: 'Brasil', portal: 'gupy-search', workplace_type: 'on_site' });
+    expect(brNational.countryCode).toBe('BR');
+    expect(brNational.code).toBe('BR_NACIONAL');
+
+    const campinas = resolveGeo({ location: 'Campinas, SP', portal: 'gupy-search' });
+    expect(campinas.countryCode).toBe('BR');
+    expect(campinas.code).toBe('SP');
+  });
+
+  it('evaluates date ranges for ISO and BR date formats including custom windows', () => {
+    const refNow = new Date(2026, 10, 12, 12, 0, 0);
+    expect(isWithinDateRange('10/11/2026', '7d', '', '', refNow)).toBeTrue();
+    expect(isWithinDateRange('01/11/2026', '7d', '', '', refNow)).toBeFalse();
+    expect(isWithinDateRange('2026-11-08', 'custom', '2026-11-05', '2026-11-10', refNow)).toBeTrue();
+    expect(isWithinDateRange('04/11/2026', 'custom', '2026-11-05', '2026-11-10', refNow)).toBeFalse();
   });
 });

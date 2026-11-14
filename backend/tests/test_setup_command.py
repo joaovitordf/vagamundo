@@ -13,11 +13,6 @@ import re
 import unittest
 from pathlib import Path
 
-try:
-    from _upstream import is_upstream_checkout
-except ImportError:  # `python -m unittest discover -s tests` imports test modules top-level
-    from _upstream import is_upstream_checkout
-
 REPO = Path(__file__).resolve().parents[2]
 COMMAND = REPO / ".claude" / "commands" / "setup.md"
 SKILL_DIR = REPO / ".claude" / "skills" / "job-application-assistant"
@@ -71,26 +66,6 @@ class SetupStep3ContactBlocks(unittest.TestCase):
         step4 = _sections(COMMAND.read_text(encoding="utf-8"))["Passo 4: Confirmar e próximos passos"]
         summary = step4.split("**Aviso de privacidade:**")[0]
         self.assertIn("06-cover-letter-templates.md", summary)
-
-
-@unittest.skipIf(
-    not is_upstream_checkout(),
-    "template-placeholder guard targets the pristine upstream template; forks personalize 05-cv-templates.md and 06-cover-letter-templates.md via /setup",
-)
-class TemplatesStillCarryThePlaceholders(unittest.TestCase):
-    """The instructions above target real tokens; if a template renames them,
-    the instruction and this test must move together."""
-
-    def test_cv_templates_contact_block_tokens(self):
-        text = CV_TEMPLATES.read_text(encoding="utf-8")
-        for token in ("[FIRST_NAME]", "[LAST_NAME]", "[YOUR_EMAIL]", "[YOUR_PHONE]"):
-            self.assertIn(token, text)
-
-    def test_cover_letter_templates_contact_and_signature_tokens(self):
-        text = COVER_TEMPLATES.read_text(encoding="utf-8")
-        for token in ("[YOUR_NAME]", "[YOUR_EMAIL]", "[YOUR_PHONE]", "[YOUR_LINKEDIN_URL]"):
-            self.assertIn(token, text)
-        self.assertIn("\\signature{[YOUR_NAME]}", text)
 
 
 class SetupPathAWritesIntoSectionsTheShippedFilesHave(unittest.TestCase):

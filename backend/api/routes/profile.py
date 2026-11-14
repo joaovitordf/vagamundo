@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 from typing import Any, Dict
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends
 
 from backend.api.deps import get_profile
-from backend.api.models import RemoveUploadRequest, UploadFileRequest
+from backend.api.models import ProfileSaveRequest, RemoveUploadRequest, UploadFileRequest
 from backend.api.security import verify_csrf_token
 from backend.core.profile import ProfileService
 
@@ -13,28 +13,25 @@ router = APIRouter(tags=["Profile"])
 
 
 @router.get("/profile")
-async def get_profile_data(
-    refresh: bool = Query(False),
+def get_profile_data(
     profile_svc: ProfileService = Depends(get_profile),
 ) -> Dict[str, Any]:
     """Get candidate profile data and questionnaire answers."""
-    return profile_svc.get_profile_data(refresh=refresh)
+    return profile_svc.get_profile_data()
 
 
 @router.post("/profile")
-async def save_profile_answers(
-    request: Request,
+def save_profile_answers(
+    req: ProfileSaveRequest,
     profile_svc: ProfileService = Depends(get_profile),
     _csrf: str = Depends(verify_csrf_token),
 ) -> Dict[str, Any]:
     """Save answers from the candidate profile form."""
-    body = await request.json()
-    answers = body.get("answers", body)
-    return profile_svc.save_profile_answers(answers)
+    return profile_svc.save_profile_answers(req.to_answers_dict())
 
 
 @router.get("/evolucao")
-async def get_evolution(
+def get_evolution(
     profile_svc: ProfileService = Depends(get_profile),
 ) -> Dict[str, Any]:
     """Get metrics and roadmap evolution data."""
@@ -42,7 +39,7 @@ async def get_evolution(
 
 
 @router.post("/evolucao/atualizar")
-async def update_evolution_endpoint(
+def update_evolution_endpoint(
     profile_svc: ProfileService = Depends(get_profile),
     _csrf: str = Depends(verify_csrf_token),
 ) -> Dict[str, Any]:
@@ -52,7 +49,7 @@ async def update_evolution_endpoint(
 
 
 @router.get("/geo")
-async def get_geo_data(
+def get_geo_data(
     profile_svc: ProfileService = Depends(get_profile),
 ) -> Dict[str, Any]:
     """Get geojson map data."""
@@ -60,7 +57,7 @@ async def get_geo_data(
 
 
 @router.post("/upload")
-async def upload_document(
+def upload_document(
     req: UploadFileRequest,
     profile_svc: ProfileService = Depends(get_profile),
     _csrf: str = Depends(verify_csrf_token),
@@ -70,7 +67,7 @@ async def upload_document(
 
 
 @router.post("/upload-remove")
-async def remove_upload(
+def remove_upload(
     req: RemoveUploadRequest,
     profile_svc: ProfileService = Depends(get_profile),
     _csrf: str = Depends(verify_csrf_token),

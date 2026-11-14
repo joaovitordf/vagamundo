@@ -6,7 +6,7 @@
         <span class="badge-total">{{ allDiscarded().length }} {{ allDiscarded().length === 1 ? 'vaga' : 'vagas' }}</span>
       </div>
       <p class="panel-desc">
-        Vagas descartadas manualmente ou pela triagem automática (nota abaixo de 40). Se quiser recuperar alguma vaga, clique em <strong>Restaurar</strong>.
+        Vagas descartadas manualmente ou pela triagem automática (abaixo da nota de corte configurada). Se quiser recuperar alguma vaga, clique em <strong>Restaurar</strong>.
       </p>
     </div>
     <div class="header-actions">
@@ -38,16 +38,12 @@
         <div class="job-card__header">
           <div>
             <h3 class="job-card__title">{{ job.title || 'Vaga sem título' }}</h3>
-            <p class="job-card__company">{{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}</p>
+            <p class="job-card__company">
+              <span>{{ job.company || 'Empresa não informada' }}</span>
+              <app-portal-badge [portal]="job.portal" [compact]="true"></app-portal-badge>
+            </p>
           </div>
-          @if (job.screening && job.screening.score !== undefined && job.screening.score !== null) {
-            <span class="vc-badge-fit"
-              [class.vc-badge-fit--high]="job.screening.score >= 75"
-              [class.vc-badge-fit--med]="job.screening.score >= 50 && job.screening.score < 75"
-              [class.vc-badge-fit--low]="job.screening.score < 50">
-              {{ job.screening.score }}/100 &bull; {{ job.screening.verdict || (job.screening.score >= 75 ? 'Alta Afinidade' : (job.screening.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
-            </span>
-          }
+          <app-job-badges [screening]="job.screening"></app-job-badges>
         </div>
 
         <div class="job-card__chips">

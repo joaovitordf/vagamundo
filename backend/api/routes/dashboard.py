@@ -11,7 +11,7 @@ router = APIRouter(tags=["Dashboard"])
 
 
 @router.get("/dashboard/stats")
-async def get_dashboard_stats(
+def get_dashboard_stats(
     period_months: int = Query(6, ge=1, le=24, description="Quantidade de meses no histórico temporal"),
     tracker: TrackerService = Depends(get_tracker),
 ) -> Dict[str, Any]:

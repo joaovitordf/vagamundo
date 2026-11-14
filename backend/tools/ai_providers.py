@@ -56,8 +56,12 @@ SPECS: dict[str, dict[str, Any]] = {
     },
     "gemini": {
         "label": "Google Gemini", "short": "Gemini", "aliases": ("google",),
-        "key_var": "GEMINI_API_KEY", "model_var": "GEMINI_MODEL", "default_model": "gemini-3.8-flash",
-        "suggested": ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-4-argon-high", "gemini-4-argon-medium", "gemini-3.8-flash", "gemini-2.5-flash"],
+        "key_var": "GEMINI_API_KEY", "model_var": "GEMINI_MODEL", "default_model": "gemini-4-hydrogen-high",
+        "suggested": [
+            "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-low",
+            "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-4-argon-high", "gemini-4-argon-medium",
+            "gemini-3.8-flash", "gemini-2.5-flash",
+        ],
         "cli": "Antigravity (agy)", "key_url": "https://aistudio.google.com/app/apikey",
     },
     "claude": {
@@ -296,6 +300,13 @@ class Provider:
     def is_available(self) -> bool:
         return self.mode != "none"
 
+    def _effective_gemini_cli_model(self) -> str:
+        """Return the model identifier forwarded to `agy --model=...`."""
+        model_arg = self.model or "gemini-4-hydrogen-high"
+        if model_arg == "gemini-3.8-flash":
+            return "gemini-3.8-flash-high"
+        return model_arg
+
     def get_info(self) -> dict[str, str]:
         mode = self.mode
         short = self.spec["short"]
@@ -303,7 +314,11 @@ class Provider:
             via = "API própria" if self.custom_endpoint else "API"
             label, model = f"{self.spec['label']} ({self.model} via {via})", self.model
         elif mode == "cli":
-            label, model = f"{self.spec['label']} ({self.spec['cli']})", "cli"
+            if self.name == "gemini":
+                eff = self._effective_gemini_cli_model()
+                label, model = f"{self.spec['label']} ({eff} via {self.spec['cli']})", eff
+            else:
+                label, model = f"{self.spec['label']} ({self.spec['cli']})", "cli"
         else:
             label, model = f"{self.spec['label']} (não configurado)", "none"
         return {"provider": self.name, "name": short, "mode": mode, "model": model, "label": label}
@@ -311,7 +326,8 @@ class Provider:
     # -- geração ------------------------------------------------------------
 
     def generate(self, prompt: str, system_instruction: str | None = None,
-                 temperature: float = 0.2, timeout: int = 120) -> str:
+                 temperature: float = 0.2, timeout: int = 120,
+                 response_json: bool = False) -> str:
         mode = self.mode
         if mode == "none":
             raise ProviderError(
@@ -322,9 +338,9 @@ class Provider:
         if not MODEL_RE.match(self.model):
             raise ProviderError(f"nome de modelo inválido: {self.model!r}")
         if self.name == "gemini":
-            return self._generate_gemini(prompt, system_instruction, temperature, timeout)
+            return self._generate_gemini(prompt, system_instruction, temperature, timeout, response_json=response_json)
         if self.name == "openai":
-            return self._generate_openai(prompt, system_instruction, temperature, timeout)
+            return self._generate_openai(prompt, system_instruction, temperature, timeout, response_json=response_json)
         return self._generate_claude(prompt, system_instruction, temperature, timeout)
 
     def _generate_cli(self, prompt: str, system: str | None, timeout: int) -> str:
@@ -335,9 +351,7 @@ class Provider:
                 raise ProviderError(
                     "o pedido é grande demais para o Antigravity CLI (ele só aceita texto na linha de comando); "
                     "informe uma GEMINI_API_KEY em Configurações para usar a API")
-            model_arg = self.model or "gemini-3.8-flash-high"
-            if model_arg == "gemini-3.8-flash":
-                model_arg = "gemini-3.8-flash-high"
+            model_arg = self._effective_gemini_cli_model()
             cmd, stdin = [self.cli_bin, f"--model={model_arg}", f"--print={full}"], None
         elif self.name == "openai":
             cmd = [self.cli_bin, "exec", "--skip-git-repo-check", "-"]
@@ -377,11 +391,15 @@ class Provider:
         err = proc.stderr.decode("utf-8", errors="replace").strip() or out or f"código {proc.returncode}"
         raise ProviderError(f"erro no {self.spec['cli']}: {err[-500:]}")
 
-    def _generate_gemini(self, prompt: str, system: str | None, temperature: float, timeout: int) -> str:
+    def _generate_gemini(self, prompt: str, system: str | None, temperature: float, timeout: int,
+                         response_json: bool = False) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        gen_cfg: dict[str, Any] = {"temperature": temperature, "maxOutputTokens": MAX_OUTPUT_TOKENS}
+        if response_json:
+            gen_cfg["responseMimeType"] = "application/json"
         payload: dict[str, Any] = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": temperature, "maxOutputTokens": MAX_OUTPUT_TOKENS},
+            "generationConfig": gen_cfg,
         }
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
@@ -397,7 +415,8 @@ class Provider:
             raise ProviderError("a resposta do Gemini veio vazia")
         return text
 
-    def _generate_openai(self, prompt: str, system: str | None, temperature: float, timeout: int) -> str:
+    def _generate_openai(self, prompt: str, system: str | None, temperature: float, timeout: int,
+                         response_json: bool = False) -> str:
         if not re.match(r"^https://|^http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(/|$)", self.base_url):
             raise ProviderError("OPENAI_BASE_URL precisa ser https:// (ou http:// só para localhost)")
         messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
@@ -405,6 +424,8 @@ class Provider:
         # Modelos de raciocínio (o1/o3, gpt-5) só aceitam a temperatura padrão e `max_completion_tokens`.
         if not re.match(r"^(o\d|gpt-5)", self.model):
             payload["temperature"] = temperature
+        if response_json and not self.custom_endpoint and not re.match(r"^o\d", self.model):
+            payload["response_format"] = {"type": "json_object"}
         payload["max_completion_tokens" if not self.custom_endpoint else "max_tokens"] = MAX_OUTPUT_TOKENS
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         data = _post_json(f"{self.base_url}/chat/completions", headers, payload, timeout, (self.api_key,))
@@ -556,3 +577,22 @@ def check_connection(provider_id: str | None = None, env: dict[str, str] | None 
     except (ProviderError, ValueError) as exc:
         return {"ok": False, "message": str(exc), "info": provider.get_info()}
     return {"ok": True, "message": f"Respondeu em {time.time() - started:.1f}s: {reply[:60]}", "info": provider.get_info()}
+
+
+def build_system_instruction(provider: Provider | UnconfiguredProvider, system_instruction: str | None = None) -> str:
+    """Build headless system instruction asking the model to identify itself on internal text bodies."""
+    base = system_instruction or (
+        "MODO SOMENTE TEXTO (HEADLESS): Responda diretamente com o texto solicitado usando "
+        "apenas os dados fornecidos no prompt. NÃO invoque ferramentas (command, bash, read_file, etc.)."
+    )
+    info = provider.get_info()
+    model_name = info.get("model") or getattr(provider, "model", "") or info.get("provider") or "ia"
+    if model_name in ("cli", "none"):
+        model_name = getattr(provider, "model", "") or info.get("label") or info.get("provider") or "ia"
+    header_rule = (
+        f"IDENTIFICAÇÃO DO MODELO: Você está rodando com o modelo `{model_name}`. "
+        f"Caso retorne um corpo de texto/Markdown interno para a pessoa candidata (ex.: avaliação, perfil ou dossiê, "
+        f"mas NUNCA em código LaTeX, currículo, carta para recrutador ou JSON puro), "
+        f"coloque brevemente na primeira linha do topo: `> Modelo: {model_name}`."
+    )
+    return f"{base}\n\n{header_rule}"

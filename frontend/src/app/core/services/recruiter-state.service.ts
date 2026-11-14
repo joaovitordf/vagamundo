@@ -1,10 +1,12 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { RecruiterPost } from '../models/vaga.model';
 import {
-  foldText,
+  getPortalDisplayName,
+  getWorkModelLabel,
   isWithinDays,
   matchesRegionFilter,
   matchesScoreFilter,
+  matchesTextFilter,
   parseCalendarDateMs,
   resolveEffectiveWorkModel,
   resolveGeo,
@@ -52,10 +54,7 @@ export function filterAndSortRecruiterPosts(
   if (!opts.hasSearched) return [];
 
   const query = opts.filterText.trim();
-  if (!query) return [];
-
   const days = opts.jobAgeFilter ? Number(opts.jobAgeFilter) : null;
-  const terms = query.split(',').map(t => foldText(t.trim())).filter(Boolean);
 
   let posts = allPosts.filter(p => {
     if (opts.hideNonJobs && p.ai_classification === 'nao_e_vaga') {
@@ -111,11 +110,9 @@ export function filterAndSortRecruiterPosts(
       }
     }
 
-    if (terms.length > 0) {
-      const hay = foldText(
-        `${p.title || ''} ${p.company || ''} ${p.location || ''} ${p.description || ''} ${(p.emails || []).join(' ')} ${(p.matched_keywords || []).join(' ')}`
-      );
-      if (!terms.some(t => hay.includes(t))) return false;
+    if (query) {
+      const hay = `${p.title || ''} ${p.company || ''} ${p.location || ''} ${p.description || ''} ${p.portal || ''} ${getPortalDisplayName(p.portal)} ${getWorkModelLabel(resolveEffectiveWorkModel(p))} ${(p.emails || []).join(' ')} ${(p.matched_keywords || []).join(' ')}`;
+      if (!matchesTextFilter(hay, query)) return false;
     }
 
     return true;
@@ -294,9 +291,21 @@ export class RecruiterStateService {
       if (typeof parsed.regionFilter === 'string') this.regionFilter.set(parsed.regionFilter);
       if (typeof parsed.jobAgeFilter === 'string') this.jobAgeFilter.set(parsed.jobAgeFilter);
       if (typeof parsed.hideUndated === 'boolean') this.hideUndated.set(parsed.hideUndated);
-      this.scoreFilter.set('');
+      if (
+        typeof parsed.scoreFilter === 'string' &&
+        ['', 'high', 'med_plus', 'med', 'low', 'triadas', 'untriaged'].includes(parsed.scoreFilter)
+      ) {
+        this.scoreFilter.set(parsed.scoreFilter);
+      } else {
+        this.scoreFilter.set('');
+      }
 
-      if (parsed.sortBy === 'relevance' || parsed.sortBy === 'date') {
+      if (
+        parsed.sortBy === 'relevance' ||
+        parsed.sortBy === 'date' ||
+        parsed.sortBy === 'score-desc' ||
+        parsed.sortBy === 'score-asc'
+      ) {
         this.sortBy.set(parsed.sortBy);
       } else {
         this.sortBy.set('relevance');

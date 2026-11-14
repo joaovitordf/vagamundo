@@ -43,7 +43,7 @@
 
 .header-title-box {
   flex: 1;
-  min-width: 280px;
+  min-width: min(280px, 100%);
 }
 
 .title-badge-wrap {
@@ -213,7 +213,7 @@
    ------------------------------------------------------------------------- */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   gap: 1rem;
 }
 
@@ -755,4 +755,29 @@
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+:host-context([data-theme="light"]) .dashboard-header-panel {
+  background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+  border-color: rgba(2, 132, 199, 0.25);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
+}
+
+:host-context([data-theme="light"]) .period-toggle-group {
+  background: #f1f5f9;
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+:host-context([data-theme="light"]) .btn-refresh {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.14);
+}
+
+:host-context([data-theme="light"]) .badge-private,
+:host-context([data-theme="light"]) .conversion-pill {
+  color: #047857;
+}
+
+:host-context([data-theme="light"]) .tag-archived-count {
+  color: #a16207;
 }

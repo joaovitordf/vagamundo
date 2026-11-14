@@ -24,41 +24,67 @@ export interface ActiveGeoFilter {
   count: number;
 }
 
-export const PORTAL_LABELS: Record<string, string> = {
-  'gupy-search': 'Gupy',
-  'solides-search': 'Sólides Vagas',
-  'vagas-search': 'VAGAS.com',
-  'infojobs-search': 'InfoJobs',
-  'remotar-search': 'Remotar',
-  'greenhouse-search': 'Greenhouse',
-  'programathor-search': 'Programathor',
-  'geekhunter-search': 'GeekHunter',
-  'michaelpage-search': 'Michael Page',
-  'roberthalf-search': 'Robert Half',
-  'trampos-search': 'Trampos',
-  'pcd-search': 'PCD Online',
-  'agrobase-search': 'Agrobase',
-  'agrosearch-search': 'AGROSearch',
-  'digai-search': 'DigAÍ',
-  'empregos-search': 'Empregos.com.br',
-  'linkedin-search': 'LinkedIn',
-  'freehire-search': 'FreeHire',
-  'hh-search': 'HeadHunter (hh.ru)',
-  'habrcareer-search': 'Habr Career',
-  'remoteok-search': 'RemoteOK',
-  'jobicy-search': 'Jobicy',
-  'hn-search': 'Hacker News (Who is Hiring)',
-  'ashby-search': 'Ashby',
-  'linkedin_post': 'LinkedIn (Post)',
-  'github-vagas': 'GitHub Vagas BR',
-  'remotive-search': 'Remotive',
-  'jobs': 'Banco Local de Vagas',
-  'recruiter_radar': 'Recrutadores',
-  'google-careers': 'Google Careers',
-  'eures': 'EURES (Europa)',
-  'wwr-search': 'We Work Remotely',
-  'lever': 'Lever',
-};
+interface PortalRegistryEntry {
+  id: string;
+  displayName: string;
+  optionName?: string;
+  category?: PortalOption['category'];
+  categoryLabel?: string;
+  badge?: string;
+  isBr?: boolean;
+  remoteOnly?: boolean;
+}
+
+const PORTAL_REGISTRY: PortalRegistryEntry[] = [
+  // Portais Brasil (8 selecionáveis + auxiliares BR)
+  { id: 'gupy-search', displayName: 'Gupy', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'portal.gupy.io', isBr: true },
+  { id: 'solides-search', displayName: 'Sólides Vagas', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PMEs BR', isBr: true },
+  { id: 'vagas-search', displayName: 'VAGAS.com', category: 'brasil', categoryLabel: 'Portais Brasil', isBr: true },
+  { id: 'infojobs-search', displayName: 'InfoJobs', optionName: 'InfoJobs Brasil', category: 'brasil', categoryLabel: 'Portais Brasil', isBr: true },
+  { id: 'empregos-search', displayName: 'Empregos.com.br', category: 'brasil', categoryLabel: 'Portais Brasil', isBr: true },
+  { id: 'trampos-search', displayName: 'Trampos', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Freelas & Tech', isBr: true },
+  { id: 'digai-search', displayName: 'DigAÍ', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Entrevista IA', isBr: true },
+  { id: 'pcd-search', displayName: 'PCD Online', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PcD Exclusivo', isBr: true },
+
+  // Tecnologia & Inovação (5)
+  { id: 'geekhunter-search', displayName: 'GeekHunter', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Tech BR', isBr: true },
+  { id: 'programathor-search', displayName: 'Programathor', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Devs BR', isBr: true },
+  { id: 'remotar-search', displayName: 'Remotar', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: '100% Remoto', isBr: true, remoteOnly: true },
+  { id: 'greenhouse-search', displayName: 'Greenhouse', optionName: 'Greenhouse ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Global & BR' },
+  { id: 'ashby-search', displayName: 'Ashby', optionName: 'Ashby ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'IA & Startups' },
+
+  // Internacional & Remoto Global (7)
+  { id: 'remoteok-search', displayName: 'RemoteOK', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Remoto USD', remoteOnly: true },
+  { id: 'jobicy-search', displayName: 'Jobicy', category: 'global', categoryLabel: 'Internacional & Global', badge: '100% Remoto', remoteOnly: true },
+  { id: 'hn-search', displayName: 'Hacker News (Who is Hiring)', optionName: 'Hacker News (HN)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Who is hiring' },
+  { id: 'freehire-search', displayName: 'FreeHire', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech Global' },
+  { id: 'linkedin-search', displayName: 'LinkedIn', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Global' },
+  { id: 'hh-search', displayName: 'HeadHunter (hh.ru)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Internacional' },
+  { id: 'habrcareer-search', displayName: 'Habr Career', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech RU' },
+
+  // Executivo & Especialistas (2)
+  { id: 'michaelpage-search', displayName: 'Michael Page', category: 'executivo', categoryLabel: 'Executivo & Especialistas', isBr: true },
+  { id: 'roberthalf-search', displayName: 'Robert Half', category: 'executivo', categoryLabel: 'Executivo & Especialistas', isBr: true },
+
+  // Agronegócio (2)
+  { id: 'agrobase-search', displayName: 'Agrobase', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Agro BR', isBr: true },
+  { id: 'agrosearch-search', displayName: 'AGROSearch', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Gestão Agro', isBr: true },
+
+  // Fontes auxiliares / internas (não selecionáveis no dropdown de scraping)
+  { id: 'linkedin_post', displayName: 'LinkedIn (Post)', isBr: true },
+  { id: 'github-vagas', displayName: 'GitHub Vagas BR', isBr: true },
+  { id: 'remotive-search', displayName: 'Remotive', remoteOnly: true },
+  { id: 'jobs', displayName: 'Banco Local de Vagas' },
+  { id: 'recruiter_radar', displayName: 'Recrutadores' },
+  { id: 'google-careers', displayName: 'Google Careers' },
+  { id: 'eures', displayName: 'EURES (Europa)' },
+  { id: 'wwr-search', displayName: 'We Work Remotely', remoteOnly: true },
+  { id: 'lever', displayName: 'Lever' },
+];
+
+export const PORTAL_LABELS: Record<string, string> = Object.fromEntries(
+  PORTAL_REGISTRY.map(p => [p.id, p.displayName])
+);
 
 export const PORTAL_CATEGORIES: Array<{ id: PortalOption['category']; label: string }> = [
   { id: 'brasil', label: 'Portais Brasil' },
@@ -68,41 +94,17 @@ export const PORTAL_CATEGORIES: Array<{ id: PortalOption['category']; label: str
   { id: 'agro', label: 'Agronegócio' },
 ];
 
-export const AVAILABLE_PORTALS: PortalOption[] = [
-  // Portais Brasil (8)
-  { id: 'gupy-search', name: 'Gupy', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'portal.gupy.io' },
-  { id: 'solides-search', name: 'Sólides Vagas', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PMEs BR' },
-  { id: 'vagas-search', name: 'VAGAS.com', category: 'brasil', categoryLabel: 'Portais Brasil' },
-  { id: 'infojobs-search', name: 'InfoJobs Brasil', category: 'brasil', categoryLabel: 'Portais Brasil' },
-  { id: 'empregos-search', name: 'Empregos.com.br', category: 'brasil', categoryLabel: 'Portais Brasil' },
-  { id: 'trampos-search', name: 'Trampos', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Freelas & Tech' },
-  { id: 'digai-search', name: 'DigAÍ', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'Entrevista IA' },
-  { id: 'pcd-search', name: 'PCD Online', category: 'brasil', categoryLabel: 'Portais Brasil', badge: 'PcD Exclusivo' },
-
-  // Tecnologia & Inovação (5)
-  { id: 'geekhunter-search', name: 'GeekHunter', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Tech BR' },
-  { id: 'programathor-search', name: 'Programathor', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Devs BR' },
-  { id: 'remotar-search', name: 'Remotar', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: '100% Remoto' },
-  { id: 'greenhouse-search', name: 'Greenhouse ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'Global & BR' },
-  { id: 'ashby-search', name: 'Ashby ATS', category: 'tech', categoryLabel: 'Tecnologia & Inovação', badge: 'IA & Startups' },
-
-  // Internacional & Remoto Global (7)
-  { id: 'remoteok-search', name: 'RemoteOK', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Remoto USD' },
-  { id: 'jobicy-search', name: 'Jobicy', category: 'global', categoryLabel: 'Internacional & Global', badge: '100% Remoto' },
-  { id: 'hn-search', name: 'Hacker News (HN)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Who is hiring' },
-  { id: 'freehire-search', name: 'FreeHire', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech Global' },
-  { id: 'linkedin-search', name: 'LinkedIn', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Global' },
-  { id: 'hh-search', name: 'HeadHunter (hh.ru)', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Internacional' },
-  { id: 'habrcareer-search', name: 'Habr Career', category: 'global', categoryLabel: 'Internacional & Global', badge: 'Tech RU' },
-
-  // Executivo & Especialistas (2)
-  { id: 'michaelpage-search', name: 'Michael Page', category: 'executivo', categoryLabel: 'Executivo & Especialistas' },
-  { id: 'roberthalf-search', name: 'Robert Half', category: 'executivo', categoryLabel: 'Executivo & Especialistas' },
-
-  // Agronegócio (2)
-  { id: 'agrobase-search', name: 'Agrobase', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Agro BR' },
-  { id: 'agrosearch-search', name: 'AGROSearch', category: 'agro', categoryLabel: 'Agronegócio', badge: 'Gestão Agro' },
-];
+export const AVAILABLE_PORTALS: PortalOption[] = PORTAL_REGISTRY
+  .filter((p): p is PortalRegistryEntry & { category: PortalOption['category']; categoryLabel: string } =>
+    Boolean(p.category && p.categoryLabel)
+  )
+  .map(p => ({
+    id: p.id,
+    name: p.optionName || p.displayName,
+    category: p.category,
+    categoryLabel: p.categoryLabel,
+    ...(p.badge ? { badge: p.badge } : {}),
+  }));
 
 export const VALID_PORTAL_IDS = new Set(AVAILABLE_PORTALS.map(p => p.id));
 
@@ -113,12 +115,9 @@ const WORK_MODEL_LABELS: Record<NormalizedWorkModel, string> = {
   none: 'Não informado',
 };
 
-const BR_PORTALS = new Set([
-  'gupy-search', 'solides-search', 'vagas-search', 'infojobs-search', 'remotar-search',
-  'programathor-search', 'geekhunter-search', 'trampos-search', 'pcd-search',
-  'agrobase-search', 'agrosearch-search', 'digai-search', 'empregos-search',
-  'github-vagas',
-]);
+const BR_PORTALS = new Set(PORTAL_REGISTRY.filter(p => p.isBr).map(p => p.id));
+
+const REMOTE_ONLY_PORTALS = new Set(PORTAL_REGISTRY.filter(p => p.remoteOnly).map(p => p.id));
 
 interface BrUfPattern {
   uf: string;
@@ -213,6 +212,21 @@ function hasTokenMatch(text: string, word: string): boolean {
   return re.test(text);
 }
 
+function hasBrUfCodeMatch(rawLoc: string, ufLower: string): boolean {
+  if (!rawLoc || !ufLower) return false;
+  const ufEsc = escapeRegex(ufLower);
+  if (new RegExp(`^\\s*${ufEsc}\\s*$`, 'i').test(rawLoc)) return true;
+  if (new RegExp(`(?:,|\\/|\\s-\\s|\\(|\\bbrasil\\s+|\\bbrazil\\s+)\\s*${ufEsc}(?:$|[^\\p{L}\\p{N}])`, 'iu').test(rawLoc)) {
+    return true;
+  }
+  const ufUpper = ufLower.toUpperCase();
+  const upperEsc = escapeRegex(ufUpper);
+  if (new RegExp(`(?:^|[\\s-])${upperEsc}(?:$|[^\\p{L}\\p{N}])`, 'u').test(rawLoc)) {
+    return true;
+  }
+  return false;
+}
+
 function toGeoResult(country: WorldPattern, isRemote: boolean): GeoResolution {
   return {
     scope: country.scope,
@@ -232,14 +246,6 @@ export function getPortalDisplayName(portal?: string | null): string {
   if (!portal) return 'Portal';
   return PORTAL_LABELS[portal] || portal.replace(/-search$/, '').toUpperCase();
 }
-
-const REMOTE_ONLY_PORTALS = new Set([
-  'remotar-search',
-  'remotive-search',
-  'remoteok-search',
-  'jobicy-search',
-  'wwr-search',
-]);
 
 export function normalizeWorkModel(raw?: string | null): NormalizedWorkModel {
   const v = String(raw || '').trim().toLowerCase();
@@ -278,9 +284,48 @@ export function resolveEffectiveWorkModel(item: {
   return 'none';
 }
 
+export const FIT_THRESHOLDS = {
+  high: 75,
+  medium: 60,
+} as const;
+
+export const APPROX_FX_TO_BRL = {
+  USD: 5.70,
+  EUR: 6.20,
+  GBP: 7.40,
+} as const;
+
 export function getWorkModelLabel(raw?: string | null): string {
   const norm = normalizeWorkModel(raw);
   return WORK_MODEL_LABELS[norm] || 'Não informado';
+}
+
+/** Formata data YYYY-MM-DD / ISO em DD/MM/AAAA (ou devolve texto limpo se não parseável). */
+export function formatDisplayDate(raw?: string | null): string {
+  if (!raw) return 'Data n/d';
+  const s = String(raw).trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (iso) {
+    return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  }
+  return s;
+}
+
+/** Retorna o primeiro e-mail válido encontrado no registro. */
+export function getPrimaryEmail(item: {
+  ai_best_email?: string | null;
+  contacted_email?: string | null;
+  emails?: string[] | null;
+  recruiter_emails?: string[] | null;
+} | null | undefined): string | null {
+  if (!item) return null;
+  if (item.ai_best_email && item.ai_best_email.trim()) return item.ai_best_email.trim();
+  if (item.contacted_email && item.contacted_email.trim()) return item.contacted_email.trim();
+  const candidates = item.emails || item.recruiter_emails || [];
+  for (const em of candidates) {
+    if (em && String(em).trim()) return String(em).trim();
+  }
+  return null;
 }
 
 /**
@@ -324,6 +369,46 @@ export function isWithinDays(raw: string | null | undefined, days: number, now: 
   const todayUtcMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.floor((todayUtcMs - postedMs) / 86400000);
   return diffDays <= days;
+}
+
+/**
+ * Avalia se uma data (`YYYY-MM-DD` ou `DD/MM/YYYY`) está dentro de um filtro de intervalo
+ * ('all', 'today', '3d', '7d', '15d', '30d', 'custom').
+ */
+export function isWithinDateRange(
+  rawDate: unknown,
+  range: string,
+  customStart = '',
+  customEnd = '',
+  now: Date = new Date()
+): boolean {
+  if (!range || range === 'all') return true;
+  const raw = rawDate === null || rawDate === undefined ? '' : String(rawDate).trim();
+  const postedMs = parseCalendarDateMs(raw);
+  if (postedMs === null) return false;
+
+  if (range === 'custom') {
+    if (customStart) {
+      const startMs = parseCalendarDateMs(customStart);
+      if (startMs !== null && postedMs < startMs) return false;
+    }
+    if (customEnd) {
+      const endMs = parseCalendarDateMs(customEnd);
+      if (endMs !== null && postedMs > endMs) return false;
+    }
+    return true;
+  }
+
+  const daysMap: Record<string, number> = {
+    today: 1,
+    '3d': 3,
+    '7d': 7,
+    '15d': 15,
+    '30d': 30,
+  };
+  const maxDays = daysMap[range];
+  if (maxDays === undefined) return true;
+  return isWithinDays(raw, maxDays, now) === true;
 }
 
 export function resolveGeo(item: {
@@ -374,6 +459,17 @@ export function resolveGeo(item: {
 
   // 1. Países explícitos estrangeiros (quando "Brasil" não está citado explicitamente)
   if (!hasExplicitBrasil) {
+    if (/(?:,|\/|-|\(|\bopen\s+to|\bremote\s+)\s*us\b|^us\b/i.test(rawLoc)) {
+      return {
+        scope: 'global',
+        countryCode: 'US',
+        code: isRemote ? 'US_REMOTE' : 'US',
+        label: 'Estados Unidos',
+        isRemote,
+        remoteBucket: isRemote ? 'GLOBAL_REMOTE' : null,
+      };
+    }
+
     for (const country of WORLD_PATTERNS) {
       if (country.countries.some(w => hasTokenMatch(loc, w))) {
         return toGeoResult(country, isRemote);
@@ -390,7 +486,7 @@ export function resolveGeo(item: {
 
   // 3. Cidades e UFs brasileiras (antes de termos ambíguos como 'porto'/'braga')
   for (const m of BR_UF_WORDS) {
-    if (m.cities.some(city => hasTokenMatch(loc, city)) || hasTokenMatch(loc, m.uf.toLowerCase())) {
+    if (m.cities.some(city => hasTokenMatch(loc, city)) || hasBrUfCodeMatch(rawLoc, m.uf.toLowerCase())) {
       return {
         scope: 'brasil',
         countryCode: 'BR',
@@ -437,7 +533,7 @@ export function resolveGeo(item: {
     return {
       scope: 'brasil',
       countryCode: 'BR',
-      code: isRemote ? 'REMOTO_BR' : 'SP',
+      code: isRemote ? 'REMOTO_BR' : 'BR_NACIONAL',
       label: isRemote ? 'Remoto Brasil' : 'Brasil (Nacional)',
       isRemote,
       remoteBucket: isRemote ? 'REMOTO_BR' : null,
@@ -477,25 +573,65 @@ export function matchesRegionFilter(geo: GeoResolution, region: string): boolean
   return true;
 }
 
+const GENERIC_ROLE_PREFIX_TOKENS = new Set([
+  'desenvolvedor',
+  'desenvolvedora',
+  'programador',
+  'programadora',
+  'engenheiro',
+  'engenheira',
+  'analista',
+  'developer',
+  'engineer',
+  'pessoa',
+  'especialista',
+  'arquiteto',
+  'arquiteta',
+  'cientista',
+  'tecnico',
+  'tecnica',
+]);
+
+function normalizeSearchText(raw: unknown): string {
+  return foldText(raw === null || raw === undefined ? '' : String(raw))
+    .replace(/\(\s*[aoe]s?\s*\)/g, '')
+    .replace(/[^a-z0-9+#.]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clauseMatchesNormalized(clauseTokens: string[], targetNorm: string): boolean {
+  if (!clauseTokens.length || !targetNorm) return false;
+  if (clauseTokens.every(tok => targetNorm.includes(tok))) return true;
+  const coreTokens = clauseTokens.filter(tok => !GENERIC_ROLE_PREFIX_TOKENS.has(tok));
+  if (coreTokens.length > 0 && coreTokens.length < clauseTokens.length) {
+    return coreTokens.every(tok => targetNorm.includes(tok));
+  }
+  return false;
+}
+
 export function matchesTextFilter(
   haystack: string,
   rawText: string,
   options?: { hasDescription?: boolean; fallbackQuery?: string; lastSearchQuery?: string }
 ): boolean {
-  const trimmed = rawText.trim();
+  const trimmed = String(rawText || '').trim();
   if (!trimmed) return true;
 
-  const terms = trimmed.split(',').map(t => foldText(t.trim())).filter(Boolean);
-  if (!terms.length) return true;
+  const clauseTokenLists = trimmed
+    .split(',')
+    .map(clause => normalizeSearchText(clause).split(' ').filter(Boolean))
+    .filter(tokens => tokens.length > 0);
+  if (!clauseTokenLists.length) return true;
 
-  const hay = foldText(haystack);
-  if (terms.some(t => hay.includes(t))) return true;
+  const hayNorm = normalizeSearchText(haystack);
+  if (clauseTokenLists.some(tokens => clauseMatchesNormalized(tokens, hayNorm))) return true;
 
   const hasDesc = options?.hasDescription ?? true;
   const isCurrentSearchQuery = Boolean(options?.lastSearchQuery && trimmed === options.lastSearchQuery);
   if (!hasDesc && isCurrentSearchQuery && options?.fallbackQuery) {
-    const qFold = foldText(options.fallbackQuery);
-    return terms.some(t => qFold.includes(t));
+    const qNorm = normalizeSearchText(options.fallbackQuery);
+    return clauseTokenLists.some(tokens => clauseMatchesNormalized(tokens, qNorm));
   }
 
   return false;
@@ -513,8 +649,78 @@ export function matchesScoreFilter(
   if (filterScore === 'untriaged') return !evaluated || numScore === null;
   if (filterScore === 'triadas') return numScore !== null;
   if (numScore === null) return false;
-  if (filterScore === 'high') return numScore >= 75;
-  if (filterScore === 'med') return numScore >= 60;
-  if (filterScore === 'low') return numScore < 60;
+  if (filterScore === 'high') return numScore >= FIT_THRESHOLDS.high;
+  if (filterScore === 'med_plus') return numScore >= FIT_THRESHOLDS.medium;
+  if (filterScore === 'med') return numScore >= FIT_THRESHOLDS.medium && numScore < FIT_THRESHOLDS.high;
+  if (filterScore === 'low') return numScore < FIT_THRESHOLDS.medium;
   return true;
+}
+
+export function formatSalaryBRL(raw?: string): string {
+  if (!raw) return '';
+  const text = raw.trim();
+  if (text.includes('R$') || text.toLowerCase().includes('brl')) {
+    return text;
+  }
+
+  let rate: number = APPROX_FX_TO_BRL.USD;
+  let currencySymbol = 'USD';
+
+  if (text.includes('€') || text.toLowerCase().includes('eur')) {
+    rate = APPROX_FX_TO_BRL.EUR;
+    currencySymbol = 'EUR';
+  } else if (text.includes('£') || text.toLowerCase().includes('gbp')) {
+    rate = APPROX_FX_TO_BRL.GBP;
+    currencySymbol = 'GBP';
+  }
+
+  const matches = text.match(/\d+([.,]\d+)?/g);
+  if (!matches || matches.length === 0) return text;
+
+  const nums = matches
+    .map((m) => {
+      const clean = m.replace(/\./g, '').replace(/,/g, '');
+      let val = Number(clean);
+      if (val < 1000 && (text.toLowerCase().includes('k') || text.toLowerCase().includes('mil'))) {
+        val *= 1000;
+      }
+      return val;
+    })
+    .filter((n) => !isNaN(n) && n > 0);
+
+  if (nums.length === 0) return text;
+
+  const isAnnual =
+    text.toLowerCase().includes('/ano') ||
+    text.toLowerCase().includes('/yr') ||
+    text.toLowerCase().includes('annual') ||
+    nums[0] > 25000;
+
+  const toBrlMonthly = (val: number) => {
+    const annualOrMonthly = isAnnual ? val / 12 : val;
+    const brl = Math.round(annualOrMonthly * rate);
+    return 'R$ ' + brl.toLocaleString('pt-BR');
+  };
+
+  if (nums.length >= 2) {
+    return `${toBrlMonthly(nums[0])} - ${toBrlMonthly(nums[1])}/mês (~${currencySymbol})`;
+  }
+  return `${toBrlMonthly(nums[0])}/mês (~${currencySymbol})`;
+}
+
+export function hasVisaSponsorship(vaga: { visa_sponsorship?: boolean | string | number }): boolean {
+  return (
+    vaga.visa_sponsorship === true ||
+    vaga.visa_sponsorship === 'true' ||
+    vaga.visa_sponsorship === 1
+  );
+}
+
+export function isJobUndated(vaga: { date?: string | null }): boolean {
+  return parseCalendarDateMs(vaga.date) === null;
+}
+
+export function getJobWarning(vaga: { signals?: { warnings?: string[] } }): string | null {
+  const v = vaga.signals?.warnings?.[0];
+  return v ? v.replace(/^posting_signals:\s*/, '').trim() : null;
 }

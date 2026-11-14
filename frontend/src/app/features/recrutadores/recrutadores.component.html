@@ -15,7 +15,7 @@
       </div>
       <p class="panel-desc">
         Oportunidades e contatos com <strong>e-mail direto (&#64;)</strong> do recrutador ou da empresa.
-        Os dados são minerados a partir das vagas salvas no banco local (coletadas de portais como Remotar, FreeHire, Gupy, etc.) e threads públicas de contratação direta.
+        Ao buscar, o sistema minera em múltiplas fontes confiáveis (GitHub Vagas BR, Hacker News Who is Hiring, Remotive, Remotar, FreeHire, RemoteOK, base local e LinkedIn Automático).
       </p>
     </div>
 
@@ -101,12 +101,28 @@
         </select>
       </div>
 
-      <!-- Campo 6: Ordenação -->
+      <!-- Campo 6: Avaliação da IA -->
+      <div class="filter-field">
+        <label for="f-recruiter-score">Avaliação da IA</label>
+        <select id="f-recruiter-score" class="vc-select" [(ngModel)]="scoreFilter">
+          <option value="">Qualquer nota (com ou sem IA)</option>
+          <option value="high">Alta afinidade (75+)</option>
+          <option value="med_plus">Notas médias ou maiores (60+)</option>
+          <option value="med">Apenas média (60 a 74)</option>
+          <option value="low">Menores notas (&lt; 60)</option>
+          <option value="triadas">Apenas vagas com nota</option>
+          <option value="untriaged">Sem nota (Não triadas)</option>
+        </select>
+      </div>
+
+      <!-- Campo 7: Ordenação -->
       <div class="filter-field">
         <label for="f-recruiter-sort">Ordenação</label>
         <select id="f-recruiter-sort" class="vc-select" [(ngModel)]="sortBy">
           <option value="relevance">Mais relevantes (Padrão)</option>
           <option value="date">Mais recentes primeiro</option>
+          <option value="score-desc">Maior nota da IA</option>
+          <option value="score-asc">Menor nota da IA</option>
         </select>
       </div>
 
@@ -149,7 +165,7 @@
                   [class.is-running]="autoMode.isRunning()"
                   (click)="triggerAutoMode()"
                   [disabled]="autoMode.isRunning() && autoMode.status()?.mode !== 'recruiters'"
-                  title="Sorteia 1 palavra-chave focalizada do CV por rodada, descarta bancos de talentos, marca posts que não são vagas e move vagas compatíveis para Me Interessam">
+                  title="Busca em paralelo no LinkedIn (quando conectado) e nas demais fontes, descarta bancos de talentos e move vagas compatíveis para Me Interessam">
             <i class="bi" [class.bi-stop-circle]="autoMode.isRunning()" [class.bi-robot]="!autoMode.isRunning()"></i>
             <span>{{ autoMode.isRunning() && autoMode.status()?.mode === 'recruiters' ? 'Parar Automático' : 'Modo Automático' }}</span>
           </button>
@@ -183,10 +199,15 @@
         </div>
 
         <button type="button"
-                class="btn-action linkedin-btn"
-                (click)="openLinkedInContentSearch()"
-                title="Buscar publicações com e-mail diretamente no feed do LinkedIn">
-          <i class="bi bi-linkedin"></i> Buscar no LinkedIn ↗
+                class="btn-action secondary compact-btn"
+                [disabled]="triaging() || loading() || untriagedVisibleCount() === 0"
+                (click)="onTriagePending()"
+                title="Avalia com IA as publicações visíveis ainda sem nota (máx. 12 por vez)">
+          @if (triaging()) {
+            <span class="vc-spinner"></span> Triando IA...
+          } @else {
+            <i class="bi bi-stars"></i> Triar com IA ({{ untriagedVisibleCount() }})
+          }
         </button>
       </div>
 
@@ -198,6 +219,85 @@
           <span class="status-badge error"><i class="bi bi-exclamation-triangle"></i> {{ errorMessage() }}</span>
         }
       </div>
+    </div>
+
+    <!-- BARRA COMPACTA: STATUS DO LINKEDIN AUTOMÁTICO -->
+    <div class="linkedin-worker-bar">
+      <div class="linkedin-worker-main">
+        <div class="linkedin-worker-identity">
+          <span class="linkedin-strip-title">
+            <i class="bi bi-linkedin"></i> LinkedIn Automático
+          </span>
+          <span class="linkedin-status-pill" [attr.data-status]="linkedInStatus()?.status || 'not_connected'">
+            {{ linkedInStatusLabel() }}
+          </span>
+          <span class="linkedin-meta-pill">
+            {{ linkedInPostsCount() }} {{ linkedInPostsCount() === 1 ? 'post no radar' : 'posts no radar' }}
+          </span>
+          @if (linkedInStatus(); as li) {
+            @if (li.last_query) {
+              <span class="linkedin-meta-pill" title="Diagnóstico da última coleta automática no LinkedIn">
+                Última: "{{ li.last_query }}" · {{ li.last_cards_total ?? 0 }} cards · {{ li.last_imported }} c/ e-mail
+              </span>
+            }
+          }
+        </div>
+
+        <div class="linkedin-worker-actions">
+          @if (linkedInStatus(); as li) {
+            @if (li.status === 'awaiting_login') {
+              <button type="button"
+                      class="btn-action linkedin-btn compact-btn"
+                      [disabled]="linkedInBusy()"
+                      (click)="verifyLinkedIn()">
+                <i class="bi bi-check2-circle"></i> Já entrei (Verificar)
+              </button>
+            } @else if (li.status === 'connected') {
+              <button type="button"
+                      class="btn-action secondary compact-btn"
+                      [disabled]="linkedInBusy()"
+                      (click)="disconnectLinkedIn()"
+                      title="Fecha o navegador isolado e remove os cookies salvos do LinkedIn">
+                <i class="bi bi-box-arrow-right"></i> Desconectar
+              </button>
+            } @else {
+              <button type="button"
+                      class="btn-action linkedin-btn compact-btn"
+                      [disabled]="linkedInBusy() || !li.browser_available"
+                      (click)="connectLinkedIn()"
+                      title="Abre uma janela visível isolada para você entrar 1 vez na sua conta do LinkedIn">
+                <i class="bi bi-linkedin"></i>
+                {{ li.status === 'login_required' || li.status === 'checkpoint_required' ? 'Reconectar LinkedIn' : 'Conectar LinkedIn (1ª vez)' }}
+              </button>
+            }
+          } @else {
+            <button type="button"
+                    class="btn-action linkedin-btn compact-btn"
+                    [disabled]="linkedInBusy()"
+                    (click)="connectLinkedIn()">
+              <i class="bi bi-linkedin"></i> Conectar LinkedIn (1ª vez)
+            </button>
+          }
+        </div>
+      </div>
+
+      @if (linkedInStatus()?.status === 'awaiting_login') {
+        <div class="linkedin-login-hint">
+          <i class="bi bi-info-circle-fill"></i>
+          <span>
+            Entre no LinkedIn na janela aberta (se seu e-mail for Gmail e o Google bloquear o login social, use
+            <strong>"Esqueci a senha"</strong> na tela do LinkedIn para definir uma senha direta). Depois de entrar no feed,
+            <strong>feche a janela</strong> do navegador que conectamos automaticamente (ou clique em <strong>Já entrei</strong>).
+          </span>
+        </div>
+      }
+
+      @if (linkedInStatus()?.status === 'login_required' || linkedInStatus()?.status === 'checkpoint_required' || linkedInStatus()?.status === 'unavailable') {
+        <div class="linkedin-worker-alert">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <span>{{ linkedInStatus()?.last_error || linkedInStatusLabel() }}</span>
+        </div>
+      }
     </div>
 
   </section>
@@ -237,17 +337,12 @@
       <div class="empty-state">
         <i class="bi bi-inbox empty-icon"></i>
         <h3>Nenhuma publicação encontrada</h3>
-        <p>Nenhuma oportunidade com e-mail correspondeu às palavras-chave e filtros informados. Tente outros termos, limpe os filtros secundários ou busque diretamente no LinkedIn.</p>
-        <div class="empty-actions-row">
-          @if (hasSecondaryFilters()) {
-            <button type="button" class="btn-clear-all-filters mt-3" (click)="resetSecondaryFilters()">
-              <i class="bi bi-x-circle"></i> Limpar filtros
-            </button>
-          }
-          <button type="button" class="btn-action linkedin-btn mt-3" (click)="openLinkedInContentSearch()">
-            <i class="bi bi-linkedin"></i> Buscar no LinkedIn ↗
+        <p>Nenhuma oportunidade com e-mail correspondeu às palavras-chave e filtros informados. Tente outros termos ou limpe os filtros secundários.</p>
+        @if (hasSecondaryFilters()) {
+          <button type="button" class="btn-clear-all-filters mt-3" (click)="resetSecondaryFilters()">
+            <i class="bi bi-x-circle"></i> Limpar filtros
           </button>
-        </div>
+        }
       </div>
     } @else {
       <div class="posts-grid">
@@ -255,73 +350,84 @@
           <article class="post-card" [class.post-card--non-job]="post.ai_classification === 'nao_e_vaga'">
 
             <!-- BLOCO DE DESTAQUE: E-MAIL E CONTEXTO -->
-            <div class="email-highlight-banner">
-              @if (post.previously_contacted && post.previously_contacted.length > 0) {
-                <div class="duplicate-outreach-alert" title="Você já enviou e-mail para um destes endereços anteriormente">
-                  <i class="bi bi-exclamation-triangle-fill"></i>
-                  <span>
-                    E-mail já contatado em <strong>{{ formatShortDate(post.previously_contacted[0].contacted_at) }}</strong>
-                    ({{ post.previously_contacted[0].email }} — {{ post.previously_contacted[0].company }})
-                  </span>
-                </div>
-              }
+            @if (post.emails && post.emails.length > 0) {
+              <div class="email-highlight-banner">
+                @if (post.previously_contacted && post.previously_contacted.length > 0) {
+                  <div class="duplicate-outreach-alert" title="Você já enviou e-mail para um destes endereços anteriormente">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <span>
+                      E-mail já contatado em <strong>{{ formatShortDate(post.previously_contacted[0].contacted_at) }}</strong>
+                      ({{ post.previously_contacted[0].email }} — {{ post.previously_contacted[0].company }})
+                    </span>
+                  </div>
+                }
 
-              <div class="emails-row">
-                <span class="email-label"><i class="bi bi-envelope-check"></i> E-mail(s) para contato:</span>
-                <div class="emails-chips">
-                  @for (email of post.emails; track email) {
-                    <button type="button"
-                            class="email-chip"
-                            [class.email-chip--best]="post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()"
-                            [class.email-chip--contacted]="!!getPreviouslyContactedMatch(post, email)"
-                            (click)="copyEmail(email, post)"
-                            [title]="getPreviouslyContactedMatch(post, email) ? 'Você já contatou este e-mail em ' + formatShortDate(getPreviouslyContactedMatch(post, email)?.contacted_at) + ' — clique para copiar' : 'Clique para copiar o e-mail'">
-                      <span class="email-text">{{ email }}</span>
-                      @if (getPreviouslyContactedMatch(post, email)) {
-                        <span class="copy-badge contacted-pill">Já contatado</span>
-                      } @else if (post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()) {
-                        <span class="copy-badge best-email-pill">Principal</span>
-                      }
-                      @if (copiedEmail() === email) {
-                        <span class="copy-badge copied"><i class="bi bi-check"></i> Copiado!</span>
-                      } @else {
-                        <span class="copy-badge"><i class="bi bi-clipboard"></i> Copiar</span>
-                      }
-                    </button>
-                  }
-                </div>
-              </div>
-
-              @if (copiedPrompt()?.postId === post.id) {
-                <div class="post-copy-prompt">
-                  <span class="post-copy-prompt__text">
-                    <i class="bi bi-send-check"></i>
-                    Copiou <strong>{{ copiedPrompt()!.email }}</strong> — já enviou o e-mail?
-                  </span>
-                  <div class="post-copy-prompt__actions">
-                    <button type="button"
-                            class="btn-prompt-confirm"
-                            (click)="onMarkContactedClick(post, copiedPrompt()!.email)"
-                            [disabled]="isPostBusy(post.id)">
-                      <i class="bi bi-check2-circle"></i> Já mandei e-mail
-                    </button>
-                    <button type="button"
-                            class="btn-prompt-dismiss"
-                            (click)="dismissCopyPrompt()"
-                            title="Fechar lembrete">
-                      <i class="bi bi-x"></i>
-                    </button>
+                <div class="emails-row">
+                  <span class="email-label"><i class="bi bi-envelope-check"></i> E-mail(s) para contato:</span>
+                  <div class="emails-chips">
+                    @for (email of post.emails; track email) {
+                      <button type="button"
+                              class="email-chip"
+                              [class.email-chip--best]="post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()"
+                              [class.email-chip--contacted]="!!getPreviouslyContactedMatch(post, email)"
+                              (click)="copyEmail(email, post)"
+                              [title]="getPreviouslyContactedMatch(post, email) ? 'Você já contatou este e-mail em ' + formatShortDate(getPreviouslyContactedMatch(post, email)?.contacted_at) + ' — clique para copiar' : 'Clique para copiar o e-mail'">
+                        <span class="email-text">{{ email }}</span>
+                        @if (getPreviouslyContactedMatch(post, email)) {
+                          <span class="copy-badge contacted-pill">Já contatado</span>
+                        } @else if (post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()) {
+                          <span class="copy-badge best-email-pill">Principal</span>
+                        }
+                        @if (copiedEmail() === email) {
+                          <span class="copy-badge copied"><i class="bi bi-check"></i> Copiado!</span>
+                        } @else {
+                          <span class="copy-badge"><i class="bi bi-clipboard"></i> Copiar</span>
+                        }
+                      </button>
+                    }
                   </div>
                 </div>
-              }
 
-              @if (post.email_context) {
-                <div class="context-snippet" title="Trecho da publicação onde o e-mail é citado">
-                  <i class="bi bi-quote quote-icon"></i>
-                  <span class="snippet-text">{{ post.email_context }}</span>
+                @if (copiedPrompt()?.postId === post.id) {
+                  <div class="post-copy-prompt">
+                    <span class="post-copy-prompt__text">
+                      <i class="bi bi-send-check"></i>
+                      Copiou <strong>{{ copiedPrompt()!.email }}</strong> — já enviou o e-mail?
+                    </span>
+                    <div class="post-copy-prompt__actions">
+                      <button type="button"
+                              class="btn-prompt-confirm"
+                              (click)="onMarkContactedClick(post, copiedPrompt()!.email)"
+                              [disabled]="isPostBusy(post.id)">
+                        <i class="bi bi-check2-circle"></i> Já mandei e-mail
+                      </button>
+                      <button type="button"
+                              class="btn-prompt-dismiss"
+                              (click)="dismissCopyPrompt()"
+                              title="Fechar lembrete">
+                        <i class="bi bi-x"></i>
+                      </button>
+                    </div>
+                  </div>
+                }
+
+                @if (post.email_context) {
+                  <div class="context-snippet" title="Trecho da publicação onde o e-mail é citado">
+                    <i class="bi bi-quote quote-icon"></i>
+                    <span class="snippet-text">{{ post.email_context }}</span>
+                  </div>
+                }
+              </div>
+            } @else if (post.url) {
+              <div class="email-highlight-banner email-highlight-banner--linkedin">
+                <div class="emails-row">
+                  <span class="email-label"><i class="bi bi-linkedin"></i> Contato / candidatura direto na publicação do LinkedIn</span>
+                  <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
+                    <i class="bi bi-box-arrow-up-right"></i> Abrir publicação no LinkedIn
+                  </a>
                 </div>
-              }
-            </div>
+              </div>
+            }
 
             <!-- CABEÇALHO DO CARD -->
             <div class="post-header">
@@ -336,16 +442,21 @@
                     <i class="bi bi-exclamation-octagon"></i> Não é vaga
                   </span>
                 }
+                @if (post.ai_model) {
+                  <span class="vc-badge-model" title="Modelo de IA que gerou esta triagem">
+                    <i class="bi bi-cpu"></i> {{ post.ai_model }}
+                  </span>
+                }
                 @if (post.ai_classification === 'vaga_ativa' && post.ai_score !== null && post.ai_score !== undefined) {
                   <span class="ai-score-badge"
-                        [class.ai-score-badge--high]="post.ai_score >= 70"
-                        [class.ai-score-badge--med]="post.ai_score >= 50 && post.ai_score < 70"
-                        [class.ai-score-badge--low]="post.ai_score < 50"
-                        title="Nota calculada pela IA contra seu currículo">
+                        [class.ai-score-badge--high]="post.ai_score >= fitThresholds.high"
+                        [class.ai-score-badge--med]="post.ai_score >= fitThresholds.medium && post.ai_score < fitThresholds.high"
+                        [class.ai-score-badge--low]="post.ai_score < fitThresholds.medium"
+                        title="Nota calculada pela IA na rubrica 30/25/15/30 contra seu currículo">
                     <i class="bi bi-robot"></i> {{ post.ai_score }}/100 &bull; {{ post.ai_verdict || 'Avaliada' }}
                   </span>
                 }
-                <span class="portal-badge" [attr.data-portal]="post.portal">{{ getPortalLabel(post.portal) }}</span>
+                <app-portal-badge [portal]="post.portal"></app-portal-badge>
               </div>
             </div>
 
@@ -371,7 +482,7 @@
                   <i class="bi bi-calendar-x"></i> Sem data
                 </span>
               } @else if (post.published_date) {
-                <span class="meta-item"><i class="bi bi-calendar3"></i> {{ post.published_date }}</span>
+                <span class="meta-item"><i class="bi bi-calendar3"></i> {{ formatShortDate(post.published_date) }}</span>
               }
               @if (post.url) {
                 <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
@@ -430,13 +541,15 @@
                       <i class="bi bi-bookmark-plus"></i> Me interessa
                     </button>
 
-                    <button type="button"
-                            class="btn-footer-contacted"
-                            (click)="onMarkContactedClick(post)"
-                            [disabled]="isPostBusy(post.id)"
-                            title="Registrar que já enviou o e-mail e mover para Minhas Candidaturas">
-                      <i class="bi bi-send-check"></i> Já mandei e-mail
-                    </button>
+                    @if (post.emails && post.emails.length > 0) {
+                      <button type="button"
+                              class="btn-footer-contacted"
+                              (click)="onMarkContactedClick(post)"
+                              [disabled]="isPostBusy(post.id)"
+                              title="Registrar que já enviou o e-mail e mover para Minhas Candidaturas">
+                        <i class="bi bi-send-check"></i> Já mandei e-mail
+                      </button>
+                    }
 
                     <button type="button"
                             class="btn-dismiss"

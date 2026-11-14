@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
     verdict TEXT,
     strengths TEXT,
     gaps TEXT,
+    language_gate TEXT,
+    language_note TEXT,
     report_md TEXT,
     ai_provider TEXT,
     created_at TEXT NOT NULL
@@ -155,6 +157,7 @@ CREATE TABLE IF NOT EXISTS recruiter_posts (
     ai_verdict TEXT,
     ai_summary TEXT,
     ai_best_email TEXT,
+    ai_model TEXT,
     ai_evaluated_at TEXT,
     auto_promoted INTEGER DEFAULT 0,
     auto_run_id TEXT,

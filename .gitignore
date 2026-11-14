@@ -209,6 +209,7 @@ data/*.db-shm
 data/documents/
 data/generated/
 data/cache/
+data/browser_profile/
 !data/.gitkeep
 
 # Databases and SQL dumps (schema.sql is tracked)

@@ -8,21 +8,57 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.api.app import app
-from backend.api.deps import get_tracker
+from backend.api.deps import get_docgen, get_profile, get_tracker
 from backend.api.security import get_token
+from backend.core.docgen import DocGenService
+from backend.core.profile import ProfileService
 from backend.db.repository import Repository
 from backend.core.tracker import TrackerService
+from backend.tools import ai_providers, painel, painel_ia, painel_perfil, scrape_run
 
 
 class TestFastAPI(unittest.TestCase):
     def setUp(self):
         import os
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        self.db_path = Path(self.tmp.name) / "test_api.db"
+        tmp_dir = Path(self.tmp.name)
+        fake_root = tmp_dir / "workspace" / "backend"
+        (fake_root / "documents").mkdir(parents=True, exist_ok=True)
+        (fake_root / "job_scraper").mkdir(parents=True, exist_ok=True)
+        fake_claude = fake_root / "documents" / "applications" / "_painel"
+        fake_seen = fake_root / "job_scraper" / "seen_jobs.json"
+        fake_tracker = fake_root / "documents" / "job_search_tracker.csv"
+
+        for target, value in (
+            (painel, ("ROOT", fake_root)),
+            (painel, ("CLAUDE_DIR", fake_claude)),
+            (painel, ("EVOLUTION_PATH", fake_root / "documents" / "evolucao.json")),
+            (painel, ("WORK_CONTEXT_DIR", tmp_dir / "work")),
+            (painel_ia, ("PAINEL_DIR", fake_claude)),
+            (painel_perfil, ("ROOT", fake_root)),
+            (painel_perfil, ("REPO_ROOT", fake_root.parent)),
+            (painel_perfil, ("DOCUMENTS", fake_root / "documents")),
+            (painel_perfil, ("ANSWERS", fake_root / "documents" / "perfil" / "respostas.json")),
+            (scrape_run, ("SEEN", fake_seen)),
+            (scrape_run, ("TRACKER", fake_tracker)),
+            (painel.scrape_run, ("SEEN", fake_seen)),
+            (painel.scrape_run, ("TRACKER", fake_tracker)),
+            (ai_providers, ("ENV_PATH", tmp_dir / ".env")),
+        ):
+            attr, new_val = value
+            p = patch.object(target, attr, new_val)
+            p.start()
+            self.addCleanup(p.stop)
+
+        self.db_path = tmp_dir / "test_api.db"
         os.environ["VAGAMUNDO_DB_PATH"] = str(self.db_path)
         self.repo = Repository(self.db_path)
         self.tracker = TrackerService(self.repo)
+        self.docgen = DocGenService(self.repo)
+        self.profile_svc = ProfileService()
         app.dependency_overrides[get_tracker] = lambda: self.tracker
+        app.dependency_overrides[get_docgen] = lambda: self.docgen
+        app.dependency_overrides[get_profile] = lambda: self.profile_svc
         self.client = TestClient(app)
         self.token = get_token()
 
@@ -226,12 +262,6 @@ class TestFastAPI(unittest.TestCase):
         bad_resp = self.client.get("/api/file?path=../../etc/passwd")
         self.assertIn(bad_resp.status_code, (403, 404))
 
-    def test_clear_discarded_endpoint(self):
-        resp = self.client.post("/api/discarded/clear", headers={"X-Painel-Token": self.token})
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertTrue(data.get("ok"))
-
     def test_clear_documents_endpoint_protects_cv(self):
         resp = self.client.post("/api/documents/clear?keep_cv=true", headers={"X-Painel-Token": self.token})
         self.assertEqual(resp.status_code, 200)
@@ -357,6 +387,213 @@ class TestFastAPI(unittest.TestCase):
 
         ok_local = self.client.get("/api/token", headers={"Host": "localhost:4200"})
         self.assertEqual(ok_local.status_code, 200)
+
+    def test_saved_batch_reevaluate_discard_and_applied_endpoints(self):
+        from backend.api.deps import get_evaluator
+        from backend.core.evaluator import EvaluatorService
+        from backend.tools import painel, painel_ia
+
+        tmp_dir = Path(self.tmp.name)
+        seen_file = tmp_dir / "seen_jobs.json"
+        tracker_csv = tmp_dir / "job_search_tracker.csv"
+        evo_json = tmp_dir / "evolution.json"
+        claude_dir = tmp_dir / "painel_cache"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+
+        evaluator = EvaluatorService(repo=self.repo)
+        app.dependency_overrides[get_evaluator] = lambda: evaluator
+
+        url_http = "https://example.com/vaga-saved-1"
+        url_rec = "recruiter://post/999"
+        self.repo.upsert_job({
+            "title": "Dev Java Junior",
+            "company": "Acme",
+            "url": url_http,
+            "portal": "gupy-search",
+            "status": "interested",
+            "description": "Desenvolvimento backend em Java com Spring Boot e SQL.",
+        })
+        self.repo.upsert_job({
+            "title": "Backend Recruiter",
+            "company": "Beta",
+            "url": url_rec,
+            "portal": "github-vagas",
+            "status": "interested",
+            "description": "Vaga Java Júnior via recrutador direto.",
+        })
+
+        fake_report = (
+            "> Modelo: gemini-4-hydrogen-high\n\n"
+            "## Avaliação de encaixe: Dev\n\n"
+            "**Nota geral: 35/100**\n\n"
+            "### Veredito: Weak Fit\n\n"
+            "### Recomendação\n"
+            "Reavaliada com novo modelo.\n"
+        )
+
+        with patch("backend.tools.painel.CLAUDE_DIR", claude_dir), \
+             patch("backend.tools.painel_ia.PAINEL_DIR", claude_dir), \
+             patch("backend.tools.painel.scrape_run.SEEN", seen_file), \
+             patch("backend.tools.painel.scrape_run.TRACKER", tracker_csv), \
+             patch("backend.tools.painel.EVOLUTION_PATH", evo_json), \
+             patch("backend.tools.painel.record_applied", return_value={"ok": True}), \
+             patch("backend.tools.painel.discard_job", return_value={"discarded": True}), \
+             patch("backend.tools.painel_ia.avaliar_vaga", return_value=fake_report):
+
+            # 1. Batch re-evaluation via EvaluatorService (must never auto-discard < 40 and must persist report + ai_model)
+            started = evaluator.start_reevaluate_batch([url_http, url_rec], workers=1, blocking=True)
+            self.assertTrue(started)
+            st = self.client.get("/api/saved/batch-status").json()
+            self.assertFalse(st["running"])
+            self.assertEqual(st["current"], 2)
+            self.assertEqual(st["total"], 2)
+            self.assertEqual(st["errors"], 0)
+
+            for u in (url_http, url_rec):
+                j = self.repo.get_job_by_url(u)
+                self.assertEqual(j["status"], "interested")
+                self.assertEqual(j["rank_score"], 35)
+                cached = painel.get_cached_score(u)
+                self.assertIsNotNone(cached)
+                self.assertEqual(cached["ai_model"], "gemini-4-hydrogen-high")
+                self.assertEqual(cached["summary"], "Reavaliada com novo modelo.")
+
+            # 2. HTTP batch-reevaluate validation
+            bad_reeval = self.client.post(
+                "/api/saved/batch-reevaluate",
+                json={"urls": ["ftp://invalid"]},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(bad_reeval.status_code, 400)
+
+            # 3. Batch discard
+            disc_resp = self.client.post(
+                "/api/saved/batch-discard",
+                json={"urls": [url_http]},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(disc_resp.status_code, 200)
+            self.assertEqual(disc_resp.json()["discarded"], 1)
+            self.assertEqual(self.repo.get_job_by_url(url_http)["status"], "discarded")
+
+            # 4. Batch mark applied
+            app_resp = self.client.post(
+                "/api/applied/batch",
+                json={"items": [{"url": url_rec, "company": "Beta", "role": "Backend Recruiter", "portal": "github-vagas"}]},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(app_resp.status_code, 200)
+            self.assertEqual(app_resp.json()["applied"], 1)
+            self.assertEqual(self.repo.get_job_by_url(url_rec)["status"], "applied")
+
+    def test_claude_perfil_step_passes_answers_and_maps_value_error(self):
+        from backend.tools import painel
+
+        tmp_dir = Path(self.tmp.name)
+        claude_dir = tmp_dir / "claude_cache"
+        answers_file = tmp_dir / "respostas.json"
+        answers_file.write_text('{"cargos": ["Desenvolvedor Python"]}', encoding="utf-8")
+
+        with patch("backend.tools.painel_perfil.ANSWERS", answers_file), \
+             patch("backend.tools.painel.CLAUDE_DIR", claude_dir), \
+             patch("backend.tools.painel_ia.montar_perfil", return_value="> Modelo: gemini-test\n\n## Perfil consolidado") as mock_perfil:
+            resp = self.client.post(
+                "/api/claude",
+                json={"step": "perfil", "confirm": True},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.json().get("ok"))
+            self.assertIn("## Perfil consolidado", resp.json().get("result", ""))
+            mock_perfil.assert_called_once()
+            arg_text = mock_perfil.call_args[0][0]
+            self.assertIn("Desenvolvedor Python", arg_text)
+            saved_md = painel.claude_answer(painel.PERFIL_KEY, "perfil", base=claude_dir)
+            self.assertIsNotNone(saved_md)
+            self.assertIn("## Perfil consolidado", saved_md)
+
+        with patch("backend.tools.painel_ia.montar_perfil", side_effect=ValueError("nenhum documento legível")):
+            err_resp = self.client.post(
+                "/api/claude",
+                json={"step": "perfil", "confirm": True},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(err_resp.status_code, 400)
+            self.assertIn("nenhum documento", err_resp.json().get("detail", ""))
+
+    def test_settings_and_profile_validation_endpoints(self):
+        import os
+
+        tmp_dir = Path(self.tmp.name)
+        env_path = tmp_dir / ".env"
+        answers_file = tmp_dir / "respostas.json"
+        clean_env = {k: v for k, v in os.environ.items() if not k.startswith(("GEMINI_", "OPENAI_", "ANTHROPIC_", "AI_"))}
+
+        with patch.dict(os.environ, clean_env, clear=True), \
+             patch("backend.tools.ai_providers.ENV_PATH", env_path), \
+             patch("backend.tools.ai_providers.shutil.which", return_value=None):
+            ok_resp = self.client.post(
+                "/api/settings",
+                json={"provider": "gemini", "consent": True, "gemini_key": "AIza" + "Z" * 35},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(ok_resp.status_code, 200)
+            self.assertEqual(ok_resp.json().get("provider"), "gemini")
+            gem = next(p for p in ok_resp.json()["providers"] if p["id"] == "gemini")
+            self.assertTrue(gem["has_key"])
+
+            bad_resp = self.client.post(
+                "/api/settings",
+                json={"provider": "provedor_inexistente"},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(bad_resp.status_code, 400)
+
+        with patch("backend.tools.painel_perfil.ANSWERS", answers_file):
+            # ProfileSaveRequest accepts both flat payloads and nested {"answers": ...}
+            flat_resp = self.client.post(
+                "/api/profile",
+                json={"cargos": ["Engenheiro Backend"]},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(flat_resp.status_code, 200)
+            self.assertEqual(flat_resp.json()["answers"]["cargos"], ["Engenheiro Backend"])
+
+            nested_resp = self.client.post(
+                "/api/profile",
+                json={"answers": {"cargos": ["Arquiteto Python"]}},
+                headers={"X-Painel-Token": self.token},
+            )
+            self.assertEqual(nested_resp.status_code, 200)
+            self.assertEqual(nested_resp.json()["answers"]["cargos"], ["Arquiteto Python"])
+
+    def test_clear_discarded_via_tracker_keeps_interested_jobs(self):
+        self.repo.upsert_job({
+            "title": "Vaga Boa",
+            "company": "Emp A",
+            "url": "https://example.com/keep-me",
+            "status": "interested",
+        })
+        self.repo.upsert_job({
+            "title": "Vaga Ruim",
+            "company": "Emp B",
+            "url": "https://example.com/drop-me",
+            "status": "discarded",
+            "fit": "low",
+        })
+        resp = self.client.post("/api/discarded/clear", headers={"X-Painel-Token": self.token})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json().get("deleted_db"), 1)
+        self.assertIsNotNone(self.repo.get_job_by_url("https://example.com/keep-me"))
+        self.assertIsNone(self.repo.get_job_by_url("https://example.com/drop-me"))
+
+    def test_claude_non_profile_step_requires_url(self):
+        resp = self.client.post(
+            "/api/claude",
+            json={"url": "", "step": "avaliar"},
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(resp.status_code, 400)
 
 
 if __name__ == "__main__":

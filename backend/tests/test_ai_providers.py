@@ -214,6 +214,20 @@ class Calls(Isolated):
         self.assertFalse(out["ok"])
         self.assertIn("Configurações", out["message"])
 
+    def test_gemini_hydrogen_high_cli_model_and_info(self):
+        self.assertIn("gemini-4-hydrogen-high", ai.SPECS["gemini"]["suggested"])
+        done = mock.Mock(returncode=0, stdout=b"ok", stderr=b"")
+        p = ai.Provider("gemini", {"GEMINI_MODEL": "gemini-4-hydrogen-high"})
+        p.cli_bin = "/usr/bin/agy"
+        info = p.get_info()
+        self.assertEqual(info["model"], "gemini-4-hydrogen-high")
+        self.assertIn("gemini-4-hydrogen-high", info["label"])
+        with mock.patch.object(ai.subprocess, "run", return_value=done) as run:
+            self.assertEqual(p.generate("teste"), "ok")
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[0], "/usr/bin/agy")
+        self.assertIn("--model=gemini-4-hydrogen-high", cmd)
+
 
 if __name__ == "__main__":
     unittest.main()

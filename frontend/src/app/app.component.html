@@ -26,5 +26,19 @@
     <!-- Footer -->
     <app-footer></app-footer>
   </div>
+
+  <!-- Notificações globais (Toast) -->
+  @if (toast.toasts().length > 0) {
+    <div class="vc-toast-stack" role="status" aria-live="polite">
+      @for (item of toast.toasts(); track item.id) {
+        <div class="vc-toast-item" [class]="'vc-toast-item--' + item.kind">
+          <span class="vc-toast-text">{{ item.text }}</span>
+          <button type="button" class="vc-toast-close" (click)="toast.dismiss(item.id)" aria-label="Fechar aviso">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+      }
+    </div>
+  }
 </div>
 

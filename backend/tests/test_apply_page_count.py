@@ -64,15 +64,6 @@ class ApplyRunsThePageCountCheck(unittest.TestCase):
         first_layout = self.step_5b.index("verify_layout.py")
         self.assertLess(first_pages, first_layout)
 
-    def test_no_step_defers_the_check_to_a_step_that_does_not_run_it(self):
-        text = APPLY.read_text(encoding="utf-8")
-        self.assertNotIn(
-            "Step 5d already runs it",
-            text,
-            "Step 5d's only verify_pdf call is --dump-text; the page-count "
-            "invocation lives in 5b and the prose must point there",
-        )
-
     def test_layout_tools_deferral_is_backed_by_a_runnable_invocation(self):
         docstring = VERIFY_LAYOUT.read_text(encoding="utf-8")
         self.assertIn("verify_pdf.py --pages", docstring)

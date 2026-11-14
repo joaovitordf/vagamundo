@@ -8,18 +8,9 @@ framework's never-fabricate boundary, the two-follow-up cap that terminates
 into /outcome's own no_response flow, and the deliberate contrast with
 /gmail-sync's alerta de 30 dias de abandono.
 """
-import subprocess
 import sys
 import unittest
 from pathlib import Path
-
-try:
-    import yaml  # noqa: F401 - only probing availability for the lint integration test
-    _HAVE_YAML = True
-except ImportError:
-    _HAVE_YAML = False
-
-import sys
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _repo import REPO, REPO_ROOT
@@ -74,19 +65,6 @@ class OutcomeFollowupBranchSpec(unittest.TestCase):
             text,
             "spec lost the rationale for the 10-day nudge vs /gmail-sync's 30-day alarm",
         )
-
-    @unittest.skipUnless(
-        _HAVE_YAML,
-        "PyYAML not installed (the CI Python-test job omits it; the lint job runs lint_skills.py directly)",
-    )
-    def test_lint_skills_passes(self):
-        result = subprocess.run(
-            [sys.executable, str(REPO / "tools" / "lint_skills.py")],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.returncode, 0, f"lint_skills.py failed:\n{result.stdout}{result.stderr}")
 
 
 if __name__ == "__main__":

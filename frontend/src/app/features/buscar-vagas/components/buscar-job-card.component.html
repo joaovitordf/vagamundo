@@ -1,0 +1,69 @@
+<article class="job-card">
+  <div class="job-card__header">
+    @if (selectable) {
+      <div class="job-card__select-title">
+        <input type="checkbox"
+          class="job-card__checkbox"
+          [checked]="selected"
+          (change)="selectedChange.emit($event)">
+        <div>
+          <h3 class="job-card__title">{{ vaga.title }}</h3>
+          <p class="job-card__company">{{ vaga.company || 'Empresa não informada' }}</p>
+        </div>
+      </div>
+    } @else {
+      <div>
+        <h4 class="job-card__title">{{ vaga.title }}</h4>
+        <p class="job-card__company">{{ vaga.company || 'Empresa não informada' }}</p>
+      </div>
+    }
+
+    <app-job-badges [screening]="vaga.screening"></app-job-badges>
+  </div>
+
+  @if (showSummary && vaga.screening?.summary) {
+    <p class="screening-summary-text">{{ vaga.screening?.summary }}</p>
+  }
+
+  <div class="job-card__chips">
+    @if (vaga.location || !showExtendedChips) {
+      <span class="chip"><i class="bi bi-geo-alt"></i> {{ vaga.location || 'Localidade não informada' }}</span>
+    }
+    <span class="chip"><i class="bi bi-briefcase"></i> {{ getModelLabel(vaga.workplace_type) }}</span>
+    @if (vaga.portal || !showExtendedChips) {
+      <app-portal-badge [portal]="vaga.portal || 'portal'" [compact]="true"></app-portal-badge>
+    }
+    @if (showExtendedChips) {
+      @if (!isUndated(vaga)) {
+        <span class="chip"><i class="bi bi-calendar3"></i> {{ vaga.date }}</span>
+      } @else {
+        <span class="chip chip-undated" title="O portal não informou a data de publicação: a vaga pode ser antiga ou já ter sido candidatada por você.">
+          <i class="bi bi-calendar-x"></i> Sem data
+        </span>
+      }
+    }
+    @if (vaga.salary) {
+      <span class="chip chip-salary" [title]="vaga.salary">
+        <i class="bi bi-cash-stack"></i> {{ formatSalaryBRL(vaga.salary) }}
+      </span>
+    }
+    @if (showExtendedChips && hasVisa(vaga)) {
+      <span class="chip chip-visa" title="Sponsorship de visto explicitamente informado">VISA</span>
+    }
+  </div>
+
+  @if (showExtendedChips && getWarning(vaga)) {
+    <div class="warning-banner">
+      <i class="bi bi-exclamation-triangle"></i> [Aviso] {{ getWarning(vaga) }}
+    </div>
+  }
+
+  <div class="job-card__actions">
+    <button type="button" class="btn-card-action primary" (click)="interesse.emit(vaga)">Me interessa</button>
+    <button type="button" class="btn-card-action applied-btn" (click)="applied.emit(vaga)" title="Registrar que você já se candidatou nesta vaga">Já me candidatei</button>
+    <button type="button" class="btn-card-action secondary" (click)="descartar.emit(vaga)">Descartar</button>
+    <a [href]="vaga.url" target="_blank" rel="noopener noreferrer" class="link-external">
+      {{ externalLinkLabel }} <i class="bi bi-box-arrow-up-right"></i>
+    </a>
+  </div>
+</article>

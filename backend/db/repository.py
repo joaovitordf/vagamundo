@@ -1,7 +1,10 @@
 """Data Access Layer (Repository) for Vagamundo v2."""
 
 from __future__ import annotations
+import hashlib
 import json
+import logging
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone, date, timedelta
@@ -11,6 +14,7 @@ from typing import Any, Optional
 from backend.db import get_db, ROOT
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -66,8 +70,8 @@ class Repository:
                         if old_conn is not None:
                             try:
                                 old_conn.close()
-                            except Exception:
-                                pass
+                            except sqlite3.Error as exc:
+                                logger.debug("Failed to close stale thread DB connection: %s", exc)
                 self._thread_conns[tid] = c
         return c
 
@@ -81,6 +85,7 @@ class Repository:
             self.conn.executescript(schema_sql)
         self._migrate_recruiter_posts()
         self._migrate_applications()
+        self._migrate_evaluations()
         self._backfill_ledger()
 
     def _migrate_recruiter_posts(self) -> None:
@@ -96,6 +101,7 @@ class Repository:
                 "ai_verdict": "TEXT",
                 "ai_summary": "TEXT",
                 "ai_best_email": "TEXT",
+                "ai_model": "TEXT",
                 "ai_evaluated_at": "TEXT",
                 "auto_promoted": "INTEGER DEFAULT 0",
                 "auto_run_id": "TEXT",
@@ -112,8 +118,8 @@ class Repository:
                 self.conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_recruiter_posts_auto_run ON recruiter_posts(auto_run_id)"
                 )
-        except Exception:
-            pass
+        except sqlite3.Error as exc:
+            logger.warning("Failed to migrate recruiter_posts columns: %s", exc)
 
     def _migrate_applications(self) -> None:
         """Idempotently add direct recruiter outreach tracking columns to existing applications tables."""
@@ -134,8 +140,26 @@ class Repository:
                 self.conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_applications_contacted_email ON applications(contacted_email)"
                 )
-        except Exception:
-            pass
+        except sqlite3.Error as exc:
+            logger.warning("Failed to migrate applications columns: %s", exc)
+
+    def _migrate_evaluations(self) -> None:
+        """Idempotently add language gate columns to existing evaluations tables."""
+        try:
+            cur = self.conn.execute("PRAGMA table_info(evaluations)")
+            existing = {r["name"] for r in cur.fetchall()}
+            if not existing:
+                return
+            columns = {
+                "language_gate": "TEXT",
+                "language_note": "TEXT",
+            }
+            with self.conn:
+                for col, ddl in columns.items():
+                    if col not in existing:
+                        self.conn.execute(f"ALTER TABLE evaluations ADD COLUMN {col} {ddl}")
+        except sqlite3.Error as exc:
+            logger.warning("Failed to migrate evaluations columns: %s", exc)
 
     def _backfill_ledger(self) -> None:
         """Ensure all current and historic applied jobs are recorded in application_ledger."""
@@ -189,8 +213,8 @@ class Repository:
                              OR (l.company = j.company AND l.role = j.title AND l.applied_date = substr(sl.created_at, 1, 10))
                       )
                 """)
-        except Exception:
-            pass
+        except sqlite3.Error as exc:
+            logger.warning("Failed to backfill application_ledger: %s", exc)
 
     def close(self) -> None:
         with self._conn_lock:
@@ -199,13 +223,13 @@ class Repository:
         for c in conns:
             try:
                 c.close()
-            except Exception:
-                pass
+            except sqlite3.Error as exc:
+                logger.debug("Failed to close worker DB connection: %s", exc)
         if getattr(self, "_main_conn", None):
             try:
                 self._main_conn.close()
-            except Exception:
-                pass
+            except sqlite3.Error as exc:
+                logger.debug("Failed to close main DB connection: %s", exc)
 
     def __enter__(self) -> Repository:
         return self
@@ -240,38 +264,41 @@ class Repository:
             try:
                 from backend.tools.job_key import make_key
                 job_id = make_key(company, title, url)
-            except Exception:
-                job_id = f"job-{abs(hash(url or title + company))}"
+            except (ImportError, ValueError, TypeError):
+                seed = (url or f"{company}|{title}").encode("utf-8", errors="ignore")
+                job_id = f"job-{hashlib.sha256(seed).hexdigest()[:12]}"
 
         now = _now_iso()
-
-        # Check existing by id or url
-        cur = self.conn.execute("SELECT id, created_at, status, fit, rank_score, rank_verdict FROM jobs WHERE id = ? OR url = ?", (job_id, url))
-        row = cur.fetchone()
-
-        status = job.get("status") or (row["status"] if row else "new")
-        fit = job.get("fit") or (row["fit"] if row else None)
-
-        # Normalize score and verdict from screening dict if present
-        rank_score = job.get("rank_score")
-        rank_verdict = job.get("rank_verdict")
-        screening = job.get("screening")
-        if isinstance(screening, dict):
-            if rank_score is None:
-                rank_score = screening.get("score")
-            if rank_verdict is None:
-                rank_verdict = screening.get("verdict")
-        if row:
-            if rank_score is None:
-                rank_score = row["rank_score"]
-            if rank_verdict is None:
-                rank_verdict = row["rank_verdict"]
-
         work_model = job.get("work_model") or job.get("workplace_type")
         contract_type = job.get("contract_type") or job.get("contract")
         posted_date = job.get("posted_date") or job.get("date")
 
         with self.conn:
+            # Check existing by id or url atomically inside the write transaction
+            cur = self.conn.execute(
+                "SELECT id, created_at, status, fit, rank_score, rank_verdict FROM jobs WHERE id = ? OR (? != '' AND url = ?)",
+                (job_id, url, url),
+            )
+            row = cur.fetchone()
+
+            status = job.get("status") or (row["status"] if row else "new")
+            fit = job.get("fit") or (row["fit"] if row else None)
+
+            # Normalize score and verdict from screening dict if present
+            rank_score = job.get("rank_score")
+            rank_verdict = job.get("rank_verdict")
+            screening = job.get("screening")
+            if isinstance(screening, dict):
+                if rank_score is None:
+                    rank_score = screening.get("score")
+                if rank_verdict is None:
+                    rank_verdict = screening.get("verdict")
+            if row:
+                if rank_score is None:
+                    rank_score = row["rank_score"]
+                if rank_verdict is None:
+                    rank_verdict = row["rank_verdict"]
+
             if row:
                 target_id = row["id"]
                 self.conn.execute(
@@ -401,6 +428,94 @@ class Repository:
         cur = self.conn.execute("SELECT * FROM jobs WHERE url = ?", (url,))
         return self._row_to_dict(cur.fetchone(), self.JOB_JSON_FIELDS)
 
+    def get_job_by_company_title(self, company: str, title: str) -> dict | None:
+        """Fetch a job matching normalized (company, title)."""
+        if not (company and title):
+            return None
+        cur = self.conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE LOWER(TRIM(company)) = LOWER(TRIM(?))
+              AND LOWER(TRIM(title)) = LOWER(TRIM(?))
+            ORDER BY updated_at DESC LIMIT 1
+            """,
+            (company, title),
+        )
+        return self._row_to_dict(cur.fetchone(), self.JOB_JSON_FIELDS)
+
+    def get_applied_index_rows(self) -> list[dict]:
+        """Return URL and (company, title) rows of already-applied jobs across ledger and jobs."""
+        rows: list[dict] = []
+        queries = (
+            "SELECT job_url AS url, company, role AS title FROM application_ledger",
+            "SELECT url, company, title FROM jobs WHERE status = 'applied'",
+        )
+        for sql in queries:
+            try:
+                cur = self.conn.execute(sql)
+                rows.extend(dict(r) for r in cur.fetchall())
+            except sqlite3.Error as exc:
+                logger.warning("Failed to query applied index: %s", exc)
+        return rows
+
+    def update_job_ranking(
+        self,
+        job_id: str,
+        score: float | None,
+        verdict: str | None,
+        details: dict | None = None,
+    ) -> None:
+        """Persist quick triage / ranking metadata onto jobs without creating a full evaluation."""
+        det = details if isinstance(details, dict) else {}
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE jobs SET
+                    rank_score = COALESCE(?, rank_score),
+                    rank_verdict = COALESCE(?, rank_verdict),
+                    rank_date = ?,
+                    location_verdict = COALESCE(?, location_verdict),
+                    language_gate = COALESCE(?, language_gate),
+                    language_note = COALESCE(?, language_note),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    int(score) if score is not None else None,
+                    verdict,
+                    date.today().isoformat(),
+                    det.get("location_verdict"),
+                    det.get("language_gate"),
+                    det.get("language_note"),
+                    _now_iso(),
+                    job_id,
+                ),
+            )
+
+    @staticmethod
+    def _build_jobs_where(
+        status: str | None = None,
+        fit: str | None = None,
+        portal: str | None = None,
+        q: str | None = None,
+    ) -> tuple[str, list[Any]]:
+        where = " WHERE 1=1"
+        params: list[Any] = []
+        if status:
+            where += " AND status = ?"
+            params.append(status)
+        if fit:
+            where += " AND fit = ?"
+            params.append(fit)
+        if portal:
+            where += " AND portal = ?"
+            params.append(portal)
+        if q:
+            where += " AND (title LIKE ? OR company LIKE ? OR description LIKE ?)"
+            term = f"%{q}%"
+            params.extend([term, term, term])
+        return where, params
+
     def list_jobs(
         self,
         status: str | None = None,
@@ -411,26 +526,9 @@ class Repository:
         offset: int = 0,
     ) -> list[dict]:
         """List jobs matching the specified filters."""
-        query = "SELECT * FROM jobs WHERE 1=1"
-        params: list[Any] = []
-
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        if fit:
-            query += " AND fit = ?"
-            params.append(fit)
-        if portal:
-            query += " AND portal = ?"
-            params.append(portal)
-        if q:
-            query += " AND (title LIKE ? OR company LIKE ? OR description LIKE ?)"
-            term = f"%{q}%"
-            params.extend([term, term, term])
-
-        query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
+        where, params = self._build_jobs_where(status=status, fit=fit, portal=portal, q=q)
+        query = f"SELECT * FROM jobs{where} ORDER BY updated_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
-
         cur = self.conn.execute(query, params)
         return [self._row_to_dict(row, self.JOB_JSON_FIELDS) for row in cur.fetchall()]
 
@@ -442,24 +540,8 @@ class Repository:
         q: str | None = None,
     ) -> int:
         """Count jobs matching the specified filters."""
-        query = "SELECT COUNT(*) as cnt FROM jobs WHERE 1=1"
-        params: list[Any] = []
-
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        if fit:
-            query += " AND fit = ?"
-            params.append(fit)
-        if portal:
-            query += " AND portal = ?"
-            params.append(portal)
-        if q:
-            query += " AND (title LIKE ? OR company LIKE ? OR description LIKE ?)"
-            term = f"%{q}%"
-            params.extend([term, term, term])
-
-        cur = self.conn.execute(query, params)
+        where, params = self._build_jobs_where(status=status, fit=fit, portal=portal, q=q)
+        cur = self.conn.execute(f"SELECT COUNT(*) as cnt FROM jobs{where}", params)
         row = cur.fetchone()
         return row["cnt"] if row else 0
 
@@ -529,8 +611,9 @@ class Repository:
                 INSERT INTO evaluations (
                     job_id, score_technical, score_experience, score_behavioral,
                     score_location, score_career, score_global, verdict,
-                    strengths, gaps, report_md, ai_provider, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    strengths, gaps, language_gate, language_note,
+                    report_md, ai_provider, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     eval_data.get("job_id"),
@@ -543,6 +626,8 @@ class Repository:
                     eval_data.get("verdict"),
                     _serialize(eval_data.get("strengths")),
                     _serialize(eval_data.get("gaps")),
+                    eval_data.get("language_gate"),
+                    eval_data.get("language_note"),
                     eval_data.get("report_md"),
                     eval_data.get("ai_provider"),
                     now,
@@ -559,7 +644,9 @@ class Repository:
                         rank_score = ?,
                         rank_verdict = ?,
                         rank_date = ?,
-                        location_verdict = ?,
+                        location_verdict = COALESCE(?, location_verdict),
+                        language_gate = COALESCE(?, language_gate),
+                        language_note = COALESCE(?, language_note),
                         strengths = COALESCE(?, strengths),
                         gaps = COALESCE(?, gaps),
                         updated_at = ?
@@ -570,8 +657,10 @@ class Repository:
                         eval_data.get("verdict"),
                         now[:10],
                         eval_data.get("score_location"),
-                        _serialize(eval_data.get("strengths")),
-                        _serialize(eval_data.get("gaps")),
+                        eval_data.get("language_gate"),
+                        eval_data.get("language_note"),
+                        _serialize(eval_data.get("strengths")) if eval_data.get("strengths") else None,
+                        _serialize(eval_data.get("gaps")) if eval_data.get("gaps") else None,
                         now,
                         job_id,
                     ),
@@ -897,9 +986,7 @@ class Repository:
         return updated
 
     def get_dashboard_stats(self, period_months: int = 6) -> dict:
-        """Compile complete analytics dashboard metrics and timelines."""
-        self._backfill_ledger()
-
+        """Compile complete analytics dashboard metrics and timelines (read-only)."""
         # 1. KPIs
         cur = self.conn.execute("SELECT COUNT(*) FROM jobs WHERE status = 'interested'")
         saved_jobs = cur.fetchone()[0]
@@ -1108,47 +1195,104 @@ class Repository:
 
         url = post.get("url")
         job_id = post.get("job_id")
-        existing_row = None
-        if url:
-            cur = self.conn.execute("SELECT id FROM recruiter_posts WHERE url = ?", (url,))
-            existing_row = cur.fetchone()
-        if not existing_row and job_id:
-            cur = self.conn.execute("SELECT id FROM recruiter_posts WHERE job_id = ?", (job_id,))
-            existing_row = cur.fetchone()
-        if existing_row:
-            post_id = existing_row["id"]
-            self.conn.execute("""
-                UPDATE recruiter_posts
-                SET emails = ?, email_context = ?, title = ?, company = ?,
-                    portal = ?, location = ?, work_model = ?, published_date = ?,
-                    description = ?, matched_keywords = ?, match_score = ?,
-                    job_id = COALESCE(?, job_id)
-                WHERE id = ?
+        with self.conn:
+            existing_row = None
+            if url:
+                cur = self.conn.execute("SELECT id FROM recruiter_posts WHERE url = ?", (url,))
+                existing_row = cur.fetchone()
+            if not existing_row and job_id:
+                cur = self.conn.execute("SELECT id FROM recruiter_posts WHERE job_id = ?", (job_id,))
+                existing_row = cur.fetchone()
+            if existing_row:
+                post_id = existing_row["id"]
+                self.conn.execute("""
+                    UPDATE recruiter_posts
+                    SET emails = ?, email_context = ?, title = ?, company = ?,
+                        portal = ?, location = ?, work_model = ?, published_date = ?,
+                        description = ?, matched_keywords = ?, match_score = ?,
+                        job_id = COALESCE(?, job_id)
+                    WHERE id = ?
+                """, (
+                    emails_json, post.get("email_context"), post.get("title", "Oportunidade"),
+                    post.get("company", "Empresa"), post.get("portal", "outros"),
+                    post.get("location"), post.get("work_model"), post.get("published_date"),
+                    post.get("description", ""), matched_kw_json, post.get("match_score", 0),
+                    job_id, post_id
+                ))
+                return post_id
+
+            cur = self.conn.execute("""
+                INSERT INTO recruiter_posts (
+                    emails, email_context, title, company, portal, url, location,
+                    work_model, published_date, description, matched_keywords, match_score,
+                    job_id, dismissed, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
             """, (
                 emails_json, post.get("email_context"), post.get("title", "Oportunidade"),
                 post.get("company", "Empresa"), post.get("portal", "outros"),
-                post.get("location"), post.get("work_model"), post.get("published_date"),
+                url, post.get("location"), post.get("work_model"), post.get("published_date"),
                 post.get("description", ""), matched_kw_json, post.get("match_score", 0),
-                job_id, post_id
+                post.get("job_id"), now
             ))
-            self.conn.commit()
-            return post_id
+            return cur.lastrowid
 
-        cur = self.conn.execute("""
-            INSERT INTO recruiter_posts (
-                emails, email_context, title, company, portal, url, location,
-                work_model, published_date, description, matched_keywords, match_score,
-                job_id, dismissed, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-        """, (
-            emails_json, post.get("email_context"), post.get("title", "Oportunidade"),
-            post.get("company", "Empresa"), post.get("portal", "outros"),
-            url, post.get("location"), post.get("work_model"), post.get("published_date"),
-            post.get("description", ""), matched_kw_json, post.get("match_score", 0),
-            post.get("job_id"), now
-        ))
-        self.conn.commit()
-        return cur.lastrowid
+    def get_latest_recruiter_post_for_job(self, job_id: str | None, url: str) -> dict | None:
+        """Fetch latest recruiter_post description/metadata matching a job_id or URL."""
+        cur = self.conn.execute(
+            """
+            SELECT description, title, company, location, work_model
+            FROM recruiter_posts
+            WHERE (? IS NOT NULL AND job_id = ?) OR url = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (job_id, job_id, url),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+    def find_recruiter_post_for_dedup(
+        self,
+        *,
+        url: str | None = None,
+        linkedin_activity_id: str | None = None,
+        primary_email: str | None = None,
+        description: str = "",
+    ) -> dict | None:
+        """Find an existing recruiter_posts row by URL, LinkedIn activity ID, or email+text signature."""
+        base_select = """
+            SELECT rp.*, j.status AS job_status
+            FROM recruiter_posts rp
+            LEFT JOIN jobs j ON rp.job_id = j.id
+        """
+        clean_url = (url or "").strip()
+        if clean_url:
+            cur = self.conn.execute(f"{base_select} WHERE rp.url = ? ORDER BY rp.id DESC LIMIT 1", (clean_url,))
+            row = cur.fetchone()
+            if row:
+                return dict(row)
+
+        if linkedin_activity_id and linkedin_activity_id.isdigit():
+            cur = self.conn.execute(
+                f"{base_select} WHERE rp.url LIKE ? ORDER BY rp.id DESC LIMIT 1",
+                (f"%{linkedin_activity_id}%",),
+            )
+            row = cur.fetchone()
+            if row:
+                return dict(row)
+
+        norm_email = (primary_email or "").strip().lower()
+        norm_prefix = " ".join((description or "").split())[:160].lower()
+        if norm_email and norm_prefix:
+            cur = self.conn.execute(
+                f"{base_select} WHERE LOWER(rp.emails) LIKE ? ORDER BY rp.id DESC LIMIT 20",
+                (f"%{norm_email}%",),
+            )
+            for r in cur.fetchall():
+                d = dict(r)
+                existing_prefix = " ".join((d.get("description") or "").split())[:160].lower()
+                if existing_prefix == norm_prefix:
+                    return d
+        return None
 
     def list_recruiter_posts(
         self,
@@ -1230,6 +1374,7 @@ class Repository:
         best_email: str | None = None,
         auto_dismissed: bool = False,
         evaluated_at: str | None = None,
+        ai_model: str | None = None,
     ) -> bool:
         """Persist AI triage metadata for a recruiter post (and optionally auto-dismiss)."""
         ts = evaluated_at or _now_iso()
@@ -1242,6 +1387,7 @@ class Repository:
                     ai_verdict = ?,
                     ai_summary = ?,
                     ai_best_email = ?,
+                    ai_model = COALESCE(?, ai_model),
                     ai_evaluated_at = ?,
                     dismissed = CASE WHEN ? THEN 1 ELSE dismissed END
                 WHERE id = ?
@@ -1252,12 +1398,88 @@ class Repository:
                     verdict,
                     summary,
                     best_email or None,
+                    ai_model or None,
                     ts,
                     1 if auto_dismissed else 0,
                     post_id,
                 ),
             )
         return cur.rowcount > 0
+
+    def get_latest_evaluation_providers(self, job_ids: list[str]) -> dict[str, str]:
+        """Return the latest recorded ai_provider/model per job_id."""
+        clean_ids = [jid for jid in dict.fromkeys(job_ids) if jid]
+        if not clean_ids:
+            return {}
+        placeholders = ",".join("?" for _ in clean_ids)
+        cur = self.conn.execute(
+            f"""
+            SELECT job_id, ai_provider
+            FROM evaluations
+            WHERE job_id IN ({placeholders}) AND ai_provider IS NOT NULL AND TRIM(ai_provider) != ''
+            ORDER BY id ASC
+            """,
+            clean_ids,
+        )
+        out: dict[str, str] = {}
+        for r in cur.fetchall():
+            val = str(r["ai_provider"] or "").strip()
+            if val and val.lower() != "antigravity":
+                out[r["job_id"]] = val
+        return out
+
+    def get_latest_evaluation_details(self, job_ids: list[str]) -> dict[str, dict]:
+        """Return latest subscores, gates, strengths, gaps, and ai_provider per job_id."""
+        clean_ids = [jid for jid in dict.fromkeys(job_ids) if jid]
+        if not clean_ids:
+            return {}
+        placeholders = ",".join("?" for _ in clean_ids)
+        cur = self.conn.execute(
+            f"""
+            SELECT job_id, score_technical, score_experience, score_behavioral,
+                   score_location, score_career, score_global, verdict,
+                   strengths, gaps, language_gate, language_note, ai_provider
+            FROM evaluations
+            WHERE job_id IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            clean_ids,
+        )
+        out: dict[str, dict] = {}
+        for r in cur.fetchall():
+            row = self._row_to_dict(r, self.EVAL_JSON_FIELDS) or {}
+            jid = row.get("job_id")
+            if not jid:
+                continue
+            detail: dict[str, Any] = {}
+            t, e, b, c = (
+                row.get("score_technical"),
+                row.get("score_experience"),
+                row.get("score_behavioral"),
+                row.get("score_career"),
+            )
+            if None not in (t, e, b, c):
+                detail["subscores"] = {
+                    "technical": int(t),
+                    "experience": int(e),
+                    "behavioral": int(b),
+                    "career": int(c),
+                }
+            if row.get("score_location"):
+                detail["location_verdict"] = row["score_location"]
+            if row.get("strengths"):
+                detail["strengths"] = row["strengths"]
+            if row.get("gaps"):
+                detail["gaps"] = row["gaps"]
+            if row.get("language_gate"):
+                detail["language_gate"] = row["language_gate"]
+            if row.get("language_note"):
+                detail["language_note"] = row["language_note"]
+            prov = str(row.get("ai_provider") or "").strip()
+            if prov and prov.lower() != "antigravity":
+                detail["ai_model"] = prov
+            out[jid] = detail
+        return out
 
     def mark_recruiter_post_promoted(
         self,
@@ -1565,11 +1787,11 @@ class Repository:
 
     def dismiss_recruiter_post(self, post_id: int) -> bool:
         """Soft delete a recruiter post by setting dismissed = 1."""
-        cur = self.conn.execute(
-            "UPDATE recruiter_posts SET dismissed = 1 WHERE id = ?",
-            (post_id,)
-        )
-        self.conn.commit()
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE recruiter_posts SET dismissed = 1 WHERE id = ?",
+                (post_id,)
+            )
         return cur.rowcount > 0
 
     def get_jobs_with_potential_emails(self) -> list[dict]:
@@ -1583,5 +1805,52 @@ class Repository:
               AND COALESCE(status, 'new') NOT IN ('discarded', 'applied', 'skipped')
         """)
         return [dict(r) for r in cur.fetchall()]
+
+    def get_interested_status_metadata(
+        self, job_ids: list[str]
+    ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+        """Fetch saved_at timestamps and auto-promotion provenance for interested jobs."""
+        clean_ids = [jid for jid in job_ids if jid]
+        if not clean_ids:
+            return {}, {}
+        placeholders = ",".join("?" for _ in clean_ids)
+        cur = self.conn.execute(
+            f"""
+            SELECT job_id, created_at, source, note
+            FROM status_log
+            WHERE to_status = 'interested' AND job_id IN ({placeholders})
+            ORDER BY id ASC
+            """,
+            clean_ids,
+        )
+        saved_at_map: dict[str, str] = {}
+        auto_meta_map: dict[str, dict[str, Any]] = {}
+        for r in cur.fetchall():
+            jid = r["job_id"]
+            saved_at_map[jid] = r["created_at"]
+            src = r["source"] or ""
+            note = r["note"] or ""
+            is_auto = src in ("auto_triage", "auto_triage_recruiter")
+            m_run = re.search(r"\[auto:([A-Za-z0-9_-]+)\]", note)
+            auto_meta_map[jid] = {
+                "auto_promoted": is_auto,
+                "auto_origin": (
+                    "recruiter"
+                    if src == "auto_triage_recruiter"
+                    else ("jobs" if src == "auto_triage" else None)
+                ),
+                "auto_run_id": m_run.group(1) if (is_auto and m_run) else None,
+            }
+        return saved_at_map, auto_meta_map
+
+    def clear_discarded_jobs(self) -> int:
+        """Delete discarded/low-skipped jobs and their discarded status log entries."""
+        with self.conn:
+            cur = self.conn.execute(
+                "DELETE FROM jobs WHERE status = 'discarded' OR (status = 'skipped' AND fit = 'low')"
+            )
+            deleted_count = cur.rowcount
+            self.conn.execute("DELETE FROM status_log WHERE to_status = 'discarded'")
+        return deleted_count
 
 

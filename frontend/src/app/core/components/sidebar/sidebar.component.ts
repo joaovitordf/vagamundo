@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject, effect } from '@angular/core';
+import { Component, Input, Output, EventEmitter, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ApiService } from '../../services/api.service';
@@ -18,7 +18,7 @@ export interface NavItem {
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.css'
 })
-export class SidebarComponent implements OnInit {
+export class SidebarComponent {
   @Input() isCollapsed = false;
   @Output() toggleCollapse = new EventEmitter<void>();
 
@@ -57,10 +57,6 @@ export class SidebarComponent implements OnInit {
     effect(() => {
       this.updateCount('/descartadas', this.api.discardedCount());
     });
-  }
-
-  ngOnInit(): void {
-    this.api.refreshCounts();
   }
 
   private updateCount(route: string, count: number): void {

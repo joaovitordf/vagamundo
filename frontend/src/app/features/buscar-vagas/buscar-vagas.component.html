@@ -2,383 +2,21 @@
 
   <!-- PAINEL UNIFICADO DE FILTROS E BUSCA -->
 
-  <section class="vc-panel filter-console">
-
-    <div class="filter-header">
-
-      <h2>Filtros e Busca de Oportunidades</h2>
-
-    </div>
-
-
-
-    <div class="filter-grid">
-
-      <!-- Campo 1: Cargo / Tecnologia com Randomizador do CV -->
-
-      <div class="filter-field wide">
-
-        <div class="filter-label-row">
-
-          <label for="f-text">Cargo, Tecnologia ou Empresa</label>
-
-          @if (cvAreaBadge()) {
-
-            <span class="cv-area-badge">{{ cvAreaBadge() }}</span>
-
-          }
-
-        </div>
-
-        <div class="input-with-action">
-
-          <input type="text"
-
-            id="f-text"
-
-            class="vc-input"
-
-            placeholder="Filtrar por cargo, tecnologia ou empresa (separe por vírgula)..."
-
-            [(ngModel)]="filterText"
-
-            (ngModelChange)="onFilterChange()">
-
-          <div class="input-actions-cluster">
-            @if (filterText) {
-              <button type="button" class="btn-clear-input" (click)="clearTextFilter()" title="Limpar palavras-chave">×</button>
-            }
-
-            <button type="button" class="btn-random-cv" (click)="pickRandomCvArea()" title="Sortear área do seu currículo">
-              <i class="bi bi-dice-5"></i>
-              <span>Sortear área CV</span>
-            </button>
-          </div>
-
-        </div>
-
-      </div>
-
-
-
-      <!-- Campo 2: Fontes da Busca (Dropdown Checkbox Multi-seleção) -->
-      <div class="filter-field portals-dropdown-container">
-        <div class="filter-label-row">
-          <label>Fontes da Busca (Portais)</label>
-          <span class="portals-count-badge" [class.partial]="selectedPortalIds().size > 0 && selectedPortalIds().size < availablePortals.length" [class.empty]="selectedPortalIds().size === 0">
-            {{ selectedPortalIds().size }} / {{ availablePortals.length }}
-          </span>
-        </div>
-
-        <div class="custom-dropdown" (click)="$event.stopPropagation()">
-          <button type="button"
-                  class="vc-select dropdown-trigger-btn"
-                  [class.active]="portalsDropdownOpen()"
-                  (click)="togglePortalsDropdown($event)"
-                  title="Clique para escolher os portais de busca">
-            <div class="trigger-label">
-              <i class="bi bi-diagram-3 trigger-icon"></i>
-              <span class="trigger-text">{{ portalsSummaryLabel() }}</span>
-            </div>
-            <i class="bi trigger-arrow" [class.bi-chevron-down]="!portalsDropdownOpen()" [class.bi-chevron-up]="portalsDropdownOpen()"></i>
-          </button>
-
-          @if (portalsDropdownOpen()) {
-            <div class="dropdown-menu-panel" (click)="$event.stopPropagation()">
-              <!-- Barra de Ações Rápidas -->
-              <div class="dropdown-header-actions">
-                <button type="button" class="btn-action-small select-all" (click)="selectAllPortals()">
-                  <i class="bi bi-check-all"></i> Marcar Todos
-                </button>
-                <button type="button" class="btn-action-small deselect-all" (click)="deselectAllPortals()">
-                  <i class="bi bi-dash-circle"></i> Desmarcar
-                </button>
-              </div>
-
-              <!-- Busca Rápida de Portais -->
-              <div class="dropdown-search-box">
-                <i class="bi bi-search search-icon"></i>
-                <input type="text"
-                       class="dropdown-search-input"
-                       placeholder="Filtrar portal por nome ou nicho..."
-                       [ngModel]="filterPortalSearchText()"
-                       (ngModelChange)="filterPortalSearchText.set($event)">
-                @if (filterPortalSearchText()) {
-                  <button type="button" class="btn-clear-portal-search" (click)="filterPortalSearchText.set('')">×</button>
-                }
-              </div>
-
-              <!-- Lista com Categorias e Checkboxes -->
-              <div class="dropdown-list-scroll">
-                @for (cat of portalCategories; track cat.id) {
-                  @if (hasMatchingPortalsInCategory(cat.id)) {
-                    <div class="dropdown-category-group">
-                      <div class="category-header" (click)="toggleCategoryPortals(cat.id)" title="Clique para alternar todo o grupo">
-                        <span class="category-title">{{ cat.label }}</span>
-                        <span class="category-toggle-btn">
-                          {{ isCategoryFullySelected(cat.id) ? 'Desmarcar' : 'Marcar' }}
-                        </span>
-                      </div>
-                      <div class="category-items">
-                        @for (portal of getFilteredPortalsByCategory(cat.id); track portal.id) {
-                          <label class="dropdown-item-row" (click)="$event.stopPropagation()">
-                            <input type="checkbox"
-                                   class="portal-checkbox"
-                                   [checked]="isPortalSelected(portal.id)"
-                                   (change)="togglePortal(portal.id, $event)">
-                            <span class="portal-name">{{ portal.name }}</span>
-                            @if (portal.badge) {
-                              <span class="portal-badge">{{ portal.badge }}</span>
-                            }
-                          </label>
-                        }
-                      </div>
-                    </div>
-                  }
-                }
-              </div>
-            </div>
-          }
-        </div>
-      </div>
-
-
-
-      <!-- Campo 3: Modelo de Trabalho -->
-
-      <div class="filter-field">
-
-        <label for="f-model">Modelo de Trabalho</label>
-
-        <select id="f-model" class="vc-select" [(ngModel)]="filterModel" (ngModelChange)="onFilterChange()">
-
-          <option value="">Qualquer modelo</option>
-
-          <option value="remote">Remoto</option>
-
-          <option value="hybrid">Híbrido</option>
-
-          <option value="on-site">Presencial</option>
-
-          <option value="none">Não informado</option>
-
-        </select>
-
-      </div>
-
-
-
-      <!-- Campo 4: Região / Polo -->
-
-      <div class="filter-field">
-
-        <label for="f-region">Região / Polo</label>
-
-        <select id="f-region" class="vc-select" [(ngModel)]="filterRegion" (ngModelChange)="onFilterChange()">
-
-          <option value="">Todas as regiões</option>
-
-          <option value="brasil">Brasil</option>
-
-          <option value="estados-unidos">Estados Unidos</option>
-
-          <option value="europa">Europa</option>
-
-          <option value="global">Global / Remoto</option>
-
-          <option value="remote">Somente Remoto</option>
-
-        </select>
-
-      </div>
-
-
-
-      <!-- Campo 5: Data de Publicação -->
-
-      <div class="filter-field">
-
-        <label for="jobage">Data de Publicação</label>
-
-        <select id="jobage" class="vc-select" [(ngModel)]="filterJobAge" (ngModelChange)="onFilterChange()">
-
-          <option value="">Todas as datas (Mostrar tudo)</option>
-
-          <option value="1">Últimas 24 horas</option>
-
-          <option value="2">Últimos 2 dias</option>
-
-          <option value="3">Últimos 3 dias</option>
-
-          <option value="7">Últimos 7 dias</option>
-
-          <option value="14">Últimos 14 dias (Recomendado)</option>
-
-          <option value="30">Últimos 30 dias</option>
-
-        </select>
-
-      </div>
-
-
-
-      <!-- Campo 6: Nota de Aderência (Fit IA) -->
-
-      @if (hasTriagedJobs()) {
-
-        <div class="filter-field">
-
-          <label for="f-score">Nota de Aderência ({{ triagedCount() }} triadas)</label>
-
-          <select id="f-score" class="vc-select" [(ngModel)]="filterScore" (ngModelChange)="onFilterChange()">
-
-            <option value="">Todas as notas</option>
-
-            <option value="high">Alta afinidade (75+)</option>
-
-            <option value="med">Notas médias ou maiores (60+)</option>
-
-            <option value="low">Menores notas (&lt; 60)</option>
-
-            <option value="triadas">Apenas vagas com nota</option>
-
-          </select>
-
-        </div>
-
-      }
-
-
-
-      <!-- Campo 7: Ordenação -->
-
-      <div class="filter-field">
-
-        <label for="f-sort">Ordenação</label>
-
-        <select id="f-sort" class="vc-select" [(ngModel)]="filterSort" (ngModelChange)="onFilterChange()">
-
-          <option value="date">Mais recentes primeiro</option>
-
-          <option value="score-desc">Maior nota primeiro</option>
-
-          <option value="score-asc">Menor nota primeiro</option>
-
-        </select>
-
-      </div>
-
-    </div>
-
-
-
-    <!-- Barra de Ações: Botão Buscar, Checkboxes e Status -->
-
-    <div class="search-actions-bar">
-
-      <div class="search-actions-left">
-
-        <button type="button" class="btn-search-trigger" (click)="triggerPortalSearch()" [disabled]="searching() || autoMode.isRunning()">
-
-          @if (searching()) {
-
-            <span class="vc-spinner"></span> Buscando…
-
-          } @else {
-
-            <i class="bi bi-search"></i> Buscar vagas
-
-          }
-
-        </button>
-
-        <div class="auto-mode-trigger-group">
-          <button type="button"
-            class="btn-auto-mode"
-            [class.is-running]="autoMode.isRunning()"
-            (click)="autoMode.isRunning() ? autoMode.cancel() : triggerAutoMode()"
-            [disabled]="searching() || autoMode.cancelling()"
-            title="IA sorteia 1 palavra-chave focalizada do seu CV por rodada, busca nos últimos até 7 dias (sem limite de vagas) e envia notas altas para Me Interessam">
-            @if (autoMode.isRunning()) {
-              <span class="vc-spinner"></span> {{ autoMode.cancelling() ? 'Parando…' : 'Parar Automático' }}
-            } @else {
-              <i class="bi bi-robot"></i> Modo Automático (7d)
-            }
-          </button>
-
-          <label class="auto-score-field" title="Nota mínima para enviar automaticamente para Me Interessam (padrão 60: evita vagas presenciais fora da região com teto 50 e stack ausente com teto 55)">
-            <span>Nota ≥</span>
-            <input type="number" min="45" max="95" step="5"
-              [(ngModel)]="autoMinScore"
-              (ngModelChange)="onAutoConfigChange()"
-              [disabled]="autoMode.isRunning()">
-          </label>
-
-          <label class="auto-continuous-toggle" title="Quando marcado, sorteia novas palavras-chave em loop com intervalo anti-ban até você clicar em Parar">
-            <input type="checkbox"
-              [(ngModel)]="autoContinuous"
-              (ngModelChange)="onAutoConfigChange()"
-              [disabled]="autoMode.isRunning()">
-            <span>Contínuo</span>
-          </label>
-
-          <label class="auto-cooldown-field" title="Intervalo base em minutos entre rodadas (2 a 30 min, com jitter e backoff automático anti-ban)">
-            <span>Intervalo</span>
-            <input type="number" min="2" max="30" step="1"
-              [(ngModel)]="autoCooldownMinutes"
-              (change)="onAutoConfigChange()"
-              [disabled]="autoMode.isRunning() || !autoContinuous">
-            <span>min</span>
-          </label>
-        </div>
-
-
-
-        <label class="filter-checkbox-label">
-
-          <input type="checkbox" [(ngModel)]="filterNoWarn" (ngModelChange)="onFilterChange()">
-
-          <span>Só vagas sem avisos</span>
-
-        </label>
-
-
-
-        <label class="filter-checkbox-label" title="Oculta vagas cujo portal não informou a data de publicação">
-
-          <input type="checkbox" [(ngModel)]="filterHideUndated" (ngModelChange)="onFilterChange()">
-
-          <span>Ocultar vagas sem data</span>
-
-        </label>
-
-
-
-        <label class="filter-checkbox-label">
-
-          <input type="checkbox" [(ngModel)]="filterVisa" (ngModelChange)="onFilterChange()">
-
-          <span>Só com VISA</span>
-
-        </label>
-
-      </div>
-
-
-
-      <div class="search-actions-right">
-
-        @if (searchStatus() && !showProgressPanel()) {
-
-          <span class="search-status-text">{{ searchStatus() }}</span>
-
-        }
-
-      </div>
-
-    </div>
-
-
+  <app-search-filters-panel
+    [searching]="searching()"
+    [autoRunning]="autoMode.isRunning()"
+    [autoCancelling]="autoMode.cancelling()"
+    [hasTriagedJobs]="hasTriagedJobs()"
+    [triagedCount]="triagedCount()"
+    [searchStatus]="searchStatus()"
+    [showProgressPanel]="showProgressPanel()"
+    (filterChange)="onFilterChange()"
+    (pickRandomCv)="pickRandomCvArea()"
+    (clearTextFilter)="clearTextFilter()"
+    (searchTrigger)="triggerPortalSearch()"
+    (autoTrigger)="triggerAutoMode()"
+    (autoCancel)="autoMode.cancel()"
+    (autoConfigChange)="onAutoConfigChange()">
 
     <!-- PAINEL RETRÁTIL DE CARREGAMENTO & PROGRESSO -->
 
@@ -666,15 +304,15 @@
 
                 </span>
 
-                <span class="fit-chip fit-med" title="Nota 50 a 74">
+                <span class="fit-chip fit-med" title="Nota 60 a 74">
 
-                  <i class="bi bi-check-circle"></i> {{ triageMedFitCount() }} Média (50-74)
+                  <i class="bi bi-check-circle"></i> {{ triageMedFitCount() }} Média (60-74)
 
                 </span>
 
-                <span class="fit-chip fit-low" title="Nota < 50">
+                <span class="fit-chip fit-low" title="Nota < 60">
 
-                  <i class="bi bi-dash-circle"></i> {{ triageLowFitCount() }} Baixa (&lt;50)
+                  <i class="bi bi-dash-circle"></i> {{ triageLowFitCount() }} Baixa (&lt;60)
 
                 </span>
 
@@ -722,7 +360,7 @@
 
     }
 
-  </section>
+  </app-search-filters-panel>
 
 
 
@@ -878,167 +516,18 @@
 
       <!-- MAPA MUNDIAL & BRASIL INTERATIVO SVG -->
 
-      <div class="vc-panel map-card">
-
-        <div class="map-card-header">
-
-          <h3 class="map-heading">
-
-            {{ currentMapMode === 'brasil' ? 'Mapa do Brasil' : 'Mapa Mundial' }}
-
-          </h3>
-
-          <div class="map-toggle-buttons">
-
-            <button type="button"
-
-              class="btn-map-toggle"
-
-              [class.active]="currentMapMode === 'world'"
-
-              (click)="switchMapMode('world')">
-
-              Mapa Mundial
-
-            </button>
-
-            <button type="button"
-
-              class="btn-map-toggle"
-
-              [class.active]="currentMapMode === 'brasil'"
-
-              (click)="switchMapMode('brasil')">
-
-              Mapa do Brasil
-
-            </button>
-
-          </div>
-
-        </div>
-
-
-
-        <!-- Palco SVG do Mapa -->
-
-        <div class="map-stage">
-
-          <div #mapWorldContainer [style.display]="currentMapMode === 'world' ? 'block' : 'none'" class="svg-map-wrapper"></div>
-
-          <div #mapBrasilContainer [style.display]="currentMapMode === 'brasil' ? 'block' : 'none'" class="svg-map-wrapper"></div>
-
-
-
-          <!-- Chips de Trabalho Remoto -->
-
-          <div class="remote-chips-bar">
-
-            <button type="button"
-
-              class="remote-chip"
-
-              [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'REMOTO_BR'"
-
-              (click)="selectRemoteChip('REMOTO_BR', 'Remoto Brasil')">
-
-              Remoto Brasil: {{ remoteCounts['REMOTO_BR'] || 0 }} vaga(s)
-
-            </button>
-
-            <button type="button"
-
-              class="remote-chip"
-
-              [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'EU_REMOTE'"
-
-              (click)="selectRemoteChip('EU_REMOTE', 'Remoto Europa')">
-
-              Remoto Europa: {{ remoteCounts['EU_REMOTE'] || 0 }} vaga(s)
-
-            </button>
-
-            <button type="button"
-
-              class="remote-chip"
-
-              [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'GLOBAL_REMOTE'"
-
-              (click)="selectRemoteChip('GLOBAL_REMOTE', 'Remoto Global / EUA')">
-
-              Remoto Global / EUA: {{ remoteCounts['GLOBAL_REMOTE'] || 0 }} vaga(s)
-
-            </button>
-
-          </div>
-
-        </div>
-
-
-
-        <!-- Legenda e Indicador de Filtro Ativo -->
-
-        <div class="map-legend-bar">
-
-          <div class="map-legend-items">
-
-            <span class="legend-title">{{ isTriageMode ? 'Legenda (Notas da Triagem):' : 'Legenda (Volume de Vagas):' }}</span>
-
-            @if (isTriageMode) {
-
-              <span class="legend-chip"><span class="swatch" style="background: #131b2b; border: 1px solid #23324a;"></span> 0 vagas</span>
-
-              <span class="legend-chip"><span class="swatch" style="background: #64748b;"></span> Nota &lt; 60</span>
-
-              <span class="legend-chip"><span class="swatch" style="background: #0ea5e9;"></span> Nota 60 a 74</span>
-
-              <span class="legend-chip"><span class="swatch" style="background: #10b981; border: 1px solid #34d399;"></span> Nota 75+ (Alta afinidade)</span>
-
-            } @else {
-
-              <span class="legend-chip"><span class="swatch" style="background: #131b2b; border: 1px solid #23324a;"></span> 0 vagas</span>
-
-              <span class="legend-chip"><span class="swatch" style="background: #0369a1;"></span> 1 a 4 vagas</span>
-
-              <span class="legend-chip"><span class="swatch" style="background: #0284c7;"></span> 5 a 9 vagas</span>
-
-              <span class="legend-chip"><span class="swatch" style="background: #f59e0b;"></span> 10+ vagas (Alto volume)</span>
-
-            }
-
-          </div>
-
-
-
-          <div class="map-legend-actions">
-
-            @if (hasTriagedJobs()) {
-
-              <button type="button" class="btn-text-action" (click)="toggleTriageMode()">
-
-                {{ isTriageMode ? 'Ver volume de vagas' : 'Ver notas da triagem' }}
-
-              </button>
-
-            }
-
-            <span class="map-filter-label">{{ mapIndicatorText() }}</span>
-
-            @if (activeGeoFilter) {
-
-              <button type="button" class="btn-clear-selection" (click)="clearGeoFilter()">
-
-                Limpar seleção do mapa
-
-              </button>
-
-            }
-
-          </div>
-
-        </div>
-
-      </div>
+      <app-geo-map
+        [baseVagas]="baseFilteredVagas()"
+        [geoData]="geoData()"
+        [mapMode]="currentMapMode"
+        [activeGeoFilter]="activeGeoFilter"
+        [isTriageMode]="isTriageMode"
+        [hasTriagedJobs]="hasTriagedJobs()"
+        [indicatorText]="mapIndicatorText()"
+        (mapModeChange)="switchMapMode($event)"
+        (geoFilterChange)="onGeoFilterChange($event)"
+        (triageModeToggle)="toggleTriageMode()">
+      </app-geo-map>
 
 
 
@@ -1065,79 +554,16 @@
           <div class="cards-grid">
 
             @for (vaga of localVagas(); track vaga.url) {
-
-              <article class="job-card">
-
-                <div class="job-card__header">
-
-                  <div>
-
-                    <h4 class="job-card__title">{{ vaga.title }}</h4>
-
-                    <p class="job-card__company">{{ vaga.company || 'Empresa não informada' }}</p>
-
-                  </div>
-
-                  @if (vaga.screening?.score !== undefined && vaga.screening?.score !== null) {
-
-                    <span class="vc-badge-fit"
-
-                      [class.vc-badge-fit--high]="vaga.screening!.score! >= 75"
-
-                      [class.vc-badge-fit--med]="vaga.screening!.score! >= 50 && vaga.screening!.score! < 75"
-
-                      [class.vc-badge-fit--low]="vaga.screening!.score! < 50">
-
-                      {{ vaga.screening!.score }}/100 &bull; {{ vaga.screening!.verdict }}
-
-                    </span>
-
-                  }
-
-                </div>
-
-
-
-                <div class="job-card__chips">
-
-                  <span class="chip"><i class="bi bi-geo-alt"></i> {{ vaga.location || 'Localidade não informada' }}</span>
-
-                  <span class="chip"><i class="bi bi-briefcase"></i> {{ getModelLabel(vaga.workplace_type) }}</span>
-
-                  <span class="chip"><i class="bi bi-globe"></i> {{ getPortalName(vaga.portal) }}</span>
-
-                  @if (vaga.salary) {
-
-                    <span class="chip chip-salary" [title]="vaga.salary">
-
-                      <i class="bi bi-cash-stack"></i> {{ formatSalaryBRL(vaga.salary) }}
-
-                    </span>
-
-                  }
-
-                </div>
-
-
-
-                <div class="job-card__actions">
-
-                  <button type="button" class="btn-card-action primary" (click)="markInteresse(vaga)">Me interessa</button>
-
-                  <button type="button" class="btn-card-action applied-btn" (click)="markApplied(vaga)" title="Registrar que você já se candidatou nesta vaga">Já me candidatei</button>
-
-                  <button type="button" class="btn-card-action secondary" (click)="markDescartar(vaga)">Descartar</button>
-
-                  <a [href]="vaga.url" target="_blank" rel="noopener noreferrer" class="link-external">
-
-                    Ver anúncio no portal <i class="bi bi-box-arrow-up-right"></i>
-
-                  </a>
-
-                </div>
-
-              </article>
-
+              <app-buscar-job-card
+                [vaga]="vaga"
+                [selectable]="false"
+                [showSummary]="false"
+                [showExtendedChips]="false"
+                externalLinkLabel="Ver anúncio no portal"
+                (interesse)="markInteresse($event)"
+                (applied)="markApplied($event)"
+                (descartar)="markDescartar($event)">
+              </app-buscar-job-card>
             }
 
           </div>
@@ -1427,139 +853,18 @@
       <div class="cards-grid">
 
         @for (vaga of filteredVagas(); track vaga.url) {
-
-          <article class="job-card">
-
-            <div class="job-card__header">
-
-              <div style="display: flex; gap: 8px; align-items: flex-start;">
-
-                <input type="checkbox"
-
-                  [checked]="selectedUrls.has(vaga.url)"
-
-                  (change)="toggleVagaSelection(vaga.url, $event)"
-
-                  style="margin-top: 4px; accent-color: var(--vc-blue); cursor: pointer;">
-
-                <div>
-
-                  <h3 class="job-card__title">{{ vaga.title }}</h3>
-
-                  <p class="job-card__company">{{ vaga.company || 'Empresa não informada' }}</p>
-
-                </div>
-
-              </div>
-
-
-
-              @if (vaga.screening?.score !== undefined && vaga.screening?.score !== null) {
-
-                <span class="vc-badge-fit"
-
-                  [class.vc-badge-fit--high]="vaga.screening!.score! >= 75"
-
-                  [class.vc-badge-fit--med]="vaga.screening!.score! >= 50 && vaga.screening!.score! < 75"
-
-                  [class.vc-badge-fit--low]="vaga.screening!.score! < 50">
-
-                  {{ vaga.screening!.score }}/100 &bull; {{ vaga.screening!.verdict }}
-
-                </span>
-
-              }
-
-            </div>
-
-
-
-            @if (vaga.screening?.summary) {
-
-              <p class="screening-summary-text">{{ vaga.screening?.summary }}</p>
-
-            }
-
-
-
-            <div class="job-card__chips">
-
-              @if (vaga.location) {
-
-                <span class="chip"><i class="bi bi-geo-alt"></i> {{ vaga.location }}</span>
-
-              }
-
-              <span class="chip"><i class="bi bi-briefcase"></i> {{ getModelLabel(vaga.workplace_type) }}</span>
-
-              @if (vaga.portal) {
-
-                <span class="chip"><i class="bi bi-globe"></i> {{ getPortalName(vaga.portal) }}</span>
-
-              }
-
-              @if (!isUndated(vaga)) {
-
-                <span class="chip"><i class="bi bi-calendar3"></i> {{ vaga.date }}</span>
-
-              } @else {
-
-                <span class="chip chip-undated" title="O portal não informou a data de publicação: a vaga pode ser antiga ou já ter sido candidatada por você.">
-                  <i class="bi bi-calendar-x"></i> Sem data
-                </span>
-
-              }
-
-              @if (vaga.salary) {
-
-                <span class="chip chip-salary" [title]="vaga.salary">
-
-                  <i class="bi bi-cash-stack"></i> {{ formatSalaryBRL(vaga.salary) }}
-
-                </span>
-
-              }
-
-              @if (hasVisa(vaga)) {
-
-                <span class="chip chip-visa" title="Sponsorship de visto explicitamente informado">VISA</span>
-
-              }
-
-            </div>
-
-
-
-            @if (getWarning(vaga)) {
-
-              <div class="warning-banner">
-
-                <i class="bi bi-exclamation-triangle"></i> [Aviso] {{ getWarning(vaga) }}
-
-              </div>
-
-            }
-
-
-
-            <div class="job-card__actions">
-
-              <button type="button" class="btn-card-action primary" (click)="markInteresse(vaga)">Me interessa</button>
-
-              <button type="button" class="btn-card-action applied-btn" (click)="markApplied(vaga)" title="Registrar que você já se candidatou nesta vaga">Já me candidatei</button>
-
-              <button type="button" class="btn-card-action secondary" (click)="markDescartar(vaga)">Descartar</button>
-
-              <a [href]="vaga.url" target="_blank" rel="noopener noreferrer" class="link-external">
-
-                Ver no portal <i class="bi bi-box-arrow-up-right"></i>
-
-              </a>
-
-            </div>
-
-          </article>
-
+          <app-buscar-job-card
+            [vaga]="vaga"
+            [selectable]="true"
+            [selected]="selectedUrls.has(vaga.url)"
+            [showSummary]="true"
+            [showExtendedChips]="true"
+            externalLinkLabel="Ver no portal"
+            (selectedChange)="toggleVagaSelection(vaga.url, $event)"
+            (interesse)="markInteresse($event)"
+            (applied)="markApplied($event)"
+            (descartar)="markDescartar($event)">
+          </app-buscar-job-card>
         }
 
       </div>

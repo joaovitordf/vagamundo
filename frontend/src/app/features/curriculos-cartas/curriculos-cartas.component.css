@@ -30,7 +30,8 @@
 }
 
 .filter-box {
-  min-width: 240px;
+  min-width: min(240px, 100%);
+  flex: 1 1 220px;
 }
 
 .vc-select {
@@ -47,11 +48,13 @@
 
 .docs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
   gap: 1.25rem;
 }
 
 .doc-card {
+  min-width: 0;
+  max-width: 100%;
   background: var(--vc-bg-surface);
   border: 1px solid var(--vc-border);
   border-radius: 12px;

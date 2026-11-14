@@ -1,7 +1,9 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { ToastService } from '../../core/services/toast.service';
 import { ProfileResponse } from '../../core/models/vaga.model';
 
 const NOMES: Record<string, string> = {
@@ -28,6 +30,8 @@ const NOMES: Record<string, string> = {
 })
 export class MeuPerfilComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly toast = inject(ToastService);
+  private readonly destroyRef = inject(DestroyRef);
 
   profileData = signal<ProfileResponse | null>(null);
   schema = signal<Array<{ title: string; fields: any[] }>>([]);
@@ -153,8 +157,11 @@ export class MeuPerfilComponent implements OnInit {
   removeFile(kind: string, name: string): void {
     if (!confirm(`Remover ${name}?`)) return;
     this.api.removeUpload(kind, name).subscribe({
-      next: () => this.loadProfile(true),
-      error: (err) => alert('Erro ao remover: ' + err.message)
+      next: () => {
+        this.toast.success(`Arquivo "${name}" removido.`);
+        this.loadProfile(true);
+      },
+      error: (err) => this.toast.error('Erro ao remover arquivo: ' + (err?.error?.detail || err.message))
     });
   }
 
@@ -238,49 +245,30 @@ export class MeuPerfilComponent implements OnInit {
     this.isAiRunning.set(true);
     this.aiStatus.set('Salvando respostas antes de acionar a IA…');
 
-    this.api.saveProfileAnswers(this.formValues).subscribe({
+    this.api.saveProfileAnswers(this.formValues).pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
       next: () => {
-        this.aiStatus.set('A IA está montando o seu perfil…');
-        this.api.triggerClaude({ step: 'perfil', confirm: this.confirmedPrivacy }).subscribe({
+        this.aiStatus.set('A IA está montando o seu perfil… isso pode levar alguns instantes.');
+        this.api.triggerClaude({ step: 'perfil', confirm: this.confirmedPrivacy }).pipe(
+          takeUntilDestroyed(this.destroyRef)
+        ).subscribe({
           next: () => {
-            this.pollAiStatus();
+            this.isAiRunning.set(false);
+            this.aiStatus.set('Perfil montado com sucesso!');
+            this.loadProfile(true);
           },
           error: (err) => {
             this.isAiRunning.set(false);
-            this.aiStatus.set('Não consegui acionar a IA: ' + err.message);
+            const detail = err?.error?.detail || err?.message || 'falha inesperada';
+            this.aiStatus.set('Não consegui concluir com a IA: ' + detail);
           }
         });
       },
       error: (err) => {
         this.isAiRunning.set(false);
-        this.aiStatus.set('Não consegui salvar: ' + err.message);
+        this.aiStatus.set('Não consegui salvar: ' + (err?.error?.detail || err?.message || 'falha inesperada'));
       }
     });
-  }
-
-  private pollAiStatus(): void {
-    const interval = setInterval(() => {
-      this.api.getSearchStatus().subscribe({
-        next: (status) => {
-          const agent = status.agent || status.claude;
-          if (agent && agent.running && agent.step === 'perfil') {
-            this.aiStatus.set(`A IA está montando o seu perfil desde ${agent.started?.slice(11, 16) || ''}…`);
-          } else {
-            clearInterval(interval);
-            this.isAiRunning.set(false);
-            if (agent && agent.error && agent.step === 'perfil') {
-              this.aiStatus.set('A IA não terminou: ' + agent.error);
-            } else {
-              this.aiStatus.set('Perfil montado com sucesso!');
-              this.loadProfile(true);
-            }
-          }
-        },
-        error: () => {
-          clearInterval(interval);
-          this.isAiRunning.set(false);
-        }
-      });
-    }, 3000);
   }
 }

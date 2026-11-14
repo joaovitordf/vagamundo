@@ -1,5 +1,6 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterModule, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { HeaderComponent } from './core/components/header/header.component';
@@ -8,6 +9,7 @@ import { FooterComponent } from './core/components/footer/footer.component';
 import { AutoModeBannerComponent } from './core/components/auto-mode-banner/auto-mode-banner.component';
 import { AutoModeService } from './core/services/auto-mode.service';
 import { ApiService } from './core/services/api.service';
+import { ToastService } from './core/services/toast.service';
 
 const ROUTE_META: Record<string, { title: string; icon: string }> = {
   '/dashboard': { title: 'Dashboard', icon: 'bi-speedometer2' },
@@ -31,8 +33,10 @@ const ROUTE_META: Record<string, { title: string; icon: string }> = {
 })
 export class AppComponent implements OnInit {
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly autoMode = inject(AutoModeService);
   private readonly api = inject(ApiService);
+  readonly toast = inject(ToastService);
 
   isCollapsed = false;
   mobileOpen = false;
@@ -41,7 +45,8 @@ export class AppComponent implements OnInit {
 
   constructor() {
     this.router.events.pipe(
-      filter(event => event instanceof NavigationEnd)
+      filter(event => event instanceof NavigationEnd),
+      takeUntilDestroyed(this.destroyRef)
     ).subscribe((event: any) => {
       const url = event.urlAfterRedirects || event.url;
       const meta = ROUTE_META[url] || { title: 'Vagamundo', icon: 'bi-compass' };

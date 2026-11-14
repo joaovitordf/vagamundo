@@ -1,9 +1,20 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject, signal, computed } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
-import { ApplicationTimelineEvent } from '../../core/models/vaga.model';
-import { getPortalDisplayName } from '../../core/utils/job-filters.util';
+import { ToastService } from '../../core/services/toast.service';
+import { ApplicationRecord, ApplicationTimelineEvent } from '../../core/models/vaga.model';
+import { PortalBadgeComponent } from '../../shared/components/portal-badge.component';
+import {
+  formatDisplayDate,
+  getPortalDisplayName,
+  getPrimaryEmail as pickPrimaryEmail,
+  isWithinDateRange,
+  matchesTextFilter,
+  parseCalendarDateMs,
+  resolveGeo,
+} from '../../core/utils/job-filters.util';
 
 export interface ApplicationsFilterOptions {
   searchTerm: string;
@@ -26,7 +37,7 @@ export function isDirectEmailApplication(app: any): boolean {
 
 export function filterApplicationsList(applications: any[], opts: ApplicationsFilterOptions): any[] {
   let list = applications;
-  const search = opts.searchTerm.trim().toLowerCase();
+  const search = opts.searchTerm.trim();
   const statusF = opts.statusFilter;
   const channelF = opts.channelFilter;
   const criterion = opts.dateCriterion;
@@ -39,15 +50,13 @@ export function filterApplicationsList(applications: any[], opts: ApplicationsFi
     list = list.filter(a => {
       const emailsText = Array.isArray(a.recruiter_emails) ? a.recruiter_emails.join(' ') : '';
       const portalLabel = getPortalDisplayName(a.channel || a.portal || '');
-      return (
-        (a.company || a.job_company || '').toLowerCase().includes(search) ||
-        (a.role || a.title || a.job_title || '').toLowerCase().includes(search) ||
-        (a.channel || a.portal || '').toLowerCase().includes(search) ||
-        portalLabel.toLowerCase().includes(search) ||
-        (a.notes || '').toLowerCase().includes(search) ||
-        (a.contacted_email || '').toLowerCase().includes(search) ||
-        emailsText.toLowerCase().includes(search)
-      );
+      const geo = resolveGeo({
+        location: a.location || a.job_location,
+        portal: a.channel || a.portal,
+        title: a.role || a.title || a.job_title,
+      });
+      const hay = `${a.company || a.job_company || ''} ${a.role || a.title || a.job_title || ''} ${a.location || a.job_location || ''} ${geo.label || ''} ${a.channel || a.portal || ''} ${portalLabel} ${a.notes || ''} ${a.contacted_email || ''} ${emailsText}`;
+      return matchesTextFilter(hay, search);
     });
   }
 
@@ -62,30 +71,11 @@ export function filterApplicationsList(applications: any[], opts: ApplicationsFi
   }
 
   if (range !== 'all') {
-    const now = new Date();
-    now.setHours(23, 59, 59, 999);
-
     list = list.filter(a => {
       const rawDate = criterion === 'applied'
         ? (a.applied_date || a.date || a.created_at)
         : (a.job_posted_date || a.posted_date || a.date || a.applied_date);
-
-      if (!rawDate) return false;
-      const dateStr = String(rawDate).substring(0, 10);
-      const itemDate = new Date(dateStr + 'T12:00:00');
-      if (isNaN(itemDate.getTime())) return false;
-
-      if (range === 'custom') {
-        if (start && dateStr < start) return false;
-        if (end && dateStr > end) return false;
-        return true;
-      }
-
-      const days = range === 'today' ? 1 : (range === '3d' ? 3 : (range === '7d' ? 7 : (range === '15d' ? 15 : 30)));
-      const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-      cutoff.setHours(0, 0, 0, 0);
-
-      return itemDate >= cutoff;
+      return isWithinDateRange(rawDate, range, start, end);
     });
   }
 
@@ -97,17 +87,20 @@ export function filterApplicationsList(applications: any[], opts: ApplicationsFi
       ? (b.applied_date || b.date || b.created_at || '')
       : (b.job_posted_date || b.posted_date || b.date || b.applied_date || '');
 
-    const strA = String(dateA).substring(0, 10);
-    const strB = String(dateB).substring(0, 10);
+    const msA = parseCalendarDateMs(dateA);
+    const msB = parseCalendarDateMs(dateB);
+    if (msA === null && msB === null) return 0;
+    if (msA === null) return 1;
+    if (msB === null) return -1;
 
     if (order === 'oldest') {
-      return strA.localeCompare(strB);
+      return msA - msB;
     }
-    return strB.localeCompare(strA);
+    return msB - msA;
   });
 }
 
-const STATUS_LABELS: Record<string, string> = {
+export const APPLICATION_STATUS_LABELS: Record<string, string> = {
   applied: 'Enviada',
   screening: 'Triagem',
   interview: 'Entrevista',
@@ -119,16 +112,25 @@ const STATUS_LABELS: Record<string, string> = {
   withdrawn: 'Desistência'
 };
 
+export const APPLICATION_STATUS_OPTIONS = Object.entries(APPLICATION_STATUS_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
 @Component({
   selector: 'app-candidaturas',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, PortalBadgeComponent],
   templateUrl: './candidaturas.component.html',
   styleUrl: './candidaturas.component.css'
 })
-export class CandidaturasComponent implements OnInit {
+export class CandidaturasComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
-  applications = signal<any[]>([]);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly toast = inject(ToastService);
+  private copyEmailTimer: ReturnType<typeof setTimeout> | null = null;
+  readonly statusOptions = APPLICATION_STATUS_OPTIONS;
+  applications = signal<ApplicationRecord[]>([]);
   loading = signal<boolean>(true);
 
   // Filtros de Data, Status e Busca
@@ -187,9 +189,16 @@ export class CandidaturasComponent implements OnInit {
     this.loadApplications();
   }
 
+  ngOnDestroy(): void {
+    if (this.copyEmailTimer) {
+      clearTimeout(this.copyEmailTimer);
+      this.copyEmailTimer = null;
+    }
+  }
+
   loadApplications(): void {
     this.loading.set(true);
-    this.api.getApplications().subscribe({
+    this.api.getApplications().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (apps) => {
         this.applications.set(apps || []);
         this.loading.set(false);
@@ -197,6 +206,7 @@ export class CandidaturasComponent implements OnInit {
       error: (err) => {
         console.error('Erro ao carregar candidaturas:', err);
         this.loading.set(false);
+        this.toast.error('Não foi possível carregar as candidaturas.');
       }
     });
   }
@@ -230,20 +240,18 @@ export class CandidaturasComponent implements OnInit {
   }
 
   getPrimaryEmail(app: any): string | null {
-    if (app?.contacted_email && String(app.contacted_email).trim()) {
-      return String(app.contacted_email).trim();
-    }
-    if (Array.isArray(app?.recruiter_emails) && app.recruiter_emails.length > 0) {
-      return String(app.recruiter_emails[0]).trim() || null;
-    }
-    return null;
+    return pickPrimaryEmail(app);
   }
 
   copyRecruiterEmail(email: string): void {
     if (!email) return;
     const done = () => {
       this.copiedEmail.set(email);
-      setTimeout(() => {
+      if (this.copyEmailTimer) {
+        clearTimeout(this.copyEmailTimer);
+      }
+      this.copyEmailTimer = setTimeout(() => {
+        this.copyEmailTimer = null;
         if (this.copiedEmail() === email) {
           this.copiedEmail.set(null);
         }
@@ -277,113 +285,99 @@ export class CandidaturasComponent implements OnInit {
         if (this.selectedApp()?.id === app.id) {
           this.closeHistoryModal();
         }
+        this.toast.success('Oportunidade devolvida para a aba Recrutadores.');
         this.loadApplications();
       },
       error: (err) => {
         this.reopeningKey.set(null);
-        alert('Erro ao reabrir em Recrutadores: ' + (err.error?.detail || err.message));
+        this.toast.error('Erro ao reabrir em Recrutadores: ' + (err.error?.detail || err.message));
       }
     });
   }
 
   formatDate(d: string): string {
-    if (!d) return '-';
-    const datePart = String(d).substring(0, 10);
-    const parts = datePart.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return d;
+    return d ? formatDisplayDate(d) : '-';
   }
 
   getStatusLabel(s: string): string {
-    return STATUS_LABELS[(s || '').toLowerCase()] || s || 'Enviada';
+    return APPLICATION_STATUS_LABELS[(s || '').toLowerCase()] || s || 'Enviada';
   }
 
   encodePath(path: string): string {
     return encodeURIComponent(path || '');
   }
 
-  prepareInterview(app: any): void {
+  private runAiStepForApp(
+    app: any,
+    step: 'entrevista' | 'carta' | 'curriculo',
+    busySignal: { set(val: string | null): void },
+    busyKey: (url: string) => string,
+    missingUrlMsg: string,
+    errorPrefix: string,
+    successMsg: string
+  ): void {
     const url = app?.url || app?.job_url || app?.source;
     if (!url) {
-      alert('URL da vaga não disponível para preparar entrevista.');
+      this.toast.warning(missingUrlMsg);
       return;
     }
-    this.preparingInterview.set(url);
-    this.api.triggerClaude({ url, step: 'entrevista' }).subscribe({
+    busySignal.set(busyKey(url));
+    this.api.triggerClaude({ url, step }).subscribe({
       next: () => {
-        this.preparingInterview.set(null);
+        busySignal.set(null);
+        this.toast.success(successMsg);
         this.loadApplications();
         if (this.selectedApp()) {
-          // Refresh selected app pdf_entrevista
-          this.api.getApplications().subscribe({
+          this.api.getApplications().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: (apps) => {
               const updated = apps.find(a => (a.url || a.job_url || a.source) === url);
               if (updated) this.selectedApp.set(updated);
-            }
+            },
+            error: (err) => console.warn('Falha ao atualizar detalhe selecionado:', err),
           });
         }
       },
       error: (err) => {
-        this.preparingInterview.set(null);
-        alert('Erro ao preparar entrevista com IA: ' + (err.error?.detail || err.message));
+        busySignal.set(null);
+        this.toast.error(errorPrefix + (err.error?.detail || err.message));
       }
     });
+  }
+
+  prepareInterview(app: any): void {
+    this.runAiStepForApp(
+      app,
+      'entrevista',
+      this.preparingInterview,
+      url => url,
+      'URL da vaga não disponível para preparar entrevista.',
+      'Erro ao preparar entrevista com IA: ',
+      'Dossiê de entrevista gerado com sucesso.'
+    );
   }
 
   generateCarta(app: any): void {
-    const url = app?.url || app?.job_url || app?.source;
-    if (!url) {
-      alert('URL da vaga não disponível para gerar carta de apresentação.');
-      return;
-    }
-    const key = url + '_carta';
-    this.generatingDoc.set(key);
-    this.api.triggerClaude({ url, step: 'carta' }).subscribe({
-      next: () => {
-        this.generatingDoc.set(null);
-        this.loadApplications();
-        if (this.selectedApp()) {
-          this.api.getApplications().subscribe({
-            next: (apps) => {
-              const updated = apps.find(a => (a.url || a.job_url || a.source) === url);
-              if (updated) this.selectedApp.set(updated);
-            }
-          });
-        }
-      },
-      error: (err) => {
-        this.generatingDoc.set(null);
-        alert('Erro ao gerar carta com IA: ' + (err.error?.detail || err.message));
-      }
-    });
+    this.runAiStepForApp(
+      app,
+      'carta',
+      this.generatingDoc,
+      url => `${url}_carta`,
+      'URL da vaga não disponível para gerar carta de apresentação.',
+      'Erro ao gerar carta com IA: ',
+      'Carta de apresentação gerada com sucesso.'
+    );
   }
 
   generateCv(app: any): void {
-    const url = app?.url || app?.job_url || app?.source;
-    if (!url) {
-      alert('URL da vaga não disponível para gerar currículo.');
-      return;
-    }
-    const key = url + '_cv';
-    this.generatingDoc.set(key);
-    this.api.triggerClaude({ url, step: 'curriculo' }).subscribe({
-      next: () => {
-        this.generatingDoc.set(null);
-        this.loadApplications();
-        if (this.selectedApp()) {
-          this.api.getApplications().subscribe({
-            next: (apps) => {
-              const updated = apps.find(a => (a.url || a.job_url || a.source) === url);
-              if (updated) this.selectedApp.set(updated);
-            }
-          });
-        }
-      },
-      error: (err) => {
-        this.generatingDoc.set(null);
-        alert('Erro ao gerar currículo com IA: ' + (err.error?.detail || err.message));
-      }
-    });
+    this.runAiStepForApp(
+      app,
+      'curriculo',
+      this.generatingDoc,
+      url => `${url}_cv`,
+      'URL da vaga não disponível para gerar currículo.',
+      'Erro ao gerar currículo com IA: ',
+      'Currículo personalizado gerado com sucesso.'
+    );
   }
 
   deleteApplication(app: any): void {
@@ -398,10 +392,11 @@ export class CandidaturasComponent implements OnInit {
     const jobId = app.job_id;
     this.api.removeApplication({ url, id, job_id: jobId }).subscribe({
       next: () => {
+        this.toast.success('Candidatura removida da lista.');
         this.loadApplications();
       },
       error: (err) => {
-        alert('Erro ao remover candidatura: ' + (err.error?.detail || err.message));
+        this.toast.error('Erro ao remover candidatura: ' + (err.error?.detail || err.message));
       }
     });
   }
@@ -439,6 +434,7 @@ export class CandidaturasComponent implements OnInit {
       error: (err) => {
         console.error('Erro ao buscar histórico:', err);
         this.loadingEvents.set(false);
+        this.toast.error('Erro ao buscar histórico de etapas.');
       }
     });
   }
@@ -448,7 +444,7 @@ export class CandidaturasComponent implements OnInit {
     if (!app) return;
 
     if (!this.formStage.trim()) {
-      alert('Informe a etapa do processo seletivo.');
+      this.toast.warning('Informe a etapa do processo seletivo.');
       return;
     }
 
@@ -469,12 +465,13 @@ export class CandidaturasComponent implements OnInit {
         this.savingEvent.set(false);
         this.formFeedback = '';
         this.formQuestions = '';
+        this.toast.success('Etapa registrada no histórico.');
         this.loadEventsForSelected();
         this.loadApplications();
       },
       error: (err) => {
         this.savingEvent.set(false);
-        alert('Erro ao registrar etapa: ' + (err.error?.detail || err.message));
+        this.toast.error('Erro ao registrar etapa: ' + (err.error?.detail || err.message));
       }
     });
   }
@@ -485,11 +482,12 @@ export class CandidaturasComponent implements OnInit {
 
     this.api.deleteApplicationEvent(eventId).subscribe({
       next: () => {
+        this.toast.success('Registro de histórico excluído.');
         this.loadEventsForSelected();
         this.loadApplications();
       },
       error: (err) => {
-        alert('Erro ao excluir evento: ' + (err.error?.detail || err.message));
+        this.toast.error('Erro ao excluir evento: ' + (err.error?.detail || err.message));
       }
     });
   }

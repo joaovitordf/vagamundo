@@ -184,6 +184,60 @@ class RecruiterTriageCalibration(Tmp):
         self.assertIn("Múltiplas vagas no mesmo anúncio", captured["prompt"])
         self.assertIn("framework irmão", captured["prompt"])
 
+    def test_call_llm_injects_model_header_instruction_and_cover_letter_stays_clean(self):
+        fake_provider = mock.Mock()
+        fake_provider.model = "gemini-4-hydrogen-high"
+        fake_provider.get_info.return_value = {
+            "provider": "gemini",
+            "name": "Gemini",
+            "mode": "cli",
+            "model": "gemini-4-hydrogen-high",
+            "label": "Google Gemini (gemini-4-hydrogen-high via Antigravity (agy))",
+        }
+        fake_provider.generate.return_value = "> Modelo: gemini-4-hydrogen-high\n\n## Avaliação"
+        with mock.patch.object(ai_providers, "load_env_file", return_value={"AI_DATA_CONSENT": "yes"}), \
+             mock.patch.object(ai_providers, "has_consent", return_value=True), \
+             mock.patch.object(ai_providers, "get_ai_provider", return_value=fake_provider):
+            reply = painel_ia.call_llm("avalie a vaga")
+
+        self.assertTrue(reply.startswith("> Modelo: gemini-4-hydrogen-high"))
+        sys_inst = fake_provider.generate.call_args.kwargs["system_instruction"]
+        self.assertIn("gemini-4-hydrogen-high", sys_inst)
+        self.assertIn("NUNCA em código LaTeX, currículo, carta para recrutador", sys_inst)
+
+        # Fallback do texto da carta não deixa vazar linha de modelo para o recrutador
+        leaked = "> Modelo: gemini-4-hydrogen-high\n\nPrezada equipe,\nTenho grande interesse nesta vaga.\n\n```latex\n\\documentclass{cover}\n```"
+        plain = painel_ia._extract_plain_letter(leaked)
+        self.assertNotIn("gemini-4-hydrogen-high", plain)
+        self.assertNotIn("Modelo:", plain)
+        self.assertIn("Prezada equipe,", plain)
+
+    def test_triar_vaga_rapida_persists_ai_model_and_cached_score_reads_it(self):
+        import painel
+        from backend.core.evaluator import EvaluatorService
+
+        url = "https://example.com/vaga-model-badge"
+        posting = {"text": "Vaga Python Pleno remoto", "portal": "gupy-search", "title": "Dev Python", "company": "Acme"}
+        llm_json = '{"model": "gemini-4-hydrogen-high", "score": 84, "verdict": "Strong Fit", "summary": "Excelente aderência."}'
+
+        with mock.patch.object(painel_ia, "PAINEL_DIR", self.dir), \
+             mock.patch.object(painel, "CLAUDE_DIR", self.dir), \
+             mock.patch.object(painel_ia, "fetch_posting", return_value=posting), \
+             mock.patch.object(painel_ia, "_compact_candidate_profile", return_value="Perfil Python"), \
+             mock.patch.object(painel_ia, "call_llm", return_value=llm_json):
+            out = painel_ia.triar_vaga_rapida(url, posting)
+            cached = painel.get_cached_score(url)
+
+        self.assertEqual(out["ai_model"], "gemini-4-hydrogen-high")
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached["ai_model"], "gemini-4-hydrogen-high")
+        self.assertEqual(cached["summary"], "Excelente aderência.")
+
+        parsed = EvaluatorService.parse_report(
+            "> Modelo: gemini-4-hydrogen-high\n\n## Avaliação\n**Nota geral: 81/100**\n### Veredito: Strong Fit\n"
+        )
+        self.assertEqual(parsed, {"score": 81, "verdict": "Strong Fit", "ai_model": "gemini-4-hydrogen-high"})
+
 
 if __name__ == "__main__":
     unittest.main()

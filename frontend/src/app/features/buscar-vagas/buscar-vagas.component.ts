@@ -1,40 +1,53 @@
-import { Component, HostListener, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewInit, inject, signal, computed, effect } from '@angular/core';
+import { Component, DestroyRef, OnInit, OnDestroy, inject, signal, computed, effect } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { AutoModeService } from '../../core/services/auto-mode.service';
 import { SearchStateService } from '../../core/services/search-state.service';
+import { ToastService } from '../../core/services/toast.service';
 import { Vaga } from '../../core/models/vaga.model';
 import {
   AVAILABLE_PORTALS,
   ActiveGeoFilter,
   GeoResolution,
-  PORTAL_CATEGORIES,
-  PortalOption,
+  getJobWarning,
   getPortalDisplayName,
   getWorkModelLabel,
+  hasVisaSponsorship,
   isWithinDays,
   matchesRegionFilter,
   matchesScoreFilter,
   matchesTextFilter,
-  normalizeWorkModel,
   parseCalendarDateMs,
+  resolveEffectiveWorkModel,
   resolveGeo as resolveGeoUtil,
 } from '../../core/utils/job-filters.util';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
+import { SearchFiltersPanelComponent } from './components/search-filters-panel.component';
+import { GeoMapComponent } from './components/geo-map.component';
+import { BuscarJobCardComponent } from './components/buscar-job-card.component';
 
 @Component({
   selector: 'app-buscar-vagas',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    SearchFiltersPanelComponent,
+    GeoMapComponent,
+    BuscarJobCardComponent,
+  ],
   templateUrl: './buscar-vagas.component.html',
   styleUrl: './buscar-vagas.component.css'
 })
-export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
+export class BuscarVagasComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly toast = inject(ToastService);
   readonly autoMode = inject(AutoModeService);
   readonly state = inject(SearchStateService);
+  private searchPollInFlight = false;
+  private batchPollInFlight = false;
 
   private lastAutoTick = this.autoMode.resultsRefreshTick();
   private lastAutoKeywords = '';
@@ -46,15 +59,16 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
     effect(() => {
       const tick = this.autoMode.resultsRefreshTick();
       const st = this.autoMode.status();
+      if ((st?.running && st.mode !== 'recruiters') || (tick > 0 && st?.mode !== 'recruiters')) {
+        this.api.hasSearchedInSession.set(true);
+      }
       if (st?.running && st.mode !== 'recruiters' && st.phase !== 'cooldown' && st.keywords?.length) {
         const kwStr = st.keywords.join(', ');
         if (kwStr !== this.lastAutoKeywords) {
           this.lastAutoKeywords = kwStr;
-          if (this.filterText !== kwStr) {
-            this.state.filterText.set(kwStr);
-            this.state.cvAreaBadge.set('Sorteado pela IA (Modo Automático)');
-            this.state.markSearchExecuted(kwStr);
-          }
+          this.state.cvAreaBadge.set(`Sorteado pela IA: ${kwStr}`);
+          this.state.markSearchExecuted();
+          this.onFilterChange();
         }
       }
       if (!st?.running) {
@@ -67,10 +81,8 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
     }, { allowSignalWrites: true });
   }
 
-  @ViewChild('mapWorldContainer') mapWorldContainer!: ElementRef<HTMLDivElement>;
-  @ViewChild('mapBrasilContainer') mapBrasilContainer!: ElementRef<HTMLDivElement>;
-
   readonly allVagas = this.state.allVagas;
+  readonly baseFilteredVagas = signal<Vaga[]>([]);
   filteredVagas = signal<Vaga[]>([]);
   readonly activeSubtab = this.state.activeSubtab;
 
@@ -155,103 +167,8 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   readonly availablePortals = AVAILABLE_PORTALS;
-  readonly portalCategories = PORTAL_CATEGORIES;
-  portalsDropdownOpen = signal<boolean>(false);
+  private readonly validPortalIds = new Set(AVAILABLE_PORTALS.map(p => p.id.toLowerCase()));
   readonly selectedPortalIds = this.state.selectedPortalIds;
-  readonly filterPortalSearchText = this.state.filterPortalSearchText;
-
-  portalsSummaryLabel = computed(() => {
-    const total = this.availablePortals.length;
-    const selected = this.selectedPortalIds();
-    if (selected.size === total) return `Todas as fontes (${total})`;
-    if (selected.size === 0) return 'Nenhum portal selecionado';
-    if (selected.size === 1) {
-      const id = Array.from(selected)[0];
-      const p = this.availablePortals.find(x => x.id === id);
-      return p ? p.name : id;
-    }
-    if (selected.size <= 2) {
-      return Array.from(selected)
-        .map(id => this.availablePortals.find(x => x.id === id)?.name || id)
-        .join(', ');
-    }
-    return `${selected.size} portais selecionados`;
-  });
-
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    if (this.portalsDropdownOpen()) {
-      this.portalsDropdownOpen.set(false);
-    }
-  }
-
-  togglePortalsDropdown(event: MouseEvent): void {
-    event.stopPropagation();
-    this.portalsDropdownOpen.update(v => !v);
-  }
-
-  isPortalSelected(id: string): boolean {
-    return this.selectedPortalIds().has(id);
-  }
-
-  togglePortal(id: string, event?: Event): void {
-    if (event) {
-      event.stopPropagation();
-    }
-    const current = new Set(this.selectedPortalIds());
-    if (current.has(id)) {
-      current.delete(id);
-    } else {
-      current.add(id);
-    }
-    this.selectedPortalIds.set(current);
-    this.state.persist();
-    this.onFilterChange();
-  }
-
-  selectAllPortals(): void {
-    this.selectedPortalIds.set(new Set(this.availablePortals.map(p => p.id)));
-    this.state.persist();
-    this.onFilterChange();
-  }
-
-  deselectAllPortals(): void {
-    this.selectedPortalIds.set(new Set());
-    this.state.persist();
-    this.onFilterChange();
-  }
-
-  isCategoryFullySelected(catId: string): boolean {
-    const inCat = this.availablePortals.filter(p => p.category === catId);
-    if (!inCat.length) return false;
-    const sel = this.selectedPortalIds();
-    return inCat.every(p => sel.has(p.id));
-  }
-
-  toggleCategoryPortals(catId: string): void {
-    const inCat = this.availablePortals.filter(p => p.category === catId);
-    const fullySelected = this.isCategoryFullySelected(catId);
-    const current = new Set(this.selectedPortalIds());
-    if (fullySelected) {
-      inCat.forEach(p => current.delete(p.id));
-    } else {
-      inCat.forEach(p => current.add(p.id));
-    }
-    this.selectedPortalIds.set(current);
-    this.state.persist();
-    this.onFilterChange();
-  }
-
-  getFilteredPortalsByCategory(catId: string): PortalOption[] {
-    const q = this.filterPortalSearchText().trim().toLowerCase();
-    const inCat = this.availablePortals.filter(p => p.category === catId);
-    if (!q) return inCat;
-    return inCat.filter(p => p.name.toLowerCase().includes(q) || (p.badge && p.badge.toLowerCase().includes(q)));
-  }
-
-  hasMatchingPortalsInCategory(catId: string): boolean {
-    return this.getFilteredPortalsByCategory(catId).length > 0;
-  }
 
   readonly cvAreaBadge = this.state.cvAreaBadge;
   private cvAreasList: any[] = [];
@@ -259,7 +176,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   private lastPickedAreaId: string | null = null;
 
   // Mapa & Dados Geográficos
-  private geoData: any = null;
+  readonly geoData = signal<any>(null);
   get activeGeoFilter(): ActiveGeoFilter | null { return this.state.activeGeoFilter(); }
   set activeGeoFilter(v: ActiveGeoFilter | null) {
     this.state.activeGeoFilter.set(v);
@@ -270,8 +187,6 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
     this.state.isTriageMode.set(v);
     this.state.persist();
   }
-  remoteCounts: Record<string, number> = { REMOTO_BR: 0, EU_REMOTE: 0, GLOBAL_REMOTE: 0 };
-  remoteScores: Record<string, number> = { REMOTO_BR: -1, EU_REMOTE: -1, GLOBAL_REMOTE: -1 };
 
   // Status de Busca & Triagem (mantidos no singleton SearchStateService)
   readonly searching = this.state.searching;
@@ -326,6 +241,14 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   ngOnInit(): void {
     this.loadCvAreas();
     this.loadAutoConfig();
+    this.api.getSettings().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (s) => {
+        if (s?.active?.label) {
+          this.triageProviderLabel.set(s.active.label);
+        }
+      },
+      error: (err) => console.warn('Falha ao consultar provedor ativo:', err),
+    });
 
     const isAutoJobsRunning = this.autoMode.isRunning() && this.autoMode.status()?.mode !== 'recruiters';
     const hasPersistedSession = this.state.hasTodaySearch() || this.api.hasSearchedInSession() || isAutoJobsRunning;
@@ -341,6 +264,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       this.loadResults();
     }
 
+    this.loadGeoData();
     this.checkInitialStatus();
   }
 
@@ -362,6 +286,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       clearInterval(this.searchFallbackInterval);
       this.searchFallbackInterval = null;
     }
+    this.searchPollInFlight = false;
   }
 
   private cleanupBatchPolling(): void {
@@ -369,6 +294,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       clearInterval(this.batchPollInterval);
       this.batchPollInterval = null;
     }
+    this.batchPollInFlight = false;
   }
 
   loadAutoConfig(): void {
@@ -388,7 +314,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
         }
         this.state.persist();
       },
-      error: () => {}
+      error: (err) => console.warn('Falha ao carregar configuração automática:', err)
     });
   }
 
@@ -401,11 +327,9 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       min_score: clampedScore,
       continuous: this.autoContinuous,
       cooldown_seconds: clampedMins * 60,
-    }).subscribe({ error: () => {} });
-  }
-
-  ngAfterViewInit(): void {
-    this.loadGeoData();
+    }).subscribe({
+      error: (err) => this.toast.warning('Não foi possível salvar configuração do Modo Automático: ' + (err?.error?.detail || err?.message || 'Erro'))
+    });
   }
 
   loadCvAreas(): void {
@@ -415,7 +339,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
           this.cvAreasList = res.areas;
         }
       },
-      error: () => {}
+      error: (err) => console.warn('Falha ao carregar áreas do CV:', err)
     });
   }
 
@@ -476,8 +400,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   loadGeoData(): void {
     this.api.getGeo().subscribe({
       next: (data) => {
-        this.geoData = data;
-        this.updateMap();
+        this.geoData.set(data);
       },
       error: (err) => console.error('Erro ao carregar geo data:', err)
     });
@@ -522,7 +445,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
           this.api.refreshCounts();
         }
       },
-      error: () => {}
+      error: (err) => console.warn('Falha ao verificar status inicial de busca/triagem:', err)
     });
   }
 
@@ -564,6 +487,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       cooldown_seconds: cooldownMins * 60,
     }).subscribe({
       next: () => {
+        this.api.hasSearchedInSession.set(true);
         this.state.markSearchExecuted(this.filterText.trim() || undefined);
         this.showToast('🤖 Modo Automático iniciado! Acompanhe o aviso no topo de qualquer tela.');
       },
@@ -616,6 +540,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.api.startSearch(payload).subscribe({
       next: () => {
+        this.api.hasSearchedInSession.set(true);
         this.state.markSearchExecuted(trimmedQuery);
         this.pollSearchStatus();
       },
@@ -681,8 +606,11 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const startPolling = () => {
       return setInterval(() => {
-        this.api.getSearchStatus().subscribe({
+        if (this.searchPollInFlight) return;
+        this.searchPollInFlight = true;
+        this.api.getSearchStatus().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: (st) => {
+            this.searchPollInFlight = false;
             const job = st.search || st;
             if (job && job.progress) {
               handleProgressUpdate(job.progress);
@@ -693,9 +621,10 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
               handleDone(job);
             }
           },
-          error: () => {
+          error: (err) => {
             this.cleanupSearchPolling();
             this.searching.set(false);
+            this.toast.error('Erro ao acompanhar andamento da busca: ' + (err?.error?.detail || err?.message || 'Erro de rede'));
           }
         });
       }, 1000);
@@ -750,7 +679,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       reasons.push(`seleção de portais (${selectedPortals.size} de ${this.availablePortals.length})`);
     }
     if (this.filterModel) {
-      const noModelCount = vagas.filter(v => normalizeWorkModel(v.workplace_type) === 'none').length;
+      const noModelCount = vagas.filter(v => resolveEffectiveWorkModel(v) === 'none').length;
       reasons.push(
         noModelCount > 0
           ? `modelo "${this.filterModel}" (${noModelCount} vaga(s) sem modelo informado)`
@@ -797,7 +726,8 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       if (nowarn && this.getWarning(r)) return false;
       if (visaOnly && !this.hasVisa(r)) return false;
 
-      if (model && normalizeWorkModel(r.workplace_type) !== model) {
+      const effModel = resolveEffectiveWorkModel(r);
+      if (model && effModel !== model) {
         return false;
       }
 
@@ -806,12 +736,11 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
         return false;
       }
       if (selectedPortals.size < this.availablePortals.length) {
-        const portal = String(r.portal || '').toLowerCase();
-        let matches = selectedPortals.has(portal);
-        if (!matches && !portal.endsWith('-search')) {
-          matches = selectedPortals.has(`${portal}-search`);
-        }
-        if (!matches) {
+        const portal = String(r.portal || '').toLowerCase().trim();
+        const portalId = portal.endsWith('-search')
+          ? portal
+          : (this.validPortalIds.has(`${portal}-search`) ? `${portal}-search` : portal);
+        if (this.validPortalIds.has(portalId) && !selectedPortals.has(portalId)) {
           return false;
         }
       }
@@ -835,7 +764,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
         const desc = r.description ? (r.description.length > 6000 ? r.description.slice(0, 6000) : r.description) : '';
         const tags = Array.isArray(r.tags) ? r.tags.join(' ') : '';
         const skills = Array.isArray(r.skills) ? r.skills.join(' ') : '';
-        const haystack = `${r.title || ''} ${r.company || ''} ${r.location || ''} ${r.seniority || ''} ${desc} ${tags} ${skills}`;
+        const haystack = `${r.title || ''} ${r.company || ''} ${r.location || ''} ${geo.label || ''} ${r.portal || ''} ${getPortalDisplayName(r.portal)} ${r.workplace_type || ''} ${getWorkModelLabel(effModel)} ${r.seniority || ''} ${desc} ${tags} ${skills}`;
         if (!matchesTextFilter(haystack, rawText, {
           hasDescription: hasDesc,
           fallbackQuery: r.query,
@@ -890,8 +819,8 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       });
     }
 
+    this.baseFilteredVagas.set(base);
     this.filteredVagas.set(filtered);
-    this.updateMap();
   }
 
   resetAllFilters(): void {
@@ -902,38 +831,27 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   switchSubtab(tab: 'mapa' | 'lista'): void {
     this.activeSubtab.set(tab);
     this.state.persist();
-    if (tab === 'mapa') {
-      setTimeout(() => this.updateMap(), 50);
-    }
   }
 
   switchMapMode(mode: 'world' | 'brasil'): void {
     this.currentMapMode = mode;
     if (mode === 'brasil' && (!this.activeGeoFilter || this.activeGeoFilter.type === 'country')) {
-      const brCnt = this.allVagas().filter(r => this.resolveGeo(r).countryCode === 'BR').length;
+      const brCnt = this.baseFilteredVagas().filter(r => this.resolveGeo(r).countryCode === 'BR').length;
       this.activeGeoFilter = { type: 'country', code: 'BR', name: 'Brasil (Todos os Estados)', count: brCnt };
-    }
-    this.updateMap();
-  }
-
-  selectRemoteChip(code: string, name: string): void {
-    if (this.activeGeoFilter?.type === 'remote' && this.activeGeoFilter.code === code) {
+      this.onFilterChange();
+    } else if (mode === 'world' && (this.activeGeoFilter?.code === 'BR' || this.activeGeoFilter?.type === 'uf')) {
       this.activeGeoFilter = null;
-    } else {
-      const cnt = this.remoteCounts[code] || 0;
-      this.activeGeoFilter = { type: 'remote', code, name, count: cnt };
+      this.onFilterChange();
     }
-    this.onFilterChange();
   }
 
-  clearGeoFilter(): void {
-    this.activeGeoFilter = null;
+  onGeoFilterChange(filter: ActiveGeoFilter | null): void {
+    this.activeGeoFilter = filter;
     this.onFilterChange();
   }
 
   toggleTriageMode(): void {
     this.isTriageMode = !this.isTriageMode;
-    this.updateMap();
   }
 
   mapIndicatorText(): string {
@@ -997,29 +915,71 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
 
-  affinityHubs(): any[] {
+  affinityHubs(): Array<{
+    label: string;
+    count: number;
+    score: number;
+    key: string;
+    searchTerm: string;
+    companiesSample: string;
+    sampleTitles: string;
+    scoreText: string;
+  }> {
     const list = this.filteredVagas();
-    const hubs: Record<string, { label: string; count: number; score: number; key: string }> = {};
+    const hubs: Record<string, {
+      label: string;
+      count: number;
+      score: number;
+      key: string;
+      searchTerm: string;
+      companies: Set<string>;
+      titles: Set<string>;
+    }> = {};
 
     list.forEach(r => {
       const geo = this.resolveGeo(r);
       const k = geo.label || geo.code || 'Outros';
       const sc = (r.screening && typeof r.screening.score === 'number') ? r.screening.score : -1;
       if (!hubs[k]) {
-        hubs[k] = { label: k, count: 0, score: -1, key: k };
+        const cleanTerm = k === 'Remoto Brasil' ? 'Brasil' : k.replace(/\s*\([A-Z]{2}\)$/, '');
+        hubs[k] = {
+          label: k,
+          count: 0,
+          score: -1,
+          key: k,
+          searchTerm: cleanTerm,
+          companies: new Set<string>(),
+          titles: new Set<string>(),
+        };
       }
       hubs[k].count++;
       if (sc > hubs[k].score) hubs[k].score = sc;
+      if (r.company && r.company.trim() && hubs[k].companies.size < 3) {
+        hubs[k].companies.add(r.company.trim());
+      }
+      if (r.title && r.title.trim() && hubs[k].titles.size < 2) {
+        hubs[k].titles.add(r.title.trim());
+      }
     });
 
     return Object.values(hubs)
       .sort((a, b) => b.count - a.count)
-      .slice(0, 4);
+      .slice(0, 4)
+      .map(h => ({
+        label: h.label,
+        count: h.count,
+        score: h.score,
+        key: h.key,
+        searchTerm: h.searchTerm,
+        companiesSample: h.companies.size > 0 ? Array.from(h.companies).join(', ') : 'Diversas empresas',
+        sampleTitles: h.titles.size > 0 ? Array.from(h.titles).join(', ') : 'diversos perfis',
+        scoreText: h.score >= 0 ? `Melhor nota ${h.score}/100` : 'Aguardando triagem',
+      }));
   }
 
   onAffinityClick(hub: any): void {
-    if (!hub || !hub.key) return;
-    this.filterText = hub.key;
+    if (!hub || (!hub.searchTerm && !hub.key)) return;
+    this.filterText = hub.searchTerm || hub.key;
     this.onFilterChange();
   }
 
@@ -1042,7 +1002,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
     const counts: Record<string, number> = { 'Remoto': 0, 'Híbrido': 0, 'Presencial': 0, 'Não informado': 0 };
     const total = this.filteredVagas().length || 1;
     this.filteredVagas().forEach(r => {
-      const lbl = getWorkModelLabel(r.workplace_type);
+      const lbl = getWorkModelLabel(resolveEffectiveWorkModel(r));
       counts[lbl] = (counts[lbl] || 0) + 1;
     });
 
@@ -1066,316 +1026,6 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       .slice(0, 5);
   }
 
-  private updateMap(): void {
-    if (!this.geoData) return;
-
-    // Sincronização 100%: o mapa agora usa as mesmas vagas base dos filtros ativos!
-    const baseRows = this.getBaseFilteredVagas();
-    const brCounts: Record<string, number> = {};
-    const worldCounts: Record<string, number> = {};
-    const brScores: Record<string, number> = {};
-    const worldScores: Record<string, number> = {};
-    this.remoteCounts = { REMOTO_BR: 0, EU_REMOTE: 0, GLOBAL_REMOTE: 0 };
-    this.remoteScores = { REMOTO_BR: -1, EU_REMOTE: -1, GLOBAL_REMOTE: -1 };
-
-    baseRows.forEach(r => {
-      const geo = this.resolveGeo(r);
-      const score = (r.screening && typeof r.screening.score === 'number') ? r.screening.score : -1;
-
-      if (geo.remoteBucket) {
-        this.remoteCounts[geo.remoteBucket] = (this.remoteCounts[geo.remoteBucket] || 0) + 1;
-        if (score > this.remoteScores[geo.remoteBucket]) this.remoteScores[geo.remoteBucket] = score;
-      }
-
-      if (geo.countryCode === 'BR') {
-        worldCounts['BR'] = (worldCounts['BR'] || 0) + 1;
-        if (score > (worldScores['BR'] || -1)) worldScores['BR'] = score;
-        if (geo.code && geo.code !== 'REMOTO_BR') {
-          brCounts[geo.code] = (brCounts[geo.code] || 0) + 1;
-          if (score > (brScores[geo.code] || -1)) brScores[geo.code] = score;
-        }
-      } else if (geo.countryCode && geo.countryCode !== 'GLOBAL_REMOTE' && geo.countryCode !== 'EU_REMOTE') {
-        worldCounts[geo.countryCode] = (worldCounts[geo.countryCode] || 0) + 1;
-        if (score > (worldScores[geo.countryCode] || -1)) worldScores[geo.countryCode] = score;
-      }
-    });
-
-    if (this.mapWorldContainer?.nativeElement) {
-      this.renderWorldMapSvg(this.geoData.world || {}, worldCounts, worldScores);
-    }
-    if (this.mapBrasilContainer?.nativeElement) {
-      this.renderBrasilMapSvg(this.geoData.brasil || {}, brCounts, brScores);
-    }
-  }
-
-  private createSvgEl(tag: string, attrs: Record<string, string | number>, text?: string): SVGElement {
-    const node = document.createElementNS(SVG_NS, tag);
-    for (const [key, val] of Object.entries(attrs)) {
-      node.setAttribute(key, String(val));
-    }
-    if (text !== undefined) {
-      node.textContent = text;
-    }
-    return node;
-  }
-
-  private appendOceanGradient(svg: SVGElement, id: string, cx: string, cy: string): void {
-    const defs = document.createElementNS(SVG_NS, 'defs');
-    const grad = this.createSvgEl('radialGradient', { id, cx, cy, r: '70%' });
-    grad.appendChild(this.createSvgEl('stop', { offset: '0%', 'stop-color': '#0d1525' }));
-    grad.appendChild(this.createSvgEl('stop', { offset: '100%', 'stop-color': '#070b13' }));
-    defs.appendChild(grad);
-    svg.appendChild(defs);
-  }
-
-  private createMapBadge(
-    code: string,
-    cx: number,
-    cy: number,
-    cnt: number,
-    maxScore: number,
-    isHighFit: boolean
-  ): SVGElement {
-    const gBadge = this.createSvgEl('g', { style: 'cursor: pointer;' });
-    const hasScore = this.isTriageMode && maxScore >= 0;
-    const rectW = hasScore ? 62 : 46;
-
-    gBadge.appendChild(
-      this.createSvgEl('rect', {
-        class: `geo-badge-bg ${isHighFit ? 'fit-high' : ''}`.trim(),
-        x: cx - rectW / 2,
-        y: cy - 12,
-        width: rectW,
-        height: 24,
-      })
-    );
-    gBadge.appendChild(this.createSvgEl('text', { class: 'geo-badge', x: cx, y: cy - 1 }, code));
-    gBadge.appendChild(
-      this.createSvgEl(
-        'text',
-        {
-          class: 'geo-badge-sub',
-          style: `fill: ${isHighFit ? '#34d399' : '#38bdf8'}; font-size: 8.5px;`,
-          x: cx,
-          y: cy + 9,
-        },
-        hasScore ? `${cnt} (${maxScore}p)` : `${cnt} vaga(s)`
-      )
-    );
-    return gBadge;
-  }
-
-  private renderWorldMapSvg(world: Record<string, any>, counts: Record<string, number>, scores: Record<string, number>): void {
-    const el = this.mapWorldContainer.nativeElement;
-    el.replaceChildren();
-
-    const svg = this.createSvgEl('svg', {
-      viewBox: '0 0 1000 500',
-      style: 'width: 100%; height: auto; max-height: 500px; display: block;',
-    });
-
-    this.appendOceanGradient(svg, 'world-ocean-grad', '50%', '45%');
-
-    svg.appendChild(
-      this.createSvgEl('rect', {
-        width: 1000,
-        height: 500,
-        rx: 10,
-        fill: 'url(#world-ocean-grad)',
-      })
-    );
-
-    const gGrid = this.createSvgEl('g', { style: 'pointer-events: none;' });
-    const gridLines: Array<Record<string, string | number>> = [
-      { x1: 20, y1: 250, x2: 980, y2: 250, stroke: 'rgba(51, 65, 85, 0.28)', 'stroke-dasharray': '4 6' },
-      { x1: 20, y1: 180, x2: 980, y2: 180, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
-      { x1: 20, y1: 320, x2: 980, y2: 320, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
-      { x1: 250, y1: 20, x2: 250, y2: 480, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
-      { x1: 500, y1: 20, x2: 500, y2: 480, stroke: 'rgba(51, 65, 85, 0.22)', 'stroke-dasharray': '4 6' },
-      { x1: 750, y1: 20, x2: 750, y2: 480, stroke: 'rgba(51, 65, 85, 0.16)', 'stroke-dasharray': '3 6' },
-    ];
-    for (const attrs of gridLines) {
-      gGrid.appendChild(this.createSvgEl('line', attrs));
-    }
-    svg.appendChild(gGrid);
-
-    const gPaths = document.createElementNS(SVG_NS, 'g');
-    const gBadges = document.createElementNS(SVG_NS, 'g');
-
-    for (const [code, info] of Object.entries(world)) {
-      if (code === 'AQ') continue;
-      const cnt = counts[code] || 0;
-      const maxScore = scores[code] || -1;
-      const isHighFit = this.isTriageMode && maxScore >= 75;
-      const isActive = this.activeGeoFilter?.type === 'country' && this.activeGeoFilter.code === code;
-      const fill = this.getGeoColor(cnt, maxScore, isActive);
-
-      const path = this.createSvgEl('path', {
-        class: `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`.trim(),
-        d: info.path,
-        fill,
-        'data-code': code,
-        'data-name': info.name,
-      });
-
-      const selectCountry = () => {
-        if (code === 'BR') {
-          this.switchMapMode('brasil');
-        } else {
-          this.activeGeoFilter = { type: 'country', code, name: `${info.name} (${code})`, count: cnt };
-          this.onFilterChange();
-        }
-      };
-
-      path.addEventListener('click', selectCountry);
-      gPaths.appendChild(path);
-
-      if (cnt > 0 && info.cx > 0 && info.cy > 0) {
-        const gBadge = this.createMapBadge(code, info.cx, info.cy, cnt, maxScore, isHighFit);
-        gBadge.addEventListener('click', selectCountry);
-        gBadges.appendChild(gBadge);
-      }
-    }
-
-    svg.appendChild(gPaths);
-    svg.appendChild(gBadges);
-    el.appendChild(svg);
-  }
-
-  private renderBrasilMapSvg(states: Record<string, any>, counts: Record<string, number>, scores: Record<string, number>): void {
-    const el = this.mapBrasilContainer.nativeElement;
-    el.replaceChildren();
-
-    const svg = this.createSvgEl('svg', {
-      viewBox: '0 0 600 600',
-      style: 'width: 100%; height: auto; max-height: 500px; display: block;',
-    });
-
-    this.appendOceanGradient(svg, 'br-ocean-grad', '50%', '50%');
-
-    svg.appendChild(
-      this.createSvgEl('rect', {
-        width: 600,
-        height: 600,
-        rx: 10,
-        fill: 'url(#br-ocean-grad)',
-      })
-    );
-
-    const gPaths = document.createElementNS(SVG_NS, 'g');
-    const gBadges = document.createElementNS(SVG_NS, 'g');
-
-    for (const [uf, info] of Object.entries(states)) {
-      const cnt = counts[uf] || 0;
-      const maxScore = scores[uf] || -1;
-      const isHighFit = this.isTriageMode && maxScore >= 75;
-      const isActive = this.activeGeoFilter?.type === 'uf' && this.activeGeoFilter.code === uf;
-      const fill = this.getGeoColor(cnt, maxScore, isActive);
-
-      const path = this.createSvgEl('path', {
-        class: `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`.trim(),
-        d: info.path,
-        fill,
-        'data-uf': uf,
-        'data-name': info.name,
-      });
-
-      const selectUf = () => {
-        this.activeGeoFilter = { type: 'uf', code: uf, name: `${info.name} (${uf})`, count: cnt };
-        this.onFilterChange();
-      };
-
-      path.addEventListener('click', selectUf);
-      gPaths.appendChild(path);
-
-      if (cnt > 0) {
-        const gBadge = this.createMapBadge(uf, info.cx, info.cy, cnt, maxScore, isHighFit);
-        gBadge.addEventListener('click', selectUf);
-        gBadges.appendChild(gBadge);
-      } else {
-        gBadges.appendChild(
-          this.createSvgEl(
-            'text',
-            {
-              class: 'geo-badge-sub',
-              style: 'fill: #475569; font-size: 8px;',
-              x: info.cx,
-              y: info.cy + 3,
-            },
-            uf
-          )
-        );
-      }
-    }
-
-    svg.appendChild(gPaths);
-    svg.appendChild(gBadges);
-    el.appendChild(svg);
-  }
-
-  private getGeoColor(cnt: number, maxScore: number, isActive: boolean): string {
-    if (isActive) return '#38bdf8';
-    if (!cnt || cnt <= 0) return '#131b2b';
-    if (this.isTriageMode) {
-      if (maxScore >= 75) return '#10b981';
-      if (maxScore >= 60) return '#0ea5e9';
-      return '#64748b';
-    }
-    if (cnt >= 10) return '#f59e0b';
-    if (cnt >= 5) return '#0284c7';
-    return '#0369a1';
-  }
-
-  formatSalaryBRL(raw?: string): string {
-    if (!raw) return '';
-    const text = raw.trim();
-    if (text.includes('R$') || text.toLowerCase().includes('brl')) {
-      return text;
-    }
-
-    const USD_RATE = 5.70;
-    const EUR_RATE = 6.20;
-    const GBP_RATE = 7.40;
-
-    let rate = USD_RATE;
-    let currencySymbol = 'USD';
-
-    if (text.includes('€') || text.toLowerCase().includes('eur')) {
-      rate = EUR_RATE;
-      currencySymbol = 'EUR';
-    } else if (text.includes('£') || text.toLowerCase().includes('gbp')) {
-      rate = GBP_RATE;
-      currencySymbol = 'GBP';
-    }
-
-    const matches = text.match(/\d+([.,]\d+)?/g);
-    if (!matches || matches.length === 0) return text;
-
-    const nums = matches.map(m => {
-      let clean = m.replace(/\./g, '').replace(/,/g, '');
-      let val = Number(clean);
-      if (val < 1000 && (text.toLowerCase().includes('k') || text.toLowerCase().includes('mil'))) {
-        val = val * 1000;
-      }
-      return val;
-    }).filter(n => !isNaN(n) && n > 0);
-
-    if (nums.length === 0) return text;
-
-    const isAnnual = text.toLowerCase().includes('/ano') || text.toLowerCase().includes('/yr') || text.toLowerCase().includes('annual') || nums[0] > 25000;
-
-    const toBrlMonthly = (val: number) => {
-      const annualOrMonthly = isAnnual ? val / 12 : val;
-      const brl = Math.round(annualOrMonthly * rate);
-      return 'R$ ' + brl.toLocaleString('pt-BR');
-    };
-
-    if (nums.length >= 2) {
-      return `${toBrlMonthly(nums[0])} - ${toBrlMonthly(nums[1])}/mês (~${currencySymbol})`;
-    }
-    return `${toBrlMonthly(nums[0])}/mês (~${currencySymbol})`;
-  }
-
   resolveGeo(r: Vaga): GeoResolution {
     return resolveGeoUtil(r);
   }
@@ -1397,7 +1047,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
         this.onFilterChange();
         this.showToast(`⭐ Vaga salva! "${vaga.title}" foi movida com segurança para a aba "Me Interessam".`);
       },
-      error: (err) => alert('Não consegui salvar: ' + err.message)
+      error: (err) => this.toast.error('Não consegui salvar: ' + (err?.error?.detail || err.message))
     });
   }
 
@@ -1415,7 +1065,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
         this.onFilterChange();
         this.showToast(`🎯 Candidatura registrada! "${vaga.title}" foi salva em "Minhas Candidaturas".`);
       },
-      error: (err) => alert('Não consegui registrar candidatura: ' + (err.error?.detail || err.message))
+      error: (err) => this.toast.error('Não consegui registrar candidatura: ' + (err.error?.detail || err.message))
     });
   }
 
@@ -1428,7 +1078,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
         this.onFilterChange();
         this.showToast(`🗑️ Vaga descartada e movida para a aba "Descartadas".`);
       },
-      error: (err) => alert('Não consegui descartar: ' + err.message)
+      error: (err) => this.toast.error('Não consegui descartar: ' + (err?.error?.detail || err.message))
     });
   }
 
@@ -1467,7 +1117,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     if (!urls.length) {
-      alert('Nenhuma vaga selecionada para triagem.');
+      this.toast.warning('Nenhuma vaga selecionada para triagem.');
       return;
     }
 
@@ -1479,7 +1129,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
     this.triageProgressPercent.set(0);
     this.triageCurrentCount.set(0);
     this.triageTotalCount.set(urls.length);
-    this.triageCurrentTitle.set('Iniciando triagem com Antigravity (Gemini)...');
+    this.triageCurrentTitle.set('Iniciando triagem com IA...');
     this.triageHighFitCount.set(0);
     this.triageMedFitCount.set(0);
     this.triageLowFitCount.set(0);
@@ -1493,7 +1143,7 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
       error: (err) => {
         this.batchRunning.set(false);
         this.batchStatus.set('');
-        alert('Erro ao iniciar triagem: ' + (err?.error?.error || err?.message || 'Falha na comunicação'));
+        this.toast.error('Erro ao iniciar triagem: ' + (err?.error?.detail || err?.error?.error || err?.message || 'Falha na comunicação'));
       }
     });
   }
@@ -1501,8 +1151,11 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
   private pollBatchStatus(): void {
     this.cleanupBatchPolling();
     this.batchPollInterval = setInterval(() => {
-      this.api.getSearchStatus().subscribe({
+      if (this.batchPollInFlight) return;
+      this.batchPollInFlight = true;
+      this.api.getSearchStatus().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (st) => {
+          this.batchPollInFlight = false;
           const batch = st.batch;
           if (batch) {
             this.triageCurrentCount.set(batch.current || 0);
@@ -1535,9 +1188,10 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
             }
           }
         },
-        error: () => {
+        error: (err) => {
           this.cleanupBatchPolling();
           this.batchRunning.set(false);
+          this.toast.error('Falha ao acompanhar triagem em lote: ' + (err?.error?.detail || err?.message || 'Erro de rede'));
         }
       });
     }, 1500);
@@ -1555,36 +1209,21 @@ export class BuscarVagasComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!confirm('Deseja descartar as vagas pendentes não salvas?')) return;
     this.api.clearPending().subscribe({
       next: (res) => {
-        alert(`${res.cleared ?? 0} vagas pendentes foram descartadas.`);
+        this.showToast(`${res.cleared ?? 0} vagas pendentes foram descartadas.`);
         this.loadResults();
       },
-      error: (err) => alert('Erro ao limpar vagas: ' + err.message)
+      error: (err) => this.toast.error('Erro ao limpar vagas: ' + (err?.error?.detail || err.message))
     });
   }
 
-  getPortalName(portal?: string): string {
-    return portal ? getPortalDisplayName(portal) : 'Portal';
-  }
-
-  getModelLabel(type?: string): string {
-    return getWorkModelLabel(type);
-  }
-
-  hasVisa(vaga: Vaga): boolean {
-    return (vaga as any).visa_sponsorship === true || (vaga as any).visa_sponsorship === 'true' || (vaga as any).visa_sponsorship === 1;
-  }
+  readonly getPortalName = getPortalDisplayName;
+  readonly getModelLabel = getWorkModelLabel;
+  readonly hasVisa = hasVisaSponsorship;
 
   /** Timestamp (meia-noite local) da data de publicação ou null se ausente/inválida. */
   parsePostedDate(raw: string | null | undefined): number | null {
     return parseCalendarDateMs(raw);
   }
 
-  isUndated(vaga: Vaga): boolean {
-    return this.parsePostedDate(vaga.date) === null;
-  }
-
-  getWarning(vaga: Vaga): string | null {
-    const v = vaga.signals?.warnings?.[0];
-    return v ? v.replace(/^posting_signals:\s*/, '').trim() : null;
-  }
+  readonly getWarning = getJobWarning;
 }

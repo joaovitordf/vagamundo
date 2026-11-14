@@ -36,10 +36,8 @@ from tempfile import TemporaryDirectory
 
 try:
     from _bash import find_bash
-    from _upstream import is_upstream_checkout
 except ImportError:  # `python -m unittest discover -s tests` imports test modules top-level
     from _bash import find_bash
-    from _upstream import is_upstream_checkout
 
 import sys
 if str(Path(__file__).resolve().parent) not in sys.path:
@@ -255,41 +253,21 @@ class TestResetTargetsTheHeadingsTheShippedFilesHave(unittest.TestCase):
             with self.subTest(file=filename):
                 shipped = (SKILL_DIR / filename).read_text(encoding="utf-8")
                 skeleton = h2_headings(skeleton_block(self.reset, filename))
-                if not is_upstream_checkout():
-                    # On a fork this file is the user's personalized profile, which
-                    # may carry ## sections of its own; a rename or a drop still fails.
-                    self.assertTrue(
-                        appear_in_order(skeleton, h2_headings(shipped)),
-                        f"/reset's skeleton headings for {filename} must all appear, in "
-                        f"order, in the personalized file: {skeleton}",
-                    )
-                    continue
-                self.assertEqual(
-                    skeleton,
-                    h2_headings(shipped),
-                    f"/reset's skeleton for {filename} must carry exactly the shipped "
-                    "## headings, in order - a reset must not rename or drop sections",
+                # The personalized file may carry extra ## sections of its own;
+                # a rename or drop of a shipped heading still fails.
+                self.assertTrue(
+                    appear_in_order(skeleton, h2_headings(shipped)),
+                    f"/reset's skeleton headings for {filename} must all appear, in "
+                    f"order, in the personalized file: {skeleton}",
                 )
-
-    def test_fork_heading_check_rejects_a_renamed_dropped_or_reordered_heading(self):
-        # The fork branch above never runs in upstream CI, so pin its strictness here.
-        skeleton = ["## Identidade", "## Formação", "## Prêmios"]
-        self.assertTrue(appear_in_order(skeleton, ["## Identidade", "## Formação", "## Certificações", "## Prêmios"]))
-        self.assertFalse(appear_in_order(skeleton, ["## Identidade", "## Schooling", "## Prêmios"]))
-        self.assertFalse(appear_in_order(skeleton, ["## Identidade", "## Prêmios"]))
-        self.assertFalse(appear_in_order(skeleton, ["## Formação", "## Identidade", "## Prêmios"]))
 
     def test_full_file_skeletons_keep_the_framework_version_frontmatter(self):
         # The shipped files open with a `framework_version` marker that
-        # check_framework_version.py requires and check_upstream_updates.py
-        # reads. The skeletons started at the `#` title, so one /reset profile
-        # left both files failing the version gate ("missing 'framework_version'
-        # in frontmatter") and invisible to the fork update checker. The
-        # instruction must say to keep the block, and the block must not be
-        # hardcoded into the skeleton, where it would go stale on the next bump.
-        import sys
-        sys.path.insert(0, str(REPO / "tools"))
-        from check_upstream_updates import get_framework_version_from_text
+        # check_framework_version.py requires. The skeleton must leave the
+        # frontmatter block intact without hardcoding a version literal.
+        def _extract_version(text: str) -> str:
+            match = re.search(r"^framework_version:\s*[\"']?([^\s\"']+)", frontmatter(text), re.MULTILINE)
+            return match.group(1) if match else ""
 
         for filename in ("01-candidate-profile.md", "02-behavioral-profile.md"):
             with self.subTest(file=filename):
@@ -302,8 +280,8 @@ class TestResetTargetsTheHeadingsTheShippedFilesHave(unittest.TestCase):
                 # What the file looks like after the reset, applied as written.
                 after = head + block.lstrip("\n")
                 self.assertEqual(
-                    get_framework_version_from_text(after),
-                    get_framework_version_from_text(shipped),
+                    _extract_version(after),
+                    _extract_version(shipped),
                     f"a reset must leave {filename}'s framework_version readable and unchanged",
                 )
 

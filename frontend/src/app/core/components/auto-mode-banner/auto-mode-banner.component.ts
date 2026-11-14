@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AutoModeService } from '../../services/auto-mode.service';
+import { ToastService } from '../../services/toast.service';
 
 @Component({
   selector: 'app-auto-mode-banner',
@@ -12,6 +13,7 @@ import { AutoModeService } from '../../services/auto-mode.service';
 })
 export class AutoModeBannerComponent {
   readonly auto = inject(AutoModeService);
+  private readonly toast = inject(ToastService);
 
   phaseLabel(): string {
     const st = this.auto.status();
@@ -54,7 +56,8 @@ export class AutoModeBannerComponent {
   onUndoRun(): void {
     const runId = this.auto.status()?.run_id || undefined;
     this.auto.undoRun(runId).subscribe({
-      error: (err) => alert('Erro ao desfazer rodada: ' + (err?.error?.detail || err?.message || 'Falha na requisição')),
+      next: () => this.toast.success('Rodada automática desfeita com sucesso.'),
+      error: (err) => this.toast.error('Erro ao desfazer rodada: ' + (err?.error?.detail || err?.message || 'Falha na requisição')),
     });
   }
 }

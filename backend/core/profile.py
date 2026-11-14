@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from backend.tools import painel, painel_perfil
+from backend.core.constants import ROOT
+from backend.tools import painel, painel_ia, painel_perfil
 
-_here = Path(__file__).resolve()
-ROOT = _here.parent.parent.parent if _here.parent.parent.name == "backend" else _here.parent.parent
+logger = logging.getLogger(__name__)
+
 GEO_PATH = ROOT / "frontend" / "src" / "assets" / "geo_data.json"
 
 
 class ProfileService:
     """Manages candidate profile, answers, uploaded documents, and evolution ledger."""
 
-    def get_profile_data(self, refresh: bool = False) -> Dict[str, Any]:
+    def get_profile_data(self) -> Dict[str, Any]:
         return {
             "schema": [{"title": t, "fields": f} for t, f in painel_perfil.SCHEMA],
             "answers": painel_perfil.load_answers(),
@@ -48,6 +50,16 @@ class ProfileService:
     def update_evolution(self) -> Dict[str, Any]:
         return painel.update_evolution()
 
+    def build_ai_profile(self) -> str:
+        """Assemble the AI-consolidated candidate profile report and persist it under PERFIL_KEY."""
+        answers = painel_perfil.load_answers()
+        respostas_texto = painel_perfil.format_answers(answers)
+        result = painel_ia.montar_perfil(respostas_texto)
+        out = painel.claude_file(painel.PERFIL_KEY, "perfil", base=painel.CLAUDE_DIR)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(result.rstrip() + "\n", encoding="utf-8")
+        return result
+
     def save_evolution(self, data: Dict[str, Any]) -> None:
         painel.save_evolution(data)
 
@@ -55,7 +67,7 @@ class ProfileService:
         if GEO_PATH.exists():
             try:
                 return json.loads(GEO_PATH.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Failed to load geo data from %s: %s", GEO_PATH, exc)
         return {}
 

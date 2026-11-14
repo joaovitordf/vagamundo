@@ -9,18 +9,9 @@ Step 5's terminal output).
 import importlib.util
 import json
 import re
-import subprocess
 import sys
 import unittest
 from pathlib import Path
-
-try:
-    import yaml  # noqa: F401 - only probing availability for the lint integration test
-    _HAVE_YAML = True
-except ImportError:
-    _HAVE_YAML = False
-
-import sys
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _repo import REPO, REPO_ROOT
@@ -96,14 +87,6 @@ class RankCommandSpec(unittest.TestCase):
         self.assertEqual(set(re.findall(r'"([a-z_]+)"', union.group(1))), set(rank_state.AGENT_STATUSES))
         self.assertIn("unreachable", rank_state.AGENT_STATUSES)
         self.assertIn('"fetch_error"', text, "an unreachable result names its failure for the report")
-
-    def test_command_file_exists_with_lint_compliant_header(self):
-        self.assertTrue(COMMAND.is_file(), "command spec missing")
-        first_line = COMMAND.read_text(encoding="utf-8").splitlines()[0]
-        self.assertTrue(
-            first_line.startswith("# /rank"),
-            f"header must start with '# /rank' (lint_skills.py enforces it), got: {first_line!r}",
-        )
 
     def test_step4_persists_gaps_and_strengths(self):
         sections = _sections(COMMAND.read_text(encoding="utf-8"))
@@ -460,19 +443,6 @@ class RankCommandSpec(unittest.TestCase):
             "Step 5's presentation rules must document the ⚠ marker + language_note callout "
             "for a shortlisted FLAG job, mirroring the existing location FLAG treatment",
         )
-
-    @unittest.skipUnless(
-        _HAVE_YAML,
-        "PyYAML not installed (the CI Python-test job omits it; the lint job runs lint_skills.py directly)",
-    )
-    def test_lint_skills_passes(self):
-        result = subprocess.run(
-            [sys.executable, str(REPO / "tools" / "lint_skills.py")],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(result.returncode, 0, f"lint_skills.py failed:\n{result.stdout}{result.stderr}")
 
 
 class PostedDateStalenessSpec(unittest.TestCase):

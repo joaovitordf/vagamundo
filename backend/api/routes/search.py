@@ -17,7 +17,7 @@ router = APIRouter(tags=["Search"])
 
 
 @router.post("/search")
-async def trigger_search(
+def trigger_search(
     req: SearchRequest,
     scanner: ScannerService = Depends(get_scanner),
     _csrf: str = Depends(verify_csrf_token),
@@ -36,7 +36,7 @@ async def trigger_search(
 
 
 @router.get("/status", response_model=SearchStatusResponse)
-async def search_status(
+def search_status(
     scanner: ScannerService = Depends(get_scanner),
     evaluator: EvaluatorService = Depends(get_evaluator),
 ) -> Dict[str, Any]:
@@ -84,7 +84,7 @@ async def search_stream(
 
 
 @router.post("/clear-pending")
-async def clear_pending(
+def clear_pending(
     scanner: ScannerService = Depends(get_scanner),
     _csrf: str = Depends(verify_csrf_token),
 ) -> Dict[str, Any]:
@@ -94,7 +94,7 @@ async def clear_pending(
 
 
 @router.get("/health")
-async def portal_health(
+def portal_health(
     scanner: ScannerService = Depends(get_scanner),
 ) -> Dict[str, Any]:
     """Return installed portal tools and availability status."""

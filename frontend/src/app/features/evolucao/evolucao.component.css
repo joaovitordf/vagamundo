@@ -21,7 +21,7 @@
 
 .header-info {
   flex: 1;
-  min-width: 320px;
+  min-width: min(320px, 100%);
 }
 
 .title-with-badge {
@@ -150,7 +150,7 @@
 /* Grid de Métricas Reais */
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
   gap: 1rem;
   margin-top: 1.5rem;
 }
@@ -277,7 +277,7 @@
 /* Grid Duplo */
 .two-col-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: 1.5rem;
 }
 
@@ -460,4 +460,26 @@
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.25);
   color: #f87171;
+}
+
+:host-context([data-theme="light"]) .summary-callout,
+:host-context([data-theme="light"]) .metric-val,
+:host-context([data-theme="light"]) .section-title-row h3,
+:host-context([data-theme="light"]) .priority-item,
+:host-context([data-theme="light"]) .styled-list li {
+  color: var(--vc-text);
+}
+
+:host-context([data-theme="light"]) .priority-item,
+:host-context([data-theme="light"]) .styled-list li {
+  background: var(--vc-surface-2);
+  border-color: var(--vc-border);
+}
+
+:host-context([data-theme="light"]) .warn-item {
+  color: #b45309;
+}
+
+:host-context([data-theme="light"]) .error-item {
+  color: #dc2626;
 }

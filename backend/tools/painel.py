@@ -9,8 +9,10 @@ e listagem de documentos gerados consumidas pela API FastAPI e serviços de `bac
 import csv
 import hashlib
 import json
+import logging
 import os
 import re
+import sqlite3
 import sys
 import tempfile
 from datetime import date, datetime
@@ -21,6 +23,7 @@ import painel_ia  # noqa: E402
 import painel_perfil  # noqa: E402
 import scrape_run  # noqa: E402
 
+logger = logging.getLogger(__name__)
 ROOT = scrape_run.ROOT
 
 DECISIONS = {
@@ -455,8 +458,8 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
                         "questions_and_answers": ev.get("questions_and_answers") or "",
                     })
                 applications_data[s_url]["history"] = hist_entries
-    except Exception:
-        pass
+    except (ImportError, OSError, sqlite3.Error, ValueError, TypeError) as exc:
+        logger.warning("Failed to sync applications from SQLite during evolution load: %s", exc)
     finally:
         if repo is not None:
             repo.close()
@@ -704,8 +707,8 @@ def record_applied(url: str, company: str, role: str, portal: str = "",
             }
         seen_path.parent.mkdir(parents=True, exist_ok=True)
         seen_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.warning("Failed to update seen_jobs cache during record_applied: %s", exc)
 
     # 2. Registra ou atualiza no tracker.csv
     header = list(painel_ia.TRACKER_FIELDS)
@@ -856,46 +859,54 @@ def remove_application(url: str, to_status: str = "skipped", company: str = "", 
     return {"removed": True, "url": url}
 
 
-def restore_job(url: str, seen_path: Path = scrape_run.SEEN) -> dict:
-    """Restaura uma vaga descartada para 'Me interessam'."""
+def _set_seen_url_state(
+    url: str,
+    *,
+    result_key: str,
+    fit: str,
+    status: str,
+    seen_path: Path,
+) -> dict:
     if not seen_path.exists():
-        return {"restored": False, "url": url}
+        return {result_key: False, "url": url}
     try:
         state = json.loads(seen_path.read_text(encoding="utf-8"))
         seen = state.get("seen", {})
         found = False
-        for k, v in seen.items():
+        for v in seen.values():
             if isinstance(v, dict) and v.get("url") == url:
-                v["fit"] = "medium"
-                v["status"] = "new"
+                v["fit"] = fit
+                v["status"] = status
                 v["source"] = "painel"
                 found = True
         if found:
             seen_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-        return {"restored": found, "url": url}
-    except Exception:
-        return {"restored": False, "url": url}
+        return {result_key: found, "url": url}
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.warning("Failed to update seen_jobs state for %s (%s): %s", url, result_key, exc)
+        return {result_key: False, "url": url}
+
+
+def restore_job(url: str, seen_path: Path = scrape_run.SEEN) -> dict:
+    """Restaura uma vaga descartada para 'Me interessam'."""
+    return _set_seen_url_state(
+        url,
+        result_key="restored",
+        fit="medium",
+        status="new",
+        seen_path=seen_path,
+    )
 
 
 def discard_job(url: str, seen_path: Path = scrape_run.SEEN) -> dict:
     """Move uma vaga de 'Me interessam' para 'Descartadas'."""
-    if not seen_path.exists():
-        return {"discarded": False, "url": url}
-    try:
-        state = json.loads(seen_path.read_text(encoding="utf-8"))
-        seen = state.get("seen", {})
-        found = False
-        for k, v in seen.items():
-            if isinstance(v, dict) and v.get("url") == url:
-                v["fit"] = "low"
-                v["status"] = "skipped"
-                v["source"] = "painel"
-                found = True
-        if found:
-            seen_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-        return {"discarded": found, "url": url}
-    except Exception:
-        return {"discarded": False, "url": url}
+    return _set_seen_url_state(
+        url,
+        result_key="discarded",
+        fit="low",
+        status="skipped",
+        seen_path=seen_path,
+    )
 
 
 def unmark_interested(url: str, seen_path: Path = scrape_run.SEEN) -> bool:
@@ -983,8 +994,8 @@ def list_generated_documents() -> list:
                         "company_slug": painel_ia.sanitize_filename(v.get("company") or ""),
                         "role_slug": painel_ia.sanitize_filename(v.get("title") or ""),
                     })
-    except Exception:
-        pass
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.warning("Failed to read seen_jobs cache while listing jobs for documents: %s", exc)
     for app in applications():
         if app.get("company"):
             known_jobs.append({
@@ -1111,19 +1122,28 @@ def get_cached_score(url: str, batch_results: dict | None = None) -> dict | None
             content = eval_f.read_text(encoding="utf-8")
             m_score = re.search(r"Nota\s*(?:geral)?\s*[:=]?\s*\**\s*(\d+)\s*(?:/\s*100)?", content, re.IGNORECASE)
             m_verdict = re.search(r"(?:Veredito|Encaixe)\s*[:=]?\s*\**\s*([^\n*]+)", content, re.IGNORECASE)
+            m_model = re.search(r"Modelo(?:\s+IA)?\s*[:=]\s*[*`]*\s*([^\n*`]+)", content, re.IGNORECASE)
             summary = ""
             m_sum = re.search(r"##+\s*Resumo[^\n]*\n+(.+?)(?:\n\n|\n-\s*URL:|$)", content, re.IGNORECASE | re.DOTALL)
+            if not m_sum:
+                m_sum = re.search(r"##+\s*Recomenda[çc][ãa]o[^\n]*\n+(.+?)(?:\n\n|\n##|$)", content, re.IGNORECASE | re.DOTALL)
             if m_sum:
                 summary = m_sum.group(1).strip()
 
             if m_score:
-                return {
+                details = painel_ia.extract_eval_details_from_md(content)
+                result = {
                     "score": int(m_score.group(1)),
-                    "verdict": m_verdict.group(1).strip() if m_verdict else "Concluído",
+                    "verdict": m_verdict.group(1).strip(" *[]") if m_verdict else "Concluído",
                     "summary": summary,
+                    "ai_model": m_model.group(1).strip(" *`") if m_model else None,
                 }
-        except Exception:
-            pass
+                for key in ("subscores", "location_verdict", "language_gate", "language_note", "strengths", "gaps", "guard_alert"):
+                    if details.get(key):
+                        result[key] = details[key]
+                return result
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning("Failed to parse cached score for %s: %s", url, exc)
     return None
 
 
@@ -1151,8 +1171,8 @@ def enriched_applications(tracker_path: Path = scrape_run.TRACKER, seen_path: Pa
                             "notes": "Registrado pelo painel",
                             "source": v["url"],
                         })
-    except Exception:
-        pass
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.warning("Failed to read seen_jobs cache during application enrichment: %s", exc)
 
     out = []
     seen_urls = set()

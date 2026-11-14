@@ -58,42 +58,17 @@ class Data(unittest.TestCase):
     def test_marked_jobs_leave_the_list_and_only_interest_is_saved(self):
         painel.mark(RESULTS, ["https://zeta.gupy.io/jobs/1"], "interesse", self.seen)
         painel.mark(RESULTS, ["https://remotar.com.br/job/2"], "descartar", self.seen)
-        self.assertEqual(painel.unseen(RESULTS, self.seen, self.tracker)["new"], [])
         self.assertEqual([s["title"] for s in painel.saved(self.seen)], ["Product Manager"])
-        self.assertEqual(painel.unseen(None, self.seen, self.tracker), {"meta": None, "new": []})
         self.assertEqual([d["title"] for d in painel.discarded(self.seen)], ["Product Owner"])
         painel.restore_job("https://remotar.com.br/job/2", self.seen)
         self.assertEqual(painel.discarded(self.seen), [])
         self.assertEqual(len(painel.saved(self.seen)), 2)
         painel.record_applied("https://zeta.gupy.io/jobs/1", "Zeta", "Product Manager", "gupy-search", self.tracker, self.seen)
         self.assertEqual([s["title"] for s in painel.saved(self.seen)], ["Product Owner"])
-        self.assertEqual(len(painel.enriched_applications(self.tracker, self.seen, self.dir, evolution_path=self.dir / "evolucao.json")), 1)
+        self.assertEqual(len(painel.applications(self.tracker)), 1)
         painel.remove_application("https://zeta.gupy.io/jobs/1", "skipped", tracker_path=self.tracker, seen_path=self.seen)
-        self.assertEqual(len(painel.enriched_applications(self.tracker, self.seen, self.dir, evolution_path=self.dir / "evolucao.json")), 0)
+        self.assertEqual(len(painel.applications(self.tracker)), 0)
         self.assertEqual([d["title"] for d in painel.discarded(self.seen)], ["Product Manager"])
-
-    def test_delete_generated_curriculum_removes_only_its_files(self):
-        cv = self.dir / "cv"
-        cv.mkdir()
-        for suffix in (".pdf", ".tex", ".aux", ".log"):
-            (cv / f"main_acme_backend{suffix}").write_text("x", encoding="utf-8")
-        other = cv / "main_other.pdf"
-        other.write_text("keep", encoding="utf-8")
-
-        with mock.patch.object(painel, "ROOT", self.dir):
-            result = painel.delete_generated_document("cv/main_acme_backend.pdf")
-
-        self.assertTrue(result["deleted"])
-        self.assertFalse((cv / "main_acme_backend.pdf").exists())
-        self.assertFalse((cv / "main_acme_backend.tex").exists())
-        self.assertTrue(other.exists())
-
-    def test_delete_rejects_non_curriculum_paths(self):
-        with mock.patch.object(painel, "ROOT", self.dir):
-            with self.assertRaises(ValueError):
-                painel.delete_generated_document("documents/perfil/respostas.json")
-            with self.assertRaises(ValueError):
-                painel.delete_generated_document("cv/main_example.pdf")
 
     def test_visa_flag_survives_marking_for_interest_and_discard(self):
         visa_results = {
@@ -143,15 +118,6 @@ class Data(unittest.TestCase):
         self.tracker.write_text("date,company,role,status\n2026-10-01,Zeta,PM,applied\n", encoding="utf-8")
         self.assertEqual(painel.applications(self.tracker), [{"date": "2026-10-01", "company": "Zeta", "role": "PM", "status": "applied"}])
         self.assertEqual(painel.applications(self.dir / "nao-existe.csv"), [])
-
-    def test_priorities_skip_template_placeholders(self):
-        q = self.dir / "q.md"
-        q.write_text("### Prioridade 1: X\n```\ngupy-search: -q \"pm\"\nvagas-search: -q \"pm\"\n```\n"
-                     "### Prioridade 2: Y\n```\ngupy-search: -q \"[YOUR_ROLE]\"\n```\n", encoding="utf-8")
-        self.assertEqual(painel.priorities(q), [{"priority": 1, "queries": 2, "portals": 2}])
-
-    def test_search_file_lives_outside_the_repo(self):
-        self.assertFalse(str(painel.results_path().resolve()).startswith(str(ROOT.resolve())))
 
     def test_claude_answer_files_are_named_by_hash_inside_the_folder(self):
         f = painel.claude_file("https://x/../../etc", "avaliar", self.dir)

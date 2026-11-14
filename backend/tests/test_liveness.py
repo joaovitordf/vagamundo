@@ -30,19 +30,23 @@ class TestLivenessService(unittest.IsolatedAsyncioTestCase):
         client = AsyncMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.text = "<html><body><h1>Desenvolvedor Angular Pleno</h1></body></html>"
+        mock_resp.text = ""
         client.head.return_value = mock_resp
 
         res = await self.liveness.probe_url(client, "https://gupy.io/jobs/123")
         self.assertTrue(res["alive"])
         self.assertEqual(res["reason"], "OK")
 
-    async def test_probe_200_closed_text(self):
+    async def test_probe_405_get_fallback_closed_text(self):
         client = AsyncMock()
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.text = "<html><body>Esta vaga foi encerrada pela empresa.</body></html>"
-        client.head.return_value = mock_resp
+        head_resp = MagicMock()
+        head_resp.status_code = 405
+        head_resp.text = ""
+        get_resp = MagicMock()
+        get_resp.status_code = 200
+        get_resp.text = "<html><body>Esta vaga foi encerrada pela empresa.</body></html>"
+        client.head.return_value = head_resp
+        client.get.return_value = get_resp
 
         res = await self.liveness.probe_url(client, "https://gupy.io/jobs/456")
         self.assertFalse(res["alive"])

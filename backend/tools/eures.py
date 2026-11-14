@@ -14,6 +14,15 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+TOOLS_DIR = Path(__file__).resolve().parent
+import sys
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+
+import posting_signals
+import rank_state
+import scrape_run
+
 # Nomes em português dos países europeus monitorados pelo EURES
 EU_COUNTRIES = {
     "de": "Alemanha",
@@ -340,13 +349,39 @@ def _profile_eures_keywords() -> list[str]:
                     kws.append(clean)
         if kws:
             return kws[:8]
-    except Exception:
+    except (ImportError, OSError, AttributeError, ValueError):
         pass
     return ["Software Engineer", "Backend", "Data Engineer", "Machine Learning", "Python"]
 
 
+def _accepted_eures_languages() -> set[str]:
+    """Lê idiomas declarados no perfil local com fallback para PT/EN."""
+    langs = {"pt", "pt-br", "portuguese", "português", "en", "english", "inglês"}
+    try:
+        try:
+            from backend.tools import painel_ia
+        except ImportError:
+            import painel_ia
+        rules = painel_ia._load_candidate_triage_rules()
+        for item in rules.get("idiomas") or []:
+            low = str(item or "").strip().lower()
+            if low:
+                langs.add(low)
+                if "ingl" in low or "english" in low:
+                    langs.add("en")
+                elif "espan" in low or "spanish" in low:
+                    langs.update({"es", "spanish", "espanhol"})
+                elif "alem" in low or "german" in low or "deutsch" in low:
+                    langs.update({"de", "german", "deutsch"})
+                elif "franc" in low or "french" in low:
+                    langs.update({"fr", "french"})
+    except (ImportError, OSError, AttributeError, ValueError) as exc:
+        sys.stderr.write(f"eures: failed to load candidate languages: {exc}\n")
+    return langs
+
+
 def evaluate_eures_job(title: str, desc: str, location: str, languages: list) -> tuple[dict, str]:
-    """Calcula aderência da vaga europeia comparando requisitos com o perfil ativo do candidato."""
+    """Calcula aderência da vaga europeia alinhada à rubrica canônica, senioridade-alvo e gate de idioma."""
     t_low = title.lower()
     full_low = f"{title} {desc}".lower()
 
@@ -367,36 +402,84 @@ def evaluate_eures_job(title: str, desc: str, location: str, languages: list) ->
         if kw in full_low and lbl.lower() not in [m.lower() for m in matched]:
             matched.append(lbl)
 
+    accept_sen = set(scrape_run.local_target_seniority() or ["junior", "pleno"])
     is_senior_lead = any(k in t_low for k in ("senior", "sr.", "lead", "principal", "staff", "head of", "director", "architect"))
-    is_junior_entry = any(k in t_low for k in ("junior", "jr", "graduate", "intern", "trainee", "working student", "entry"))
+    is_junior_entry = any(k in t_low for k in ("junior", "jr", "graduate", "intern", "trainee", "working student", "entry", "pleno", "mid-level"))
+    body_accessible = bool(re.search(r"\b(junior|pleno|mid[- ]?level|entry|new grad|graduate|intern|trainee)\b", full_low))
+    min_years = posting_signals.extract_min_years_required(desc)
+    years_senior = bool(isinstance(min_years, int) and min_years >= 5 and "senior" not in accept_sen)
+
     tech_str = ", ".join(matched[:4]) if matched else "Tecnologia e Engenharia de Sistemas"
 
     if len(matched) >= 3:
-        score = 86 if not is_senior_lead else 72
-        verdict = "Strong Fit" if score >= 80 else "Good Fit"
+        score = 86
         summary = (
             f"Forte aderência ao perfil ({tech_str}) em {location}. "
             f"Oportunidade oficial EURES alinhada às competências buscadas."
         )
     elif len(matched) >= 1 or is_tech_role(title, desc):
-        score = 72 if not is_senior_lead else 56
+        score = 72
         if is_junior_entry:
             score = min(84, score + 8)
-        verdict = "Good Fit" if score >= 65 else "Moderate Fit"
         summary = (
             f"Vaga de Tecnologia ({tech_str}) na Europa ({location}). "
             f"Compatibilidade técnica parcial; avaliar idioma exigido e elegibilidade para visto."
         )
     else:
         score = 42
-        verdict = "Weak Fit"
         summary = f"Oportunidade geral na Europa ({location}) com baixa sobreposição às palavras-chave do seu perfil."
 
-    warnings = []
-    if is_senior_lead:
+    warnings: list[str] = []
+    # Gate de idioma a partir do metadata availableLanguages do EURES
+    lang_codes: list[str] = []
+    for item in languages or []:
+        if isinstance(item, dict):
+            code = str(item.get("code") or item.get("isoCode") or item.get("name") or "").strip().lower()
+        else:
+            code = str(item or "").strip().lower()
+        if code:
+            lang_codes.append(code)
+
+    accepted_langs = _accepted_eures_languages()
+    language_gate = "PASS"
+    language_note = ""
+    if lang_codes and not any(c in accepted_langs for c in lang_codes):
+        has_english_in_desc = bool(re.search(r"\b(english|ingl[êe]s)\b", full_low))
+        codes_str = ", ".join(c.upper() for c in lang_codes[:4])
+        if has_english_in_desc:
+            language_gate = "FLAG"
+            language_note = f"Anúncio listado em {codes_str}, com menção a inglês na descrição."
+            warnings.append(language_note)
+        else:
+            language_gate = "FAIL"
+            language_note = f"Idioma restrito ({codes_str}) sem confirmação de inglês."
+            warnings.append(language_note)
+            if score > 35:
+                score = 35
+                summary = f"{language_note} {summary}"
+
+    # Teto determinístico de senioridade (<= 45 Weak Fit)
+    capped_senior = False
+    senior_above = ("senior" not in accept_sen) and (
+        (is_senior_lead and not is_junior_entry) or (years_senior and not is_junior_entry and not body_accessible)
+    )
+    if senior_above:
         warnings.append("senioridade elevada (Senior/Lead)")
+        if score > 45:
+            score = 45
+            capped_senior = True
+            summary = f"Teto de senioridade aplicado (Senior/Lead acima da faixa-alvo). {summary}"
+
+    verdict = "Weak Fit" if (capped_senior and score == 45) else rank_state.band(score)
     sig = f"posting_signals: {'; '.join(warnings)}" if warnings else "posting_signals: none"
-    return {"score": score, "verdict": verdict, "summary": summary}, sig
+    return {
+        "score": score,
+        "verdict": verdict,
+        "summary": summary,
+        "language_gate": language_gate,
+        "language_note": language_note,
+        "gaps": warnings[:],
+    }, sig
 
 
 def fetch_eures_for_panel(focus: str = "all", max_per_query: int = 15) -> list[dict]:

@@ -23,7 +23,8 @@
 }
 
 .filter-box {
-  min-width: 260px;
+  min-width: min(260px, 100%);
+  flex: 1 1 220px;
 }
 
 .vc-input {
@@ -64,11 +65,13 @@
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 1.25rem;
 }
 
 .job-card {
+  min-width: 0;
+  max-width: 100%;
   background: var(--vc-bg-surface, var(--vc-panel));
   border: 1px solid var(--vc-border);
   border-radius: 10px;
@@ -88,7 +91,13 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+}
+
+.job-card__header > div {
+  min-width: 0;
+  flex: 1 1 210px;
 }
 
 .job-card__title {
@@ -96,12 +105,20 @@
   font-size: 1.05rem;
   font-weight: 600;
   color: var(--vc-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .job-card__company {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
   margin: 4px 0 0 0;
   color: var(--vc-muted);
   font-size: 0.85rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .job-card__chips {

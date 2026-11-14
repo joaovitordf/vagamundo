@@ -1,10 +1,69 @@
-import { Component, OnInit, inject, signal, computed, effect } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject, signal, computed, effect } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService } from '../../core/services/api.service';
+import { ApiService, LinkedInWorkerStatus, SyncRecruiterPostsResponse } from '../../core/services/api.service';
+import { PortalBadgeComponent } from '../../shared/components/portal-badge.component';
 import { AutoModeService } from '../../core/services/auto-mode.service';
 import { RecruiterSortMode, RecruiterStateService } from '../../core/services/recruiter-state.service';
+import { ToastService } from '../../core/services/toast.service';
 import { PreviouslyContactedEmail, RecruiterPost } from '../../core/models/vaga.model';
+
+export function summarizeRecruiterSync(
+  res?: SyncRecruiterPostsResponse | null
+): { status: string; warning: string | null } {
+  if (!res) return { status: '', warning: null };
+  const breakdown = res.portal_breakdown || {};
+  const parts: string[] = [];
+  let matchedTotal = 0;
+
+  for (const [portal, stats] of Object.entries(breakdown)) {
+    const count = Number(stats?.matched || 0);
+    if (count > 0) {
+      matchedTotal += count;
+      parts.push(`${getPortalDisplayName(portal)}: ${count}`);
+    }
+  }
+
+  if (parts.length === 0) {
+    const fallbackSources: Array<[string, number]> = [
+      ['hn-search', Number(res.hn_synced || 0)],
+      ['github-vagas', Number(res.github_synced || 0)],
+      ['remotive-search', Number(res.remotive_synced || 0)],
+      ['linkedin_post', Number(res.linkedin_synced || 0)],
+      ['portal', Number(res.portal_synced || 0)],
+    ];
+    for (const [key, val] of fallbackSources) {
+      if (val > 0) {
+        matchedTotal += val;
+        parts.push(`${key === 'portal' ? 'Portais remotos' : getPortalDisplayName(key)}: ${val}`);
+      }
+    }
+  }
+
+  let status = '';
+  if (parts.length > 0) {
+    status = `${matchedTotal} oportunidade(s) compatível(is) nas fontes (${parts.join(' • ')})`;
+  } else if ((res.synced || 0) > 0) {
+    status = `${res.synced} oportunidade(s) com e-mail sincronizada(s) na base multiplataforma.`;
+  } else if ((res.linkedin_cards_total || 0) > 0 && Number(res.linkedin_synced || 0) === 0 && !res.linkedin_skipped_reason) {
+    status = `LinkedIn: ${res.linkedin_cards_total} cards lidos no feed, mas nenhum revelou e-mail direto.`;
+  }
+
+  let warning: string | null = null;
+  if (Array.isArray(res.warnings) && res.warnings.length > 0) {
+    warning = `Sincronização parcial: ${res.warnings.join('; ')}.`;
+  } else if (res.rate_limited) {
+    warning = 'Alguma plataforma atingiu limite temporário de requisições; resultados locais foram carregados.';
+  } else if ((res.errors || 0) > 0) {
+    warning = `${res.errors} falha(s) parcial(is) em fontes externas; exibindo demais resultados.`;
+  } else if (res.linkedin_skipped_reason === 'cooldown' && (res.linkedin_cooldown_remaining_seconds || 0) > 0) {
+    const mins = Math.ceil(Number(res.linkedin_cooldown_remaining_seconds) / 60);
+    warning = `LinkedIn em pausa configurada (${mins} min restantes).`;
+  }
+
+  return { status, warning };
+}
 
 export function removePostAndFlagEmail(
   posts: RecruiterPost[],
@@ -37,11 +96,13 @@ export function removePostAndFlagEmail(
     });
 }
 import {
-  foldText,
+  FIT_THRESHOLDS,
   getPortalDisplayName,
   getWorkModelLabel,
   isWithinDays,
   matchesRegionFilter,
+  matchesScoreFilter,
+  matchesTextFilter,
   parseCalendarDateMs,
   resolveEffectiveWorkModel,
   resolveGeo,
@@ -50,16 +111,22 @@ import {
 @Component({
   selector: 'app-recrutadores',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, PortalBadgeComponent],
   templateUrl: './recrutadores.component.html',
   styleUrl: './recrutadores.component.css'
 })
-export class RecrutadoresComponent implements OnInit {
+export class RecrutadoresComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly toast = inject(ToastService);
   readonly autoMode = inject(AutoModeService);
   readonly state = inject(RecruiterStateService);
+  readonly fitThresholds = FIT_THRESHOLDS;
   private lastSeenAutoTick = this.autoMode.resultsRefreshTick();
   private lastAutoKeywords = '';
+  private copyEmailTimer: ReturnType<typeof setTimeout> | null = null;
+  private linkedInPollTimer: ReturnType<typeof setInterval> | null = null;
+  private autoVerifyingLogin = false;
 
   constructor() {
     // Atualiza palavras-chave e publicações quando Modo Automático (Recrutadores) está ativo/concluído
@@ -87,6 +154,7 @@ export class RecrutadoresComponent implements OnInit {
             this.state.persist();
           }
           this.fetchPosts(false);
+          this.loadLinkedInStatus();
         }
       }
     }, { allowSignalWrites: true });
@@ -102,8 +170,35 @@ export class RecrutadoresComponent implements OnInit {
   readonly copiedPrompt = signal<{ postId: number; email: string } | null>(null);
   readonly busyPostIds = signal<Set<number>>(new Set());
   readonly multiEmailPickerPostId = signal<number | null>(null);
+  readonly linkedInStatus = signal<LinkedInWorkerStatus | null>(null);
+  readonly linkedInBusy = signal<boolean>(false);
+  readonly linkedInPostsCount = computed(() =>
+    this.allPosts().filter(p => p.portal === 'linkedin_post').length
+  );
+  readonly linkedInStatusLabel = computed(() => {
+    const st = this.linkedInStatus();
+    if (!st) return 'Não conectado';
+    switch (st.status) {
+      case 'connected':
+        return 'Conectado';
+      case 'awaiting_login':
+        return 'Aguardando login na janela...';
+      case 'login_required':
+        return 'Sessão expirada';
+      case 'checkpoint_required':
+        return 'Verificação pendente';
+      case 'unavailable':
+        return 'Navegador indisponível';
+      default:
+        return 'Não conectado';
+    }
+  });
   readonly filteredPosts = this.state.filteredPosts;
   readonly hasSecondaryFilters = this.state.hasSecondaryFilters;
+  readonly triaging = signal<boolean>(false);
+  readonly untriagedVisibleCount = computed(() =>
+    this.filteredPosts().filter(p => !p.ai_evaluated_at).length
+  );
 
   // Filtros persistidos no RecruiterStateService
   readonly onlyCvMatch = this.state.onlyCvMatch;
@@ -115,7 +210,7 @@ export class RecrutadoresComponent implements OnInit {
   get filterText(): string { return this.state.filterText(); }
   set filterText(v: string) {
     this.state.filterText.set(v);
-    if (!v.trim()) {
+    if (!v.trim() && this.allPosts().length === 0) {
       this.state.hasSearched.set(false);
     }
     this.state.persist();
@@ -185,14 +280,10 @@ export class RecrutadoresComponent implements OnInit {
   readonly keywordMatchedPosts = computed(() => {
     if (!this.hasSearched()) return [];
     const query = this.state.filterText().trim();
-    if (!query) return [];
-    const terms = query.split(',').map(t => foldText(t.trim())).filter(Boolean);
-    if (!terms.length) return [];
+    if (!query) return this.allPosts();
     return this.allPosts().filter(p => {
-      const hay = foldText(
-        `${p.title || ''} ${p.company || ''} ${p.location || ''} ${p.description || ''} ${(p.emails || []).join(' ')} ${(p.matched_keywords || []).join(' ')}`
-      );
-      return terms.some(t => hay.includes(t));
+      const hay = `${p.title || ''} ${p.company || ''} ${p.location || ''} ${p.description || ''} ${p.portal || ''} ${getPortalDisplayName(p.portal)} ${getWorkModelLabel(resolveEffectiveWorkModel(p))} ${(p.emails || []).join(' ')} ${(p.matched_keywords || []).join(' ')}`;
+      return matchesTextFilter(hay, query);
     });
   });
 
@@ -202,10 +293,10 @@ export class RecrutadoresComponent implements OnInit {
     this.keywordMatchedPosts().filter(p => Boolean(p.ai_evaluated_at)).length
   );
 
-  // Lista dinâmica de portais encontrados nos resultados da busca
+  // Lista dinâmica de portais encontrados nos resultados da busca (LinkedIn sempre listado)
   readonly availablePortals = computed(() => {
     const source = this.keywordMatchedPosts().length > 0 ? this.keywordMatchedPosts() : this.allPosts();
-    const set = new Set<string>();
+    const set = new Set<string>(['linkedin_post']);
     for (const p of source) {
       if (p.portal) set.add(p.portal);
     }
@@ -215,6 +306,7 @@ export class RecrutadoresComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.loadLinkedInStatus();
     this.loadCvAreas();
     this.loadAutoConfig();
     const st = this.autoMode.status();
@@ -299,6 +391,16 @@ export class RecrutadoresComponent implements OnInit {
       fallbackReasons.push('ocultando publicações sem data');
       if (undated > 0) reasons.push(`ocultando ${undated} sem data`);
     }
+    if (this.scoreFilter) {
+      const label = `avaliação da IA "${this.scoreFilter}"`;
+      fallbackReasons.push(label);
+      const hidden = base.filter(p => {
+        if (this.scoreFilter === 'untriaged') return Boolean(p.ai_evaluated_at);
+        const aiScore = p.ai_classification === 'vaga_ativa' ? p.ai_score : null;
+        return !matchesScoreFilter(aiScore, this.scoreFilter, Boolean(p.ai_evaluated_at));
+      }).length;
+      if (hidden > 0) reasons.push(`${label} (${hidden} ocultas)`);
+    }
     if (this.onlyCvMatch()) {
       const label = 'apenas compatíveis com CV';
       fallbackReasons.push(label);
@@ -339,7 +441,7 @@ export class RecrutadoresComponent implements OnInit {
           this.cvAreasList = res.areas;
         }
       },
-      error: () => {}
+      error: (err) => console.warn('Falha ao carregar áreas do CV:', err)
     });
   }
 
@@ -360,7 +462,7 @@ export class RecrutadoresComponent implements OnInit {
           this.autoCooldownSeconds = Math.round(cooldown);
         }
       },
-      error: () => {},
+      error: (err) => console.warn('Falha ao carregar configuração automática de recrutadores:', err),
     });
   }
 
@@ -373,7 +475,9 @@ export class RecrutadoresComponent implements OnInit {
       min_score: clampedScore,
       continuous: this.autoContinuous,
       cooldown_seconds: clampedSeconds,
-    }).subscribe({ error: () => {} });
+    }).subscribe({
+      error: (err) => this.toast.warning('Não foi possível salvar configuração do Modo Automático: ' + (err?.error?.detail || err?.message || 'Erro')),
+    });
   }
 
   triggerAutoMode(): void {
@@ -386,6 +490,8 @@ export class RecrutadoresComponent implements OnInit {
     this.statusMessage.set('');
     this.cvAreaBadge.set('');
     this.state.scoreFilter.set('');
+    this.state.portalFilter.set('');
+    this.state.onlyCvMatch.set(false);
     if (this.jobAgeFilter === '1' || this.jobAgeFilter === '2' || this.jobAgeFilter === '3') {
       this.state.jobAgeFilter.set('');
     }
@@ -429,16 +535,58 @@ export class RecrutadoresComponent implements OnInit {
     this.errorMessage.set('');
     this.statusMessage.set('');
 
-    // Sincroniza da base local e threads públicas (como Hacker News) para os termos
-    this.api.syncRecruiterPosts(term).subscribe({
+    const days = this.jobAgeFilter ? Number(this.jobAgeFilter) : null;
+    const sync$ = days && days > 0
+      ? this.api.syncRecruiterPosts(term, { days })
+      : this.api.syncRecruiterPosts(term);
+    sync$.subscribe({
       next: (res) => {
-        if (res && res.hn_synced && res.hn_synced > 0) {
-          this.statusMessage.set(`${res.hn_synced} novo(s) contato(s) obtido(s) do Hacker News Who is Hiring!`);
+        const { status, warning } = summarizeRecruiterSync(res);
+        if (status) {
+          this.statusMessage.set(status);
+        }
+        if (warning) {
+          this.toast.warning(warning);
         }
         this.fetchPosts(true);
+        this.loadLinkedInStatus();
       },
-      error: () => {
+      error: (err) => {
+        console.warn('Falha parcial ao sincronizar recrutadores:', err);
+        this.toast.warning('Sincronização parcial concluída; carregando publicações locais.');
         this.fetchPosts(true);
+        this.loadLinkedInStatus();
+      }
+    });
+  }
+
+  onTriagePending(): void {
+    if (this.triaging() || this.loading()) return;
+    const pendingIds = this.filteredPosts()
+      .filter(p => !p.ai_evaluated_at)
+      .slice(0, 12)
+      .map(p => p.id);
+
+    if (pendingIds.length === 0) {
+      this.toast.info('Nenhuma publicação visível pendente de nota da IA.');
+      return;
+    }
+
+    this.triaging.set(true);
+    this.errorMessage.set('');
+    this.api.triageRecruiterPosts({ post_ids: pendingIds, limit: 12 }).subscribe({
+      next: (res) => {
+        this.triaging.set(false);
+        const msg = `IA avaliou ${res.triaged} publicação(ões): ${res.active_jobs} vaga(s) ativa(s), ${res.talent_pools_discarded} banco(s) descartado(s).`;
+        this.statusMessage.set(msg);
+        this.toast.success(msg);
+        this.fetchPosts(false);
+      },
+      error: (err) => {
+        this.triaging.set(false);
+        const detail = err?.error?.detail || err?.message || 'Não foi possível triar publicações com IA.';
+        this.errorMessage.set(detail);
+        this.toast.error(detail);
       }
     });
   }
@@ -447,7 +595,7 @@ export class RecrutadoresComponent implements OnInit {
     if (showSpinner) {
       this.loading.set(true);
     }
-    this.api.getRecruiterPosts().subscribe({
+    this.api.getRecruiterPosts().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res) => {
         this.allPosts.set(res.posts || []);
         this.loading.set(false);
@@ -487,7 +635,15 @@ export class RecrutadoresComponent implements OnInit {
     this.filterText = chosen;
     this.cvAreaBadge.set(`Área CV: ${picked.label || picked.title}`);
     this.errorMessage.set('');
-    this.state.persist();
+    this.statusMessage.set('');
+    if (this.allPosts().length > 0) {
+      this.hasSearched.set(true);
+      this.state.persist();
+    } else if (chosen && !this.loading()) {
+      this.onSearch();
+    } else {
+      this.state.persist();
+    }
   }
 
   clearTextFilter(): void {
@@ -499,14 +655,114 @@ export class RecrutadoresComponent implements OnInit {
     this.state.persist();
   }
 
-  openLinkedInContentSearch(): void {
-    const term = (this.filterText || '').trim();
-    const queryPart = term ? `(${term.split(',').map(t => `"${t.trim()}"`).join(' OR ')})` : '';
-    const emailKeywords = '("envie seu currículo" OR "enviar currículo" OR "mande seu cv" OR "email" OR "send your resume")';
-    const fullKeywords = queryPart ? `${queryPart} ${emailKeywords}` : emailKeywords;
+  loadLinkedInStatus(): void {
+    if (!this.api.getLinkedInWorkerStatus) return;
+    this.api.getLinkedInWorkerStatus()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (st) => {
+          this.linkedInStatus.set(st);
+          this.syncLoginPollTimer(st?.status);
+          if (
+            st?.status === 'awaiting_login'
+            && st.login_window_open === false
+            && !this.autoVerifyingLogin
+            && !this.linkedInBusy()
+          ) {
+            this.autoVerifyingLogin = true;
+            this.verifyLinkedIn();
+          }
+        },
+        error: () => {
+          // status opcional em caso de falha transitória
+        },
+      });
+  }
 
-    const url = `https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(fullKeywords)}&sortBy=%22date_posted%22`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+  private syncLoginPollTimer(status?: string): void {
+    if (status === 'awaiting_login') {
+      if (!this.linkedInPollTimer) {
+        this.linkedInPollTimer = setInterval(() => {
+          this.loadLinkedInStatus();
+        }, 3000);
+      }
+      return;
+    }
+    this.stopLoginPollTimer();
+  }
+
+  private stopLoginPollTimer(): void {
+    if (this.linkedInPollTimer) {
+      clearInterval(this.linkedInPollTimer);
+      this.linkedInPollTimer = null;
+    }
+  }
+
+  connectLinkedIn(): void {
+    if (this.linkedInBusy()) return;
+    this.autoVerifyingLogin = false;
+    this.linkedInBusy.set(true);
+    this.api.connectLinkedInWorker()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (st) => {
+          this.linkedInBusy.set(false);
+          this.linkedInStatus.set(st);
+          this.syncLoginPollTimer(st?.status);
+          if (st?.status === 'connected') {
+            this.toast.success('LinkedIn conectado! Agora o Modo Automático e a Busca já incluem publicações de lá.');
+          } else {
+            this.toast.info('Janela aberta! Entre no LinkedIn lá e feche a janela ao terminar (ou clique em "Já entrei").');
+          }
+        },
+        error: (err) => {
+          this.linkedInBusy.set(false);
+          this.toast.error(err?.error?.detail || err?.message || 'Não foi possível abrir o navegador isolado.');
+        },
+      });
+  }
+
+  verifyLinkedIn(): void {
+    if (this.linkedInBusy()) return;
+    this.linkedInBusy.set(true);
+    this.api.verifyLinkedInWorker()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (st) => {
+          this.linkedInBusy.set(false);
+          this.linkedInStatus.set(st);
+          this.syncLoginPollTimer(st?.status);
+          if (st?.status === 'connected') {
+            this.toast.success('Sessão do LinkedIn confirmada! Pronto para coleta automática.');
+          } else {
+            this.toast.warning(st?.message || st?.last_error || 'Conclua o login na janela aberta e feche-a ao terminar.');
+          }
+        },
+        error: (err) => {
+          this.linkedInBusy.set(false);
+          this.toast.warning(err?.error?.detail || err?.message || 'Falha ao verificar a sessão do LinkedIn.');
+        },
+      });
+  }
+
+  disconnectLinkedIn(): void {
+    if (this.linkedInBusy()) return;
+    this.autoVerifyingLogin = false;
+    this.linkedInBusy.set(true);
+    this.stopLoginPollTimer();
+    this.api.disconnectLinkedInWorker()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (st) => {
+          this.linkedInBusy.set(false);
+          this.linkedInStatus.set(st);
+          this.toast.info('LinkedIn desconectado e perfil isolado limpo.');
+        },
+        error: (err) => {
+          this.linkedInBusy.set(false);
+          this.toast.error(err?.error?.detail || err?.message || 'Falha ao desconectar LinkedIn.');
+        },
+      });
   }
 
   dismissPost(postId: number): void {
@@ -639,6 +895,14 @@ export class RecrutadoresComponent implements OnInit {
     this.copiedPrompt.set(null);
   }
 
+  ngOnDestroy(): void {
+    this.stopLoginPollTimer();
+    if (this.copyEmailTimer) {
+      clearTimeout(this.copyEmailTimer);
+      this.copyEmailTimer = null;
+    }
+  }
+
   copyEmail(email: string, post?: RecruiterPost): void {
     if (!email) return;
     const onCopied = () => {
@@ -646,7 +910,11 @@ export class RecrutadoresComponent implements OnInit {
       if (post?.id) {
         this.copiedPrompt.set({ postId: post.id, email });
       }
-      setTimeout(() => {
+      if (this.copyEmailTimer) {
+        clearTimeout(this.copyEmailTimer);
+      }
+      this.copyEmailTimer = setTimeout(() => {
+        this.copyEmailTimer = null;
         if (this.copiedEmail() === email) {
           this.copiedEmail.set(null);
         }
@@ -682,7 +950,7 @@ export class RecrutadoresComponent implements OnInit {
 
   getPortalOriginInfo(post: RecruiterPost): string {
     if (post.portal === 'linkedin_post') {
-      return 'Publicação colada do feed do LinkedIn';
+      return 'Publicação coletada do feed do LinkedIn';
     }
     if (post.portal === 'hn-search') {
       return 'Thread "Who is Hiring" do Hacker News';

@@ -1,0 +1,81 @@
+<div class="vc-panel map-card">
+  <div class="map-card-header">
+    <h3 class="map-heading">
+      {{ mapMode === 'brasil' ? 'Mapa do Brasil' : 'Mapa Mundial' }}
+    </h3>
+    <div class="map-toggle-buttons">
+      <button type="button"
+        class="btn-map-toggle"
+        [class.active]="mapMode === 'world'"
+        (click)="mapModeChange.emit('world')">
+        Mapa Mundial
+      </button>
+      <button type="button"
+        class="btn-map-toggle"
+        [class.active]="mapMode === 'brasil'"
+        (click)="mapModeChange.emit('brasil')">
+        Mapa do Brasil
+      </button>
+    </div>
+  </div>
+
+  <!-- Palco SVG do Mapa -->
+  <div class="map-stage">
+    <div #mapWorldContainer [style.display]="mapMode === 'world' ? 'block' : 'none'" class="svg-map-wrapper"></div>
+    <div #mapBrasilContainer [style.display]="mapMode === 'brasil' ? 'block' : 'none'" class="svg-map-wrapper"></div>
+
+    <!-- Chips de Trabalho Remoto -->
+    <div class="remote-chips-bar">
+      <button type="button"
+        class="remote-chip"
+        [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'REMOTO_BR'"
+        (click)="selectRemoteChip('REMOTO_BR', 'Remoto Brasil')">
+        Remoto Brasil: {{ remoteCounts['REMOTO_BR'] || 0 }} vaga(s)
+      </button>
+      <button type="button"
+        class="remote-chip"
+        [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'EU_REMOTE'"
+        (click)="selectRemoteChip('EU_REMOTE', 'Remoto Europa')">
+        Remoto Europa: {{ remoteCounts['EU_REMOTE'] || 0 }} vaga(s)
+      </button>
+      <button type="button"
+        class="remote-chip"
+        [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'GLOBAL_REMOTE'"
+        (click)="selectRemoteChip('GLOBAL_REMOTE', 'Remoto Global / EUA')">
+        Remoto Global / EUA: {{ remoteCounts['GLOBAL_REMOTE'] || 0 }} vaga(s)
+      </button>
+    </div>
+  </div>
+
+  <!-- Legenda e Indicador de Filtro Ativo -->
+  <div class="map-legend-bar">
+    <div class="map-legend-items">
+      <span class="legend-title">{{ isTriageMode ? 'Legenda (Notas da Triagem):' : 'Legenda (Volume de Vagas):' }}</span>
+      @if (isTriageMode) {
+        <span class="legend-chip"><span class="swatch" style="background: #131b2b; border: 1px solid #23324a;"></span> 0 vagas</span>
+        <span class="legend-chip"><span class="swatch" style="background: #64748b;"></span> Nota &lt; 60</span>
+        <span class="legend-chip"><span class="swatch" style="background: #0ea5e9;"></span> Nota 60 a 74</span>
+        <span class="legend-chip"><span class="swatch" style="background: #10b981; border: 1px solid #34d399;"></span> Nota 75+ (Alta afinidade)</span>
+      } @else {
+        <span class="legend-chip"><span class="swatch" style="background: #131b2b; border: 1px solid #23324a;"></span> 0 vagas</span>
+        <span class="legend-chip"><span class="swatch" style="background: #0369a1;"></span> 1 a 4 vagas</span>
+        <span class="legend-chip"><span class="swatch" style="background: #0284c7;"></span> 5 a 9 vagas</span>
+        <span class="legend-chip"><span class="swatch" style="background: #f59e0b;"></span> 10+ vagas (Alto volume)</span>
+      }
+    </div>
+
+    <div class="map-legend-actions">
+      @if (hasTriagedJobs) {
+        <button type="button" class="btn-text-action" (click)="triageModeToggle.emit()">
+          {{ isTriageMode ? 'Ver volume de vagas' : 'Ver notas da triagem' }}
+        </button>
+      }
+      <span class="map-filter-label">{{ indicatorText }}</span>
+      @if (activeGeoFilter) {
+        <button type="button" class="btn-clear-selection" (click)="geoFilterChange.emit(null)">
+          Limpar seleção do mapa
+        </button>
+      }
+    </div>
+  </div>
+</div>

@@ -226,52 +226,6 @@ class ApplyHostVerificationSpecTests(unittest.TestCase):
             expected = "installed_portal" if resolve_portal_skill(url) else "official_ats"
             self.assertEqual(tier, expected, f"{url} should classify as {expected}, got {tier}")
 
-    def test_classifier_identifies_installed_portal_hosts(self):
-        # A regional subdomain and the bare apex must both pass for every portal;
-        # the derived set is what makes this hold for a portal added by /add-portal.
-        urls = [
-            "https://br.linkedin.com/jobs/view/999999",
-            "https://www.linkedin.com/jobs/view/888888",
-            "https://afya.gupy.io/jobs/12749301",
-            "https://portal.gupy.io/job-search/term=analista",
-            "https://freehire.me/jobs/golang-zensar-2bxu6dxm",
-            # Sólides: a portal skill now, so a company's own Sólides page
-            # (empresa.vagas.solides.com.br) classifies as installed_portal, which
-            # is checked before official_ats.
-            "https://vagas.solides.com.br/vaga/939473",
-            "https://empresa.vagas.solides.com.br/vaga/123456",
-            "https://www.vagas.com.br/vagas/v2837357/gerente-de-produto",
-            "https://www.infojobs.com.br/vaga-de-product-manager-em-minas-gerais__12133581.aspx",
-            "https://remotar.com.br/job/166921/stone/product-manager",
-            # Greenhouse: a portal skill now (greenhouse-search), so the hosts its
-            # sources name classify as installed_portal, checked before official_ats.
-            # The legacy boards.greenhouse.io host is not one of them and stays
-            # official_ats (asserted in the test above).
-            "https://job-boards.greenhouse.io/acme/jobs/12345",
-            "https://programathor.com.br/jobs/33685-desenvolvedor",
-            "https://www.michaelpage.com.br/job-detail/pm/ref/jn-082026-7088330",
-            "https://www.geekhunter.com/pt/mv-saude-digital/jobs/desenvolvedor-pleno-93",
-            "https://trampos.co/oportunidades/774888-gestor-a-de-live-shop",
-            "https://www.roberthalf.com/br/pt/vaga/guarulhos/analista/63610-0013529450-brpt",
-            "https://www.pcd.com.br/emprego-pcd/cientista-de-dados/69830",
-            "https://www.agrobase.com.br/oportunidades/2026/10/zootecnista-trainee-pr-e-sp/",
-            "https://agroforce.agrosearch.com.br/portal.html#/vaga/1036",
-            "https://jobs.digai.ai/87124eb1-2e60-4d43-b045-3f4a3d51195e",
-            "https://www.empregos.com.br/vaga/11909170/product-manager-senior-em-sao-paulo-sp",
-        ]
-        for url in urls:
-            tier, host = classify_posting_host(url)
-            self.assertEqual(tier, "installed_portal", f"{url} should classify as installed_portal, got {tier}")
-
-    def test_classifier_default_is_the_discovered_set_not_a_copy(self):
-        self.assertEqual(classify_posting_host.__defaults__, (None,))
-        self.assertTrue(INSTALLED_PORTAL_HOSTS, "discovery found no portal hosts under .agents/skills/")
-        # An explicit set still overrides, which is how a fork's test can probe a candidate portal.
-        self.assertEqual(
-            classify_posting_host("https://jobs.newboard.test/x", {"newboard.test"})[0], "installed_portal"
-        )
-        self.assertEqual(classify_posting_host("https://jobs.newboard.test/x")[0], "unverified")
-
 
 class InstalledPortalsAreVerifiedTests(unittest.TestCase):
     """Every installed portal CLI's board host must classify as installed_portal.

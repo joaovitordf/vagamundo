@@ -1,2 +1,67 @@
 /* Estilos do shell principal do app */
 
+.vc-toast-stack {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(420px, calc(100vw - 2rem));
+}
+
+.vc-toast-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: var(--vc-bg-2, #111827);
+  color: var(--vc-text, #f8fafc);
+  border: 1px solid var(--vc-border, #334155);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.vc-toast-item--success {
+  border-color: rgba(16, 185, 129, 0.55);
+  background: rgba(6, 78, 59, 0.92);
+}
+
+.vc-toast-item--warning {
+  border-color: rgba(245, 158, 11, 0.6);
+  background: rgba(120, 53, 15, 0.92);
+}
+
+.vc-toast-item--error {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: rgba(127, 29, 29, 0.94);
+}
+
+.vc-toast-item--info {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(12, 74, 110, 0.92);
+}
+
+.vc-toast-text {
+  flex: 1;
+}
+
+.vc-toast-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.8;
+  cursor: pointer;
+  padding: 0.15rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.vc-toast-close:hover {
+  opacity: 1;
+}
+

@@ -27,7 +27,7 @@ export class HeaderComponent implements OnInit {
           this.engineLabel = st.provider.label;
         }
       },
-      error: () => {}
+      error: (err) => console.warn('Falha ao consultar status do provedor de IA:', err)
     });
   }
 }

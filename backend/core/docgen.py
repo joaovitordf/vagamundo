@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 import asyncio
-from pathlib import Path
+import logging
 from typing import Any, Dict, List, Optional
 
+from backend.core.constants import PROTECTED_DOC_STEMS, resolve_safe_document_path
 from backend.db.repository import Repository
 from backend.tools import painel, painel_ia
+
+logger = logging.getLogger(__name__)
 
 
 class DocGenService:
@@ -34,7 +37,6 @@ class DocGenService:
         self,
         url: str,
         evaluation_md: Optional[str] = None,
-        job_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Generate tailored CV in LaTeX and compile to PDF."""
         def _run() -> Dict[str, Any]:
@@ -48,7 +50,6 @@ class DocGenService:
         self,
         url: str,
         evaluation_md: Optional[str] = None,
-        job_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Generate tailored cover letter in LaTeX and compile to PDF."""
         def _run() -> Dict[str, Any]:
@@ -58,15 +59,10 @@ class DocGenService:
 
         return await asyncio.to_thread(_run)
 
-    async def prepare_interview(
-        self,
-        url: str,
-        job_data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    async def prepare_interview(self, url: str) -> Dict[str, Any]:
         """Generate interview dossier and questions."""
         def _run() -> Dict[str, Any]:
-            res = painel_ia.preparar_entrevista(url)
-            return res
+            return painel_ia.preparar_entrevista(url)
 
         return await asyncio.to_thread(_run)
 
@@ -80,31 +76,11 @@ class DocGenService:
         if not rel:
             return {"deleted": False, "error": "Caminho ausente"}
 
-        allowed_dirs = [
-            (painel.ROOT / "cover_letters").resolve(),
-            (painel.ROOT / "documents" / "interview").resolve(),
-            (painel.ROOT / "cv").resolve(),
-            (painel.ROOT / "documents" / "applications" / "_painel").resolve(),
-        ]
-        if painel.ROOT.name == "backend":
-            allowed_dirs.extend([
-                (painel.ROOT.parent / "cover_letters").resolve(),
-                (painel.ROOT.parent / "documents" / "interview").resolve(),
-                (painel.ROOT.parent / "cv").resolve(),
-            ])
-
-        target = None
-        for base in [painel.ROOT, painel.ROOT.parent]:
-            cand = (base / rel).resolve()
-            if cand.is_file() and any(cand == ad or ad in cand.parents for ad in allowed_dirs):
-                target = cand
-                break
-
+        target = resolve_safe_document_path(rel, base_root=painel.ROOT, include_all_documents=False)
         if not target or not target.is_file():
             return {"deleted": False, "error": "Arquivo não encontrado ou acesso não permitido"}
 
-        protected_stems = {"main_example", "reference_template", "cover_example", "cover"}
-        if target.stem in protected_stems or target.name == "cover.cls":
+        if target.stem in PROTECTED_DOC_STEMS or target.name == "cover.cls":
             return {"deleted": False, "error": "Modelos base e templates do sistema não podem ser excluídos"}
 
         parent_dir = target.parent
@@ -115,8 +91,8 @@ class DocGenService:
                 try:
                     cand.unlink()
                     removed.append(cand.name)
-                except Exception:
-                    pass
+                except OSError as exc:
+                    logger.warning("Failed to remove document artifact %s: %s", cand, exc)
 
         return {"deleted": True, "path": rel, "removed": removed}
 
@@ -131,7 +107,6 @@ class DocGenService:
             if not keep_cv:
                 dirs_to_clean.append((base / "cv").resolve())
 
-        protected_stems = {"main_example", "reference_template", "cover_example", "cover"}
         protected_names = {"cover.cls", "reference_template.tex", "main_example.tex", "cover_example.tex"}
 
         for d in dirs_to_clean:
@@ -140,13 +115,13 @@ class DocGenService:
             for item in d.glob("*"):
                 if item.is_dir():
                     continue
-                if item.stem in protected_stems or item.name in protected_names:
+                if item.stem in PROTECTED_DOC_STEMS or item.name in protected_names:
                     continue
                 if item.suffix.lower() in (".pdf", ".tex", ".md", ".aux", ".log", ".out", ".fls", ".fdb_latexmk", ".synctex.gz", ".txt"):
                     try:
                         item.unlink()
                         removed.append(str(item.name))
-                    except Exception:
-                        pass
+                    except OSError as exc:
+                        logger.warning("Failed to clear generated artifact %s: %s", item, exc)
 
         return {"ok": True, "removed": removed, "count": len(removed), "kept_cv": keep_cv}

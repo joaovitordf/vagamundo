@@ -212,6 +212,13 @@ class TestMatchScoreAnglicize(unittest.TestCase):
         self.assertGreater(score, 0)
 
 
+    def test_anglicized_exact_phrase_scores_85(self):
+        self.assertEqual(match_score("Itau Unibanco", "Itaú Unibanco S.A."), 85)
+
+    def test_overlap_match_score(self):
+        self.assertGreater(match_score("Mercado Tech", "Mercado Livre Tech Ltda."), 30)
+
+
 class TestMatchScoreNoOverlap(unittest.TestCase):
     def test_completely_unrelated_names_return_zero(self):
         self.assertEqual(match_score("Apple", "WEG Equipamentos Elétricos"), 0)
@@ -317,10 +324,6 @@ class ValidateDataTests(unittest.TestCase):
             {"companies": [{"company": "Example Corp", "categories": []}]},
             "companies[1].categories must be an object when provided",
         )
-
-
-class ValidateDataShapeTests(ValidateDataTests):
-    """Category-shape and duplicate-name checks (reuses assert_invalid_data)."""
 
     def test_malformed_category_value_rejected(self):
         data = {"companies": [{"company": "Acme", "categories": {"eng": "not_a_dict"}}]}
@@ -496,50 +499,6 @@ class UtilityTests(unittest.TestCase):
         self.assertEqual(extract_core_words("Test Company (Sub-entity)"), ["test", "company"])
 
 
-class MatchScoreTests(unittest.TestCase):
-    def test_exact_match_score(self):
-        self.assertEqual(match_score("Mercado Livre", "Mercado Livre"), 100)
-        self.assertEqual(match_score("mercado livre", "Mercado Livre Ltda."), 100)
-
-    def test_partial_match_score(self):
-        self.assertGreater(match_score("Oi", "Oi Móvel S.A."), 80)
-        self.assertEqual(match_score("Oi Móvel", "Oi"), 75)
-
-    def test_anglicized_match_score(self):
-        self.assertEqual(match_score("Itau Unibanco", "Itaú Unibanco S.A."), 85)
-
-    def test_overlap_match_score(self):
-        # Overlap of multiple words
-        self.assertGreater(match_score("Mercado Tech", "Mercado Livre Tech Ltda."), 30)
-
-    def test_no_match_score(self):
-        self.assertEqual(match_score("Google", "Microsoft"), 0)
-
-
-class SearchCompanyRefactoredTests(unittest.TestCase):
-    def setUp(self):
-        self.data = {
-            "companies": [
-                {"company": "Mercado Livre Ltda.", "city": "Osasco"},
-                {"company": "Ambev", "city": "Jundiaí"},
-                {"company": "WEG Equipamentos Elétricos", "city": "Jaraguá do Sul"},
-            ]
-        }
-
-    def test_search_by_name(self):
-        results = search_company(self.data, "Mercado")
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["company"], "Mercado Livre Ltda.")
-
-    def test_search_with_city_filter(self):
-        results = search_company(self.data, "Ambev", city="Jundiaí")
-        self.assertEqual(len(results), 1)
-
-        # Mismatching city
-        results_wrong_city = search_company(self.data, "Ambev", city="Osasco")
-        self.assertEqual(len(results_wrong_city), 0)
-
-
 class TestSearchCompanyBasicMatch(unittest.TestCase):
     def test_exact_name_returns_match(self):
         data = _make_data(_entry("Mercado Livre", "Osasco"))
@@ -657,6 +616,35 @@ class TestSalaryFileEncoding(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("invalid JSON at line 1, column 16", result.stderr)
         self.assertNotIn("Unexpected UTF-8 BOM", result.stderr)
+
+    def test_unicode_nfd_mixed_script_and_portuguese_accents_via_cli(self):
+        names = [
+            "腾讯", "東京 AI", "北京 AI", "Acme Corp", "Café Étoile",
+            "Nestlé Brasil Ltda.", "São Martinho S.A.", "Itaú Unibanco S.A.", "Açúcar Guarani S/A",
+        ]
+        data = {"companies": [
+            {"company": name, "categories": {"all_employees": {"index": 105}}}
+            for name in names
+        ]}
+        self.data_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+        def lookup(query: str) -> list[str]:
+            proc = self.run_cli(query, "--json")
+            self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            return [row["company"] for row in json.loads(proc.stdout)]
+
+        self.assertEqual(lookup("腾讯"), ["腾讯"])
+        self.assertEqual(lookup("東京 AI")[0], "東京 AI")
+        self.assertEqual(lookup("Cafe\u0301 E\u0301toile"), ["Café Étoile"])
+        self.assertEqual(lookup("acme"), ["Acme Corp"])
+        self.assertEqual(lookup("Nestle"), ["Nestlé Brasil Ltda."])
+        for query, expected in [
+            ("Sao Martinho", "São Martinho S.A."),
+            ("Itau Unibanco", "Itaú Unibanco S.A."),
+            ("Acucar Guarani", "Açúcar Guarani S/A"),
+        ]:
+            with self.subTest(query=query):
+                self.assertEqual(lookup(query), [expected])
 
 
 if __name__ == "__main__":

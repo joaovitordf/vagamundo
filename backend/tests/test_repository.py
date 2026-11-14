@@ -166,6 +166,40 @@ class TestRepository(unittest.TestCase):
         self.assertTrue(self.tracker.is_seen(company="tech corp", title="angular dev"))
         self.assertFalse(self.tracker.is_seen(company="Other Corp", title="Angular Dev"))
 
+    def test_evaluation_language_columns_and_deterministic_id(self):
+        jid = self.repo.upsert_job({"title": "", "company": "", "url": "", "portal": "recruiter_radar"})
+        jid_repeat = self.repo.upsert_job({"title": "", "company": "", "url": "", "portal": "recruiter_radar"})
+        self.assertEqual(jid, jid_repeat)
+        self.assertTrue(jid.startswith("unknown-company_untitled-"))
+        self.repo.insert_evaluation({
+            "job_id": jid,
+            "score_global": 72,
+            "verdict": "Good Fit",
+            "language_gate": "FLAG",
+            "language_note": "Inglês intermediário",
+            "strengths": ["Python"],
+            "gaps": ["Docker"],
+        })
+        ev = self.repo.get_evaluation(jid)
+        self.assertEqual(ev["language_gate"], "FLAG")
+        self.assertEqual(ev["language_note"], "Inglês intermediário")
+        details = self.repo.get_latest_evaluation_details([jid])
+        self.assertEqual(details[jid]["language_gate"], "FLAG")
+        self.assertEqual(details[jid]["language_note"], "Inglês intermediário")
+
+    def test_dashboard_stats_is_read_only(self):
+        self.repo.upsert_job({"id": "j-ro", "title": "Eng", "company": "RoCo", "url": "https://u-ro", "status": "applied"})
+        self.repo.upsert_application({"job_id": "j-ro", "status": "applied", "applied_date": "2026-01-01"})
+        # Removendo do ledger manualmente para garantir que get_dashboard_stats não re-escreve no banco
+        with self.repo.conn:
+            self.repo.conn.execute("DELETE FROM application_ledger")
+        stats = self.repo.get_dashboard_stats(period_months=6)
+        self.assertIn("kpis", stats)
+        self.assertEqual(stats["kpis"]["active_applications"], 1)
+        self.assertEqual(stats["kpis"]["lifetime_applications"], 0)
+        count_after = self.repo.conn.execute("SELECT COUNT(*) FROM application_ledger").fetchone()[0]
+        self.assertEqual(count_after, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

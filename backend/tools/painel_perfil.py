@@ -20,6 +20,11 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+try:
+    from backend.tools import posting_signals as _posting_signals
+except ImportError:
+    import posting_signals as _posting_signals
+
 ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = ROOT.parent
 DOCUMENTS = ROOT / "documents"
@@ -28,7 +33,7 @@ PROFILE_MD = REPO_ROOT / ".claude" / "skills" / "job-application-assistant" / "0
 UPLOAD_KINDS = {"cv": "cv", "linkedin": "linkedin"}
 MAX_UPLOAD = 10_000_000
 
-LEVELS = ["estagio", "junior", "pleno", "senior", "especialista", "staff", "lead", "gestao"]
+LEVELS = list(_posting_signals.LEVELS)
 
 # Seções do formulário: (título, campos). Tipos: text, textarea, lines (uma
 # entrada por linha, gravada como lista), choice (uma opção), multi (várias).
@@ -97,14 +102,16 @@ def clean_answers(data: dict) -> dict:
     return out
 
 
-def load_answers(path: Path = ANSWERS) -> dict:
+def load_answers(path: Path | None = None) -> dict:
+    path = path or ANSWERS
     try:
         return clean_answers(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError, AttributeError):
         return {}
 
 
-def save_answers(data: dict, path: Path = ANSWERS) -> dict:
+def save_answers(data: dict, path: Path | None = None) -> dict:
+    path = path or ANSWERS
     answers = clean_answers(data)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({**answers, "atualizado": datetime.now().isoformat(timespec="seconds")},

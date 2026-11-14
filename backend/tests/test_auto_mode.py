@@ -58,7 +58,9 @@ class AutoModeSafetyAndKeywordsTests(unittest.TestCase):
     def test_within_jobage_date_cutoff(self):
         today = date(2026, 11, 11)
         self.assertTrue(_within_jobage("2026-11-05", 7, hide_undated=True, today_day=today))
+        self.assertTrue(_within_jobage("05/11/2026", 7, hide_undated=True, today_day=today))
         self.assertFalse(_within_jobage("2026-11-03", 7, hide_undated=True, today_day=today))
+        self.assertFalse(_within_jobage("03/11/2026", 7, hide_undated=True, today_day=today))
         self.assertTrue(_within_jobage(None, 7, hide_undated=False, today_day=today))
         self.assertFalse(_within_jobage(None, 7, hide_undated=True, today_day=today))
 
@@ -791,6 +793,157 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         self.assertEqual(st["phase"], "done")
         self.assertEqual(st["counts"]["found"], 1)
         self.assertEqual(st["counts"]["promoted"], 1)
+
+    def test_recruiters_wake_if_recruiter_cooldown_and_auto_round_triages_linkedin_post(self):
+        import time
+
+        live_recruiter = RecruiterService(repo=self.repo, enable_live_feeds=True)
+        auto_live = AutoModeService(
+            repo=self.repo,
+            scanner=self.scanner,
+            evaluator=self.evaluator,
+            recruiter_service=live_recruiter,
+        )
+
+        # Testa wake_if_recruiter_cooldown apenas em mode='recruiters' e phase='cooldown'
+        with auto_live._lock:
+            auto_live.state.update({"running": True, "mode": "recruiters", "phase": "cooldown"})
+        self.assertTrue(auto_live.wake_if_recruiter_cooldown())
+        self.assertTrue(auto_live._skip_cooldown_event.is_set())
+
+        auto_live._skip_cooldown_event.clear()
+        auto_live._wake_event.clear()
+        with auto_live._lock:
+            auto_live.state.update({"running": True, "mode": "jobs", "phase": "cooldown"})
+        self.assertFalse(auto_live.wake_if_recruiter_cooldown())
+        with auto_live._lock:
+            auto_live.state.update({"running": False, "mode": "jobs", "phase": "idle"})
+
+        from backend.api.deps import get_recruiter_service
+
+        app.dependency_overrides[get_auto_mode] = lambda: auto_live
+        app.dependency_overrides[get_recruiter_service] = lambda: live_recruiter
+        app.dependency_overrides[get_tracker] = lambda: self.tracker
+        client = TestClient(app)
+        token = get_token()
+
+        # Importa via rota real /paste-batch post do LinkedIn sobre stack diferente da palavra-chave da rodada
+        paste_res = client.post(
+            "/api/recruiters/paste-batch",
+            json={
+                "items": [{
+                    "raw_text": "Vaga Python/Go Cloud Remote! Enviar CV para people@cloudli.dev",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7525862923169132544/",
+                    "title": "Cloud Python/Go Engineer",
+                    "company": "CloudLI",
+                }]
+            },
+            headers={"X-Painel-Token": token},
+        )
+        self.assertEqual(paste_res.status_code, 200)
+        self.assertEqual(paste_res.json()["imported"], 1)
+
+        with patch.object(auto_live, "validate_ready"), \
+             patch("backend.tools.painel_ia.sortear_palavras_chave_busca", return_value={"keywords": ["Angular"], "rationale": "Front", "source": "ai"}), \
+             patch.object(live_recruiter, "sync_from_jobs", return_value={"scanned": 0, "posts_with_email": 0, "synced": 0}), \
+             patch.object(live_recruiter, "sync_from_hn", return_value=0), \
+             patch.object(live_recruiter, "sync_from_recent_scrapes", return_value=0), \
+             patch.object(live_recruiter, "sync_from_github_repos", return_value=0), \
+             patch.object(live_recruiter, "sync_from_remotive", return_value=0), \
+             patch.object(live_recruiter, "sync_from_live_portals", return_value=0), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", return_value={
+                 "classification": "vaga_ativa",
+                 "best_email": "people@cloudli.dev",
+                 "score": 84,
+                 "verdict": "Strong Fit",
+                 "summary": "Vaga capturada no LinkedIn e compatível.",
+             }), \
+             patch("backend.tools.painel.unmark_interested", return_value=True):
+            res = client.post(
+                "/api/recruiters/auto/start",
+                json={"min_score": 60, "continuous": False},
+                headers={"X-Painel-Token": token},
+            )
+            self.assertEqual(res.status_code, 200)
+            st = {}
+            for _ in range(60):
+                st = client.get("/api/auto-mode/status").json()
+                if not st["running"]:
+                    break
+                time.sleep(0.04)
+
+        self.assertEqual(st["phase"], "done")
+        self.assertEqual(st["counts"]["to_screen"], 1)
+        self.assertEqual(st["counts"]["promoted"], 1)
+
+    def test_recruiters_auto_round_triages_urlless_linkedin_post_via_collected_post_ids(self):
+        import time
+        from types import SimpleNamespace
+
+        fake_li_worker = SimpleNamespace(
+            search_content_posts=lambda q, force=False, should_stop=None: {
+                "ok": True,
+                "cards_total": 1,
+                "posts": [{
+                    "raw_text": "Vaga Rust Backend sem permalink! Enviar CV para rustjobs@nouri.dev",
+                    "company": "NouriSystems",
+                    "title": "Rust Backend Dev",
+                    "url": "",
+                }],
+            }
+        )
+        live_recruiter = RecruiterService(
+            repo=self.repo,
+            enable_live_feeds=True,
+            linkedin_worker=fake_li_worker,
+        )
+        auto_live = AutoModeService(
+            repo=self.repo,
+            scanner=self.scanner,
+            evaluator=self.evaluator,
+            recruiter_service=live_recruiter,
+        )
+        app.dependency_overrides[get_auto_mode] = lambda: auto_live
+        app.dependency_overrides[get_tracker] = lambda: self.tracker
+        client = TestClient(app)
+        token = get_token()
+
+        with patch.object(auto_live, "validate_ready"), \
+             patch("backend.tools.painel_ia.sortear_palavras_chave_busca", return_value={"keywords": ["Angular"], "rationale": "Front", "source": "ai"}), \
+             patch.object(live_recruiter, "sync_from_jobs", return_value={"scanned": 0, "posts_with_email": 0, "synced": 0}), \
+             patch.object(live_recruiter, "sync_from_hn", return_value=0), \
+             patch.object(live_recruiter, "sync_from_recent_scrapes", return_value=0), \
+             patch.object(live_recruiter, "sync_from_github_repos", return_value=0), \
+             patch.object(live_recruiter, "sync_from_remotive", return_value=0), \
+             patch.object(live_recruiter, "sync_from_live_portals", return_value=0), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", return_value={
+                 "classification": "vaga_ativa",
+                 "best_email": "rustjobs@nouri.dev",
+                 "score": 81,
+                 "verdict": "Strong Fit",
+                 "summary": "Post do LinkedIn sem URL capturado por ID.",
+             }), \
+             patch("backend.tools.painel.unmark_interested", return_value=True):
+            res = client.post(
+                "/api/recruiters/auto/start",
+                json={"min_score": 60, "continuous": False},
+                headers={"X-Painel-Token": token},
+            )
+            self.assertEqual(res.status_code, 200)
+            st = {}
+            for _ in range(60):
+                st = client.get("/api/auto-mode/status").json()
+                if not st["running"]:
+                    break
+                time.sleep(0.04)
+
+        self.assertEqual(st["phase"], "done")
+        self.assertEqual(st["counts"]["to_screen"], 1)
+        self.assertEqual(st["counts"]["promoted"], 1)
+        interested = self.repo.list_jobs(status="interested")
+        self.assertEqual(len(interested), 1)
+        self.assertEqual(interested[0]["portal"], "linkedin_post")
+        self.assertEqual(interested[0]["rank_score"], 81)
 
 
 if __name__ == "__main__":

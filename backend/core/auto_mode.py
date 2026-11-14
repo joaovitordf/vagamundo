@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import json
+import logging
 import math
 import random
 import re
@@ -11,14 +12,22 @@ import threading
 import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from backend.core.ai_mux import AIMux
+from backend.core.constants import (
+    AUTO_SCORE_DEFAULT,
+    AUTO_SCORE_MAX,
+    AUTO_SCORE_MIN,
+    LOW_SCORE_AUTO_DISCARD_THRESHOLD,
+    atomic_write_json,
+)
 from backend.core.evaluator import EvaluatorService
 from backend.core.recruiter_service import RecruiterService
 from backend.core.scanner import ScannerService
 from backend.db.repository import Repository
 from backend.tools import ai_providers, painel, painel_ia
+
+logger = logging.getLogger(__name__)
 
 
 PROFILE_KEY_CONFIG = "auto_mode"
@@ -39,7 +48,7 @@ MAX_ROUND_HISTORY = 15
 MAX_CONSECUTIVE_FATAL_ERRORS = 5
 
 DEFAULT_AUTO_CONFIG: Dict[str, Any] = {
-    "min_score": 60,
+    "min_score": AUTO_SCORE_DEFAULT,
     "jobage": 7,
     "region": "all",
     "hide_undated": False,
@@ -49,7 +58,7 @@ DEFAULT_AUTO_CONFIG: Dict[str, Any] = {
 }
 
 DEFAULT_RECRUITER_CONFIG: Dict[str, Any] = {
-    "min_score": 60,
+    "min_score": AUTO_SCORE_DEFAULT,
     "continuous": True,
     "cooldown_seconds": RECRUITER_COOLDOWN_DEFAULT,
 }
@@ -92,13 +101,24 @@ def _detect_rate_limit_in_portals(portals_map: Any) -> bool:
     return False
 
 
-def _within_jobage(raw_date: Any, max_days: int, hide_undated: bool, today_day: Optional[date] = None) -> bool:
+def _parse_date_prefix(raw_date: Any) -> Optional[date]:
     s = str(raw_date or "").strip()
     if len(s) < 10:
-        return not hide_undated
+        return None
+    head = s[:10]
     try:
-        posted = date.fromisoformat(s[:10])
+        return date.fromisoformat(head)
     except ValueError:
+        pass
+    try:
+        return datetime.strptime(head, "%d/%m/%Y").date()
+    except ValueError:
+        return None
+
+
+def _within_jobage(raw_date: Any, max_days: int, hide_undated: bool, today_day: Optional[date] = None) -> bool:
+    posted = _parse_date_prefix(raw_date)
+    if posted is None:
         return not hide_undated
     ref = today_day or date.today()
     return (ref - posted).days <= max_days
@@ -112,20 +132,20 @@ class AutoModeService:
         repo: Optional[Repository] = None,
         scanner: Optional[ScannerService] = None,
         evaluator: Optional[EvaluatorService] = None,
-        ai_mux: Optional[AIMux] = None,
         recruiter_service: Optional[RecruiterService] = None,
     ):
         self.repo = repo or Repository()
         self.scanner = scanner or ScannerService(repo=self.repo)
         self.evaluator = evaluator or EvaluatorService(repo=self.repo)
-        self.ai_mux = ai_mux or AIMux()
         self.recruiter_service = recruiter_service or RecruiterService(repo=self.repo)
 
         self._lock = threading.Lock()
         self._db_lock = threading.Lock()
+        self._out_file_lock = threading.Lock()
         self._cancel_event = threading.Event()
         self._skip_cooldown_event = threading.Event()
         self._wake_event = threading.Event()
+        self._queued_recruiter_post_ids: Set[int] = set()
         self._recruiter_current_title = ""
         self._session_totals: Dict[str, int] = self._empty_counts()
         self._session_promoted_items: List[Dict[str, Any]] = []
@@ -170,7 +190,7 @@ class AutoModeService:
             "rationale": "",
             "keyword_source": "",
             "jobage": 7,
-            "min_score": 60,
+            "min_score": AUTO_SCORE_DEFAULT,
             "region": "all",
             "hide_undated": False,
             "started_at": None,
@@ -185,17 +205,21 @@ class AutoModeService:
     # Persistent user preferences & recent keyword history (whitelabel DB)
     # ------------------------------------------------------------------
 
-    def get_config(self) -> Dict[str, Any]:
-        cfg = dict(DEFAULT_AUTO_CONFIG)
-        raw = self.repo.get_profile(PROFILE_KEY_CONFIG)
+    def _load_profile_json_config(self, profile_key: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
+        cfg = dict(defaults)
+        raw = self.repo.get_profile(profile_key)
         if raw:
             try:
                 loaded = json.loads(raw)
                 if isinstance(loaded, dict):
                     cfg.update(loaded)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        cfg["min_score"] = _clamp_int(cfg.get("min_score"), 60, 45, 95)
+            except (json.JSONDecodeError, TypeError) as exc:
+                logger.warning("Failed to decode %s config JSON: %s", profile_key, exc)
+        return cfg
+
+    def get_config(self) -> Dict[str, Any]:
+        cfg = self._load_profile_json_config(PROFILE_KEY_CONFIG, DEFAULT_AUTO_CONFIG)
+        cfg["min_score"] = _clamp_int(cfg.get("min_score"), AUTO_SCORE_DEFAULT, AUTO_SCORE_MIN, AUTO_SCORE_MAX)
         cfg["jobage"] = _clamp_int(cfg.get("jobage"), 7, 1, 7)
         cfg["hide_undated"] = bool(cfg.get("hide_undated", False))
         cfg["region"] = str(cfg.get("region") or "all")
@@ -211,7 +235,7 @@ class AutoModeService:
     def save_config(self, patch: Dict[str, Any]) -> Dict[str, Any]:
         curr = self.get_config()
         if "min_score" in patch and patch["min_score"] is not None:
-            curr["min_score"] = _clamp_int(patch["min_score"], curr["min_score"], 45, 95)
+            curr["min_score"] = _clamp_int(patch["min_score"], curr["min_score"], AUTO_SCORE_MIN, AUTO_SCORE_MAX)
         if "jobage" in patch and patch["jobage"] is not None:
             curr["jobage"] = _clamp_int(patch["jobage"], 7, 1, 7)
         if "region" in patch and patch["region"] is not None:
@@ -233,16 +257,8 @@ class AutoModeService:
         return curr
 
     def get_recruiter_config(self) -> Dict[str, Any]:
-        cfg = dict(DEFAULT_RECRUITER_CONFIG)
-        raw = self.repo.get_profile(PROFILE_KEY_RECRUITER_CONFIG)
-        if raw:
-            try:
-                loaded = json.loads(raw)
-                if isinstance(loaded, dict):
-                    cfg.update(loaded)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        cfg["min_score"] = _clamp_int(cfg.get("min_score"), 60, 45, 95)
+        cfg = self._load_profile_json_config(PROFILE_KEY_RECRUITER_CONFIG, DEFAULT_RECRUITER_CONFIG)
+        cfg["min_score"] = _clamp_int(cfg.get("min_score"), AUTO_SCORE_DEFAULT, AUTO_SCORE_MIN, AUTO_SCORE_MAX)
         cfg["continuous"] = bool(cfg.get("continuous", True))
         cfg["cooldown_seconds"] = _clamp_int(
             cfg.get("cooldown_seconds"),
@@ -255,7 +271,7 @@ class AutoModeService:
     def save_recruiter_config(self, patch: Dict[str, Any]) -> Dict[str, Any]:
         curr = self.get_recruiter_config()
         if "min_score" in patch and patch["min_score"] is not None:
-            curr["min_score"] = _clamp_int(patch["min_score"], curr["min_score"], 45, 95)
+            curr["min_score"] = _clamp_int(patch["min_score"], curr["min_score"], AUTO_SCORE_MIN, AUTO_SCORE_MAX)
         if "continuous" in patch and patch["continuous"] is not None:
             curr["continuous"] = bool(patch["continuous"])
         if "cooldown_seconds" in patch and patch["cooldown_seconds"] is not None:
@@ -444,6 +460,14 @@ class AutoModeService:
                 "Nenhum provedor de IA ativo/configurado. Verifique suas credenciais em Configurações."
             )
 
+    def _ensure_idle_locked(self) -> None:
+        if self.state["running"]:
+            raise RuntimeError("O Modo Automático já está em execução.")
+        if self.scanner.running:
+            raise RuntimeError("Já existe uma busca de vagas em andamento.")
+        if self.evaluator.batch_status().get("running"):
+            raise RuntimeError("Já existe uma triagem em lote em andamento.")
+
     def start(
         self,
         region: Optional[str] = None,
@@ -469,12 +493,7 @@ class AutoModeService:
         })
 
         with self._lock:
-            if self.state["running"]:
-                raise RuntimeError("O Modo Automático já está em execução.")
-            if self.scanner.running:
-                raise RuntimeError("Já existe uma busca de vagas em andamento.")
-            if self.evaluator.batch_status().get("running"):
-                raise RuntimeError("Já existe uma triagem em lote em andamento.")
+            self._ensure_idle_locked()
 
             run_id = uuid.uuid4().hex[:12]
             self._cancel_event.clear()
@@ -524,6 +543,33 @@ class AutoModeService:
             self._wake_event.set()
         return {"ok": True, "skipped": True}
 
+    def enqueue_recruiter_posts(self, post_ids: List[int]) -> bool:
+        """Queue freshly imported LinkedIn/paste post IDs for the next auto round and wake cooldown if running."""
+        valid_ids = {int(pid) for pid in (post_ids or []) if pid is not None}
+        with self._lock:
+            if valid_ids:
+                self._queued_recruiter_post_ids.update(valid_ids)
+                # Keep queue bounded for safety
+                if len(self._queued_recruiter_post_ids) > 100:
+                    self._queued_recruiter_post_ids = set(sorted(self._queued_recruiter_post_ids)[-100:])
+            return self._wake_if_recruiter_cooldown_locked()
+
+    def _wake_if_recruiter_cooldown_locked(self) -> bool:
+        if (
+            not self.state.get("running")
+            or self.state.get("mode") != "recruiters"
+            or self.state.get("phase") != "cooldown"
+        ):
+            return False
+        self._skip_cooldown_event.set()
+        self._wake_event.set()
+        return True
+
+    def wake_if_recruiter_cooldown(self) -> bool:
+        """Wake recruiter auto-mode immediately from cooldown when user imports new LinkedIn posts."""
+        with self._lock:
+            return self._wake_if_recruiter_cooldown_locked()
+
     def _finish_state(self, phase: str, error: Optional[str] = None) -> None:
         with self._lock:
             self.state["running"] = False
@@ -563,13 +609,15 @@ class AutoModeService:
         return r_screened, r_promoted, r_discarded, r_errors
 
     def _read_raw_scanner_payload(self) -> Dict[str, Any]:
-        if not self.scanner.out.exists():
-            return {"meta": None, "new": []}
-        try:
-            data = json.loads(self.scanner.out.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {"meta": None, "new": []}
-        except Exception:
-            return {"meta": None, "new": []}
+        with self._out_file_lock:
+            if not self.scanner.out.exists():
+                return {"meta": None, "new": []}
+            try:
+                data = json.loads(self.scanner.out.read_text(encoding="utf-8"))
+                return data if isinstance(data, dict) else {"meta": None, "new": []}
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Failed to read scanner payload %s: %s", self.scanner.out, exc)
+                return {"meta": None, "new": []}
 
     def _merge_scanner_results(
         self,
@@ -590,7 +638,7 @@ class AutoModeService:
             row = self.repo.get_job_by_url(url)
             if row and row.get("status") in ("interested", "discarded", "applied", "skipped"):
                 continue
-            if row and row.get("rank_score") is not None and row["rank_score"] < 40:
+            if row and row.get("rank_score") is not None and row["rank_score"] < LOW_SCORE_AUTO_DISCARD_THRESHOLD:
                 continue
             kept_prior.append(pj)
 
@@ -598,8 +646,8 @@ class AutoModeService:
             return
 
         merged = {**fresh_payload, "new": [*fresh_jobs, *kept_prior]}
-        self.scanner.out.parent.mkdir(parents=True, exist_ok=True)
-        self.scanner.out.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        with self._out_file_lock:
+            atomic_write_json(self.scanner.out, merged)
 
     def _is_fatal_non_retryable(self, exc: Exception) -> bool:
         msg = str(exc).lower()
@@ -610,11 +658,17 @@ class AutoModeService:
             or "nenhum provedor" in msg
         )
 
-    def _run(self, run_id: str, cfg: Dict[str, Any]) -> None:
-        continuous = bool(cfg.get("continuous", True))
-        base_cooldown = int(cfg.get("cooldown_seconds") or JOBS_COOLDOWN_DEFAULT)
+    def _run_mode_loop(
+        self,
+        *,
+        mode: str,
+        profile_key: str,
+        region: str,
+        continuous: bool,
+        base_cooldown: int,
+        execute_round: Callable[[int, List[str]], Optional[Tuple[int, int, int, int, int, bool]]],
+    ) -> None:
         session_tried: List[str] = []
-        session_evaluated_urls: Set[str] = set()
         round_num = 0
         consecutive_empty = 0
         consecutive_rate_limits = 0
@@ -634,6 +688,8 @@ class AutoModeService:
                     self.state["round_discarded"] = 0
                     self.state["round_errors"] = 0
                     self.state["counts"]["pending"] = 0
+                    if mode == "recruiters":
+                        self._recruiter_current_title = ""
 
                 rate_limited = False
                 round_found = 0
@@ -645,9 +701,9 @@ class AutoModeService:
 
                 try:
                     keywords, rationale, source = self._pick_keywords_for_round(
-                        profile_key=PROFILE_KEY_HISTORY,
-                        region=cfg["region"],
-                        mode="jobs",
+                        profile_key=profile_key,
+                        region=region,
+                        mode=mode,
                         session_tried=session_tried,
                     )
                     with self._lock:
@@ -659,92 +715,19 @@ class AutoModeService:
                             return
                         self.state["phase"] = "searching"
 
-                    prior_jobs = [
-                        j for j in (self._read_raw_scanner_payload().get("new") or [])
-                        if isinstance(j, dict) and j.get("url")
-                    ]
-
-                    started_scan = self.scanner.start(
-                        priorities=[],
-                        jobage=cfg["jobage"],
-                        focus="all",
-                        portals=cfg.get("portals"),
-                        region=cfg["region"],
-                        all_priorities=True,
-                        query=", ".join(keywords),
-                    )
-                    if not started_scan:
-                        raise RuntimeError("Não foi possível iniciar a busca nos portais.")
-
-                    while self.scanner.running:
-                        if self._should_stop():
-                            self.scanner.cancel()
-                        time.sleep(0.25)
-
-                    if self._should_stop():
+                    outcome = execute_round(round_num, keywords)
+                    if outcome is None or self._should_stop():
                         self._finish_state("cancelled")
                         return
 
-                    if self.scanner.error:
-                        raise RuntimeError(self.scanner.error)
-
-                    fresh_payload = self._read_raw_scanner_payload()
-                    portals_map = (
-                        fresh_payload.get("portals")
-                        or (fresh_payload.get("meta") or {}).get("portals")
-                        or self.scanner.progress.get("portals")
-                    )
-                    rate_limited = _detect_rate_limit_in_portals(portals_map)
-                    self._merge_scanner_results(prior_jobs, fresh_payload)
-
-                    results = self.scanner.load_results()
-                    raw_new = results.get("new", []) if isinstance(results, dict) else []
-                    round_found = len(fresh_payload.get("new") or []) if round_num > 1 else len(raw_new)
-
-                    eligible = []
-                    for j in raw_new:
-                        if not isinstance(j, dict):
-                            continue
-                        u = str(j.get("url") or "")
-                        if not u.startswith("http") or u in session_evaluated_urls:
-                            continue
-                        if not _within_jobage(j.get("date") or j.get("posted_date"), cfg["jobage"], cfg["hide_undated"]):
-                            continue
-                        if round_num > 1:
-                            db_row = self.repo.get_job_by_url(u)
-                            if db_row and db_row.get("rank_score") is not None:
-                                continue
-                        eligible.append(j)
-
-                    urls = list(dict.fromkeys(j["url"] for j in eligible))
-                    round_eligible = len(urls)
-
-                    with self._lock:
-                        self.state["round_jobs_found"] = round_found
-                        self.state["round_eligible_count"] = round_eligible
-                        if not urls:
-                            self._session_totals["found"] += round_found
-                            self.state["counts"] = dict(self._session_totals)
-
-                    if urls:
-                        with self._lock:
-                            self.state["phase"] = "screening"
-
-                        session_evaluated_urls.update(urls)
-                        self.evaluator.start_batch(
-                            urls=urls,
-                            workers=2,
-                            auto_interest_min=cfg["min_score"],
-                            run_id=run_id,
-                            should_stop=self._should_stop,
-                            blocking=True,
-                            extra_jobs={j["url"]: j for j in eligible if j.get("url")},
-                        )
-
-                        batch = self.evaluator.batch_status()
-                        _, round_promoted, round_discarded, round_errors = self._sync_batch_counts(
-                            batch, len(urls), found_in_round=round_found
-                        )
+                    (
+                        round_found,
+                        round_eligible,
+                        round_promoted,
+                        round_discarded,
+                        round_errors,
+                        rate_limited,
+                    ) = outcome
 
                     consecutive_fatal_errors = 0
                     consecutive_empty = 0 if round_eligible > 0 else (consecutive_empty + 1)
@@ -762,10 +745,6 @@ class AutoModeService:
                         "finished_at": _now_iso(),
                     })
 
-                    if self._should_stop():
-                        self._finish_state("cancelled")
-                        return
-
                     if not continuous:
                         self._finish_state("done")
                         return
@@ -774,17 +753,24 @@ class AutoModeService:
                     if not continuous or self._is_fatal_non_retryable(exc):
                         self._finish_state("error", error=str(exc))
                         return
+                    logger.warning("AutoMode %s round %d failed (retrying): %s", mode, round_num, exc)
                     consecutive_fatal_errors += 1
                     consecutive_rate_limits += 1
                     rate_limited = True
+                    with self._lock:
+                        err_found = round_found or int(self.state.get("round_jobs_found") or 0)
+                        err_elig = round_eligible or int(self.state.get("round_eligible_count") or 0)
+                        err_prom = round_promoted or int(self.state.get("round_promoted") or 0)
+                        err_disc = round_discarded or int(self.state.get("round_discarded") or 0)
+                        err_errs = (round_errors or int(self.state.get("round_errors") or 0)) + 1
                     self._record_round_summary({
                         "round": round_num,
                         "keywords": list(keywords),
-                        "found": round_found,
-                        "eligible": round_eligible,
-                        "promoted": round_promoted,
-                        "discarded": round_discarded,
-                        "errors": round_errors + 1,
+                        "found": err_found,
+                        "eligible": err_elig,
+                        "promoted": err_prom,
+                        "discarded": err_disc,
+                        "errors": err_errs,
                         "error": str(exc),
                         "finished_at": _now_iso(),
                     })
@@ -796,7 +782,7 @@ class AutoModeService:
                         return
 
                 wait_s, reason = self._compute_cooldown(
-                    mode="jobs",
+                    mode=mode,
                     base_cooldown=base_cooldown,
                     round_had_items=(round_eligible > 0),
                     rate_limited=rate_limited,
@@ -810,7 +796,113 @@ class AutoModeService:
 
             self._finish_state("cancelled")
         except Exception as exc:
+            logger.exception("AutoMode %s loop crashed", mode)
             self._finish_state("error", error=str(exc))
+
+    def _run(self, run_id: str, cfg: Dict[str, Any]) -> None:
+        session_evaluated_urls: Set[str] = set()
+
+        def _execute_jobs_round(
+            round_num: int, keywords: List[str]
+        ) -> Optional[Tuple[int, int, int, int, int, bool]]:
+            prior_jobs = [
+                j for j in (self._read_raw_scanner_payload().get("new") or [])
+                if isinstance(j, dict) and j.get("url")
+            ]
+
+            started_scan = self.scanner.start(
+                priorities=[],
+                jobage=cfg["jobage"],
+                focus="all",
+                portals=cfg.get("portals"),
+                region=cfg["region"],
+                all_priorities=True,
+                query=", ".join(keywords),
+            )
+            if not started_scan:
+                raise RuntimeError("Não foi possível iniciar a busca nos portais.")
+
+            while self.scanner.running:
+                if self._should_stop():
+                    self.scanner.cancel()
+                time.sleep(0.25)
+
+            if self._should_stop():
+                return None
+            if self.scanner.error:
+                raise RuntimeError(self.scanner.error)
+
+            fresh_payload = self._read_raw_scanner_payload()
+            portals_map = (
+                fresh_payload.get("portals")
+                or (fresh_payload.get("meta") or {}).get("portals")
+                or self.scanner.progress.get("portals")
+            )
+            rate_limited = _detect_rate_limit_in_portals(portals_map)
+            self._merge_scanner_results(prior_jobs, fresh_payload)
+
+            results = self.scanner.load_results()
+            raw_new = results.get("new", []) if isinstance(results, dict) else []
+            round_found = len(fresh_payload.get("new") or []) if round_num > 1 else len(raw_new)
+
+            eligible = []
+            for j in raw_new:
+                if not isinstance(j, dict):
+                    continue
+                u = str(j.get("url") or "")
+                if not u.startswith("http") or u in session_evaluated_urls:
+                    continue
+                if not _within_jobage(j.get("date") or j.get("posted_date"), cfg["jobage"], cfg["hide_undated"]):
+                    continue
+                if round_num > 1:
+                    db_row = self.repo.get_job_by_url(u)
+                    if db_row and db_row.get("rank_score") is not None:
+                        continue
+                eligible.append(j)
+
+            urls = list(dict.fromkeys(j["url"] for j in eligible))
+            round_eligible = len(urls)
+            round_promoted = 0
+            round_discarded = 0
+            round_errors = 0
+
+            with self._lock:
+                self.state["round_jobs_found"] = round_found
+                self.state["round_eligible_count"] = round_eligible
+                if not urls:
+                    self._session_totals["found"] += round_found
+                    self.state["counts"] = dict(self._session_totals)
+
+            if urls:
+                with self._lock:
+                    self.state["phase"] = "screening"
+
+                session_evaluated_urls.update(urls)
+                self.evaluator.start_batch(
+                    urls=urls,
+                    workers=2,
+                    auto_interest_min=cfg["min_score"],
+                    run_id=run_id,
+                    should_stop=self._should_stop,
+                    blocking=True,
+                    extra_jobs={j["url"]: j for j in eligible if j.get("url")},
+                )
+
+                batch = self.evaluator.batch_status()
+                _, round_promoted, round_discarded, round_errors = self._sync_batch_counts(
+                    batch, len(urls), found_in_round=round_found
+                )
+
+            return round_found, round_eligible, round_promoted, round_discarded, round_errors, rate_limited
+
+        self._run_mode_loop(
+            mode="jobs",
+            profile_key=PROFILE_KEY_HISTORY,
+            region=cfg["region"],
+            continuous=bool(cfg.get("continuous", True)),
+            base_cooldown=int(cfg.get("cooldown_seconds") or JOBS_COOLDOWN_DEFAULT),
+            execute_round=_execute_jobs_round,
+        )
 
     def start_recruiters(
         self,
@@ -830,8 +922,7 @@ class AutoModeService:
         })
 
         with self._lock:
-            if self.state["running"]:
-                raise RuntimeError("O Modo Automático já está em execução.")
+            self._ensure_idle_locked()
 
             run_id = uuid.uuid4().hex[:12]
             self._cancel_event.clear()
@@ -882,24 +973,38 @@ class AutoModeService:
             verdict = res["verdict"]
             summary = res["summary"]
             best_email = res["best_email"]
+            ai_model = res.get("ai_model")
 
             promoted_jid = None
             with self._db_lock:
                 if cls == "banco_talentos":
                     self.repo.update_recruiter_post_ai(
-                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=True
+                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=True, ai_model=ai_model
                     )
                 elif cls == "nao_e_vaga":
                     self.repo.update_recruiter_post_ai(
-                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=False
+                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=False, ai_model=ai_model
                     )
                 else:
                     self.repo.update_recruiter_post_ai(
-                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=False
+                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=False, ai_model=ai_model
                     )
                     if score >= min_score:
                         promoted_jid = self.recruiter_service.promote_post_to_interested(
-                            post, run_id, score, verdict, summary, best_email
+                            post,
+                            run_id,
+                            score,
+                            verdict,
+                            summary,
+                            best_email,
+                            ai_model=ai_model,
+                            subscores=res.get("subscores"),
+                            strengths=res.get("strengths"),
+                            gaps=res.get("gaps"),
+                            location_verdict=res.get("location_verdict"),
+                            language_gate=res.get("language_gate"),
+                            language_note=res.get("language_note"),
+                            guard_alert=res.get("guard_alert"),
                         )
 
             with self._lock:
@@ -926,7 +1031,8 @@ class AutoModeService:
                     })
                 else:
                     counts["kept_low_score"] += 1
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to screen recruiter post %s: %s", post.get("id"), exc)
             with self._lock:
                 counts = self.state["counts"]
                 counts["screened"] += 1
@@ -936,169 +1042,83 @@ class AutoModeService:
                 counts["pending"] = max(0, self.state["round_eligible_count"] - self.state["round_screened"])
 
     def _run_recruiters(self, run_id: str, cfg: Dict[str, Any]) -> None:
-        continuous = bool(cfg.get("continuous", True))
-        base_cooldown = int(cfg.get("cooldown_seconds") or RECRUITER_COOLDOWN_DEFAULT)
-        session_tried: List[str] = []
-        round_num = 0
-        consecutive_empty = 0
-        consecutive_rate_limits = 0
-        consecutive_fatal_errors = 0
-
-        try:
-            while not self._should_stop():
-                round_num += 1
-                self._clear_cooldown_fields()
-                with self._lock:
-                    self.state["round"] = round_num
-                    self.state["phase"] = "picking_keywords"
-                    self.state["round_jobs_found"] = 0
-                    self.state["round_eligible_count"] = 0
-                    self.state["round_screened"] = 0
-                    self.state["round_promoted"] = 0
-                    self.state["round_discarded"] = 0
-                    self.state["round_errors"] = 0
-                    self.state["counts"]["pending"] = 0
-                    self._recruiter_current_title = ""
-
-                rate_limited = False
-                round_found = 0
-                round_eligible = 0
-                keywords: List[str] = []
-
-                try:
-                    keywords, rationale, source = self._pick_keywords_for_round(
-                        profile_key=PROFILE_KEY_RECRUITER_HISTORY,
-                        region="all",
-                        mode="recruiters",
-                        session_tried=session_tried,
-                    )
-                    with self._lock:
-                        self.state["keywords"] = keywords
-                        self.state["rationale"] = rationale
-                        self.state["keyword_source"] = source
-                        if self._should_stop():
-                            self._finish_state("cancelled")
-                            return
-                        self.state["phase"] = "searching"
-
-                    sync_res = self.recruiter_service.sync_all(query=", ".join(keywords))
-                    if self._should_stop():
-                        self._finish_state("cancelled")
-                        return
-
-                    collected_urls = set(
-                        sync_res.get("collected_urls") or sync_res.get("hn_urls") or []
-                    )
-                    rate_limited = bool(sync_res.get("rate_limited")) or int(sync_res.get("errors") or 0) > 0
-                    with self._db_lock:
-                        candidates = self.recruiter_service.find_untriaged_candidates(
-                            keywords=keywords,
-                            include_urls=collected_urls,
-                        )
-
-                    if self._should_stop():
-                        self._finish_state("cancelled")
-                        return
-
-                    external_synced = (
-                        int(sync_res.get("hn_synced", 0))
-                        + int(sync_res.get("github_synced", 0))
-                        + int(sync_res.get("remotive_synced", 0))
-                        + int(sync_res.get("scrapes_synced", 0))
-                        + int(sync_res.get("portal_synced", 0))
-                    )
-                    round_found = int(sync_res.get("posts_with_email", 0)) + external_synced
-                    round_eligible = len(candidates)
-
-                    with self._lock:
-                        self.state["round_jobs_found"] = round_found
-                        self.state["round_eligible_count"] = round_eligible
-                        self.state["counts"]["found"] += round_found
-                        self.state["counts"]["to_screen"] += round_eligible
-                        self.state["counts"]["pending"] = round_eligible
-
-                    if candidates:
-                        with self._lock:
-                            self.state["phase"] = "screening"
-
-                        with ThreadPoolExecutor(max_workers=2) as pool:
-                            futures = [
-                                pool.submit(self._screen_one_recruiter, post, run_id, cfg["min_score"])
-                                for post in candidates
-                            ]
-                            for fut in futures:
-                                fut.result()
-
-                    consecutive_fatal_errors = 0
-                    consecutive_empty = 0 if round_eligible > 0 else (consecutive_empty + 1)
-                    consecutive_rate_limits = (consecutive_rate_limits + 1) if rate_limited else 0
-
-                    with self._lock:
-                        r_promoted = int(self.state["round_promoted"])
-                        r_discarded = int(self.state["round_discarded"])
-                        r_errors = int(self.state["round_errors"])
-
-                    self._record_round_summary({
-                        "round": round_num,
-                        "keywords": list(keywords),
-                        "found": round_found,
-                        "eligible": round_eligible,
-                        "promoted": r_promoted,
-                        "discarded": r_discarded,
-                        "errors": r_errors,
-                        "rate_limited": rate_limited,
-                        "finished_at": _now_iso(),
-                    })
-
-                    if self._should_stop():
-                        self._finish_state("cancelled")
-                        return
-
-                    if not continuous:
-                        self._finish_state("done")
-                        return
-
-                except Exception as exc:
-                    if not continuous or self._is_fatal_non_retryable(exc):
-                        self._finish_state("error", error=str(exc))
-                        return
-                    consecutive_fatal_errors += 1
-                    consecutive_rate_limits += 1
-                    rate_limited = True
-                    self._record_round_summary({
-                        "round": round_num,
-                        "keywords": list(keywords),
-                        "found": round_found,
-                        "eligible": round_eligible,
-                        "promoted": 0,
-                        "discarded": 0,
-                        "errors": 1,
-                        "error": str(exc),
-                        "finished_at": _now_iso(),
-                    })
-                    if consecutive_fatal_errors >= MAX_CONSECUTIVE_FATAL_ERRORS:
-                        self._finish_state(
-                            "error",
-                            error=f"Interrompido após {MAX_CONSECUTIVE_FATAL_ERRORS} erros consecutivos: {exc}",
-                        )
-                        return
-
-                wait_s, reason = self._compute_cooldown(
-                    mode="recruiters",
-                    base_cooldown=base_cooldown,
-                    round_had_items=(round_eligible > 0),
-                    rate_limited=rate_limited,
-                    consecutive_empty=consecutive_empty,
-                    consecutive_rate_limits=consecutive_rate_limits,
+        def _execute_recruiters_round(
+            _round_num: int, keywords: List[str]
+        ) -> Optional[Tuple[int, int, int, int, int, bool]]:
+            try:
+                sync_res = self.recruiter_service.sync_all(
+                    query=", ".join(keywords),
+                    should_stop=self._should_stop,
                 )
-                wait_outcome = self._wait_cooldown(wait_s, reason=reason)
-                if wait_outcome == "cancelled":
-                    self._finish_state("cancelled")
-                    return
+            except TypeError:
+                sync_res = self.recruiter_service.sync_all(query=", ".join(keywords))
+            if self._should_stop():
+                return None
 
-            self._finish_state("cancelled")
-        except Exception as exc:
-            self._finish_state("error", error=str(exc))
+            collected_urls = set(sync_res.get("collected_urls") or sync_res.get("hn_urls") or [])
+            collected_post_ids = {
+                int(pid) for pid in (sync_res.get("collected_post_ids") or []) if pid is not None
+            }
+            rate_limited = bool(sync_res.get("rate_limited")) or int(sync_res.get("errors") or 0) > 0
+            with self._lock:
+                queued_post_ids = set(self._queued_recruiter_post_ids)
+                self._queued_recruiter_post_ids.clear()
+
+            with self._db_lock:
+                candidates = self.recruiter_service.find_untriaged_candidates(
+                    keywords=keywords,
+                    include_urls=collected_urls,
+                    include_post_ids=collected_post_ids | queued_post_ids,
+                )
+
+            if self._should_stop():
+                return None
+
+            external_synced = (
+                int(sync_res.get("hn_synced", 0))
+                + int(sync_res.get("github_synced", 0))
+                + int(sync_res.get("remotive_synced", 0))
+                + int(sync_res.get("scrapes_synced", 0))
+                + int(sync_res.get("portal_synced", 0))
+                + int(sync_res.get("linkedin_synced", 0))
+            )
+            round_found = int(sync_res.get("posts_with_email", 0)) + external_synced
+            round_eligible = len(candidates)
+
+            with self._lock:
+                self.state["round_jobs_found"] = round_found
+                self.state["round_eligible_count"] = round_eligible
+                self.state["counts"]["found"] += round_found
+                self.state["counts"]["to_screen"] += round_eligible
+                self.state["counts"]["pending"] = round_eligible
+
+            if candidates:
+                with self._lock:
+                    self.state["phase"] = "screening"
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    futures = [
+                        pool.submit(self._screen_one_recruiter, post, run_id, cfg["min_score"])
+                        for post in candidates
+                    ]
+                    for fut in futures:
+                        fut.result()
+
+            with self._lock:
+                r_promoted = int(self.state["round_promoted"])
+                r_discarded = int(self.state["round_discarded"])
+                r_errors = int(self.state["round_errors"])
+
+            return round_found, round_eligible, r_promoted, r_discarded, r_errors, rate_limited
+
+        self._run_mode_loop(
+            mode="recruiters",
+            profile_key=PROFILE_KEY_RECRUITER_HISTORY,
+            region="all",
+            continuous=bool(cfg.get("continuous", True)),
+            base_cooldown=int(cfg.get("cooldown_seconds") or RECRUITER_COOLDOWN_DEFAULT),
+            execute_round=_execute_recruiters_round,
+        )
 
     def status(self) -> Dict[str, Any]:
         with self._lock:
@@ -1120,8 +1140,8 @@ class AutoModeService:
                 next_dt = datetime.fromisoformat(str(snap["next_run_at"]))
                 rem = (next_dt - datetime.now(timezone.utc)).total_seconds()
                 snap["cooldown_remaining_s"] = max(0, math.ceil(rem))
-            except Exception:
-                pass
+            except (ValueError, TypeError) as exc:
+                logger.debug("Invalid next_run_at timestamp %r: %s", snap.get("next_run_at"), exc)
 
         snap["search_progress"] = (
             self.scanner.status().get("progress")
@@ -1189,35 +1209,36 @@ class AutoModeService:
             if not url:
                 return
             out = self.scanner.out
-            data = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {"meta": None, "new": []}
-            new_list = data.get("new")
-            if not isinstance(new_list, list):
-                new_list = []
-            if not any(isinstance(x, dict) and x.get("url") == url for x in new_list):
-                item = {
-                    "id": job_row.get("id"),
-                    "title": job_row.get("title"),
-                    "company": job_row.get("company"),
-                    "url": url,
-                    "location": job_row.get("location"),
-                    "portal": job_row.get("portal"),
-                    "workplace_type": job_row.get("work_model"),
-                    "contract": job_row.get("contract_type"),
-                    "seniority": job_row.get("seniority"),
-                    "date": job_row.get("posted_date") or job_row.get("first_seen"),
-                    "posted_date": job_row.get("posted_date"),
-                    "description": job_row.get("description") or "",
-                }
-                if job_row.get("rank_score") is not None:
-                    item["screening"] = {
-                        "score": job_row.get("rank_score"),
-                        "verdict": job_row.get("rank_verdict") or "Avaliada",
+            with self._out_file_lock:
+                data = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {"meta": None, "new": []}
+                new_list = data.get("new")
+                if not isinstance(new_list, list):
+                    new_list = []
+                if not any(isinstance(x, dict) and x.get("url") == url for x in new_list):
+                    item = {
+                        "id": job_row.get("id"),
+                        "title": job_row.get("title"),
+                        "company": job_row.get("company"),
+                        "url": url,
+                        "location": job_row.get("location"),
+                        "portal": job_row.get("portal"),
+                        "workplace_type": job_row.get("work_model"),
+                        "contract": job_row.get("contract_type"),
+                        "seniority": job_row.get("seniority"),
+                        "date": job_row.get("posted_date") or job_row.get("first_seen"),
+                        "posted_date": job_row.get("posted_date"),
+                        "description": job_row.get("description") or "",
                     }
-                new_list.insert(0, item)
-                data["new"] = new_list
-                out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+                    if job_row.get("rank_score") is not None:
+                        item["screening"] = {
+                            "score": job_row.get("rank_score"),
+                            "verdict": job_row.get("rank_verdict") or "Avaliada",
+                        }
+                    new_list.insert(0, item)
+                    data["new"] = new_list
+                    atomic_write_json(out, data)
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            logger.warning("Failed to restore undone job to %s: %s", self.scanner.out, exc)
 
     def _revert_job(self, job: Dict[str, Any], source: str, note: str) -> bool:
         if not job or job.get("status") != "interested":

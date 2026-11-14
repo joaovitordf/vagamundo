@@ -25,6 +25,9 @@ try:
 except ImportError:
     posting_signals = None
 
+import rank_state
+import scrape_run
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -69,9 +72,39 @@ def _fetch_page_items(query: str, location: str, page: int = 1, target_level: st
         data, _ = json.JSONDecoder().raw_decode(m.group(1).strip())
         if data and isinstance(data, list) and len(data) > 0:
             return data[0] or []
-    except Exception:
-        pass
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"google_careers: page {page} failed ({query}, {location}): {exc}\n")
     return []
+
+
+_BRAZIL_CITIES = (
+    "brazil", "brasil", ", br", "são paulo", "sao paulo", "belo horizonte",
+    "rio de janeiro", "campinas", "curitiba", "porto alegre", "florianópolis",
+    "florianopolis", "brasília", "brasilia", "recife", "salvador", "fortaleza",
+    "minas gerais",
+)
+
+
+def _is_brazil_location(location: str) -> bool:
+    loc_low = (location or "").lower()
+    return any(k in loc_low for k in _BRAZIL_CITIES)
+
+
+def _default_brazil_locations() -> list[str]:
+    locs = ["Brazil"]
+    try:
+        try:
+            from backend.tools import painel_perfil
+        except ImportError:
+            import painel_perfil
+        ans = painel_perfil.load_answers()
+        cidade = str(ans.get("cidade") or "").strip()
+        city_name = re.split(r"[,/\-]+", cidade)[0].strip()
+        if city_name and city_name.lower() not in ("brazil", "brasil") and city_name not in locs:
+            locs.append(city_name)
+    except (ImportError, OSError, AttributeError):
+        pass
+    return locs
 
 
 def evaluate_google_job(
@@ -95,7 +128,7 @@ def evaluate_google_job(
     is_women_exclusive = "for women in tech" in t_low or "for women in tech" in notes.lower()
     is_pcd_exclusive = "people with disabilities" in t_low
     is_foreign_citizenship = "mexican citizenship" in full_low or "us citizenship" in full_low
-    in_brazil = any(k in loc_low for k in ("brazil", "brasil", "belo horizonte", "são paulo", "sao paulo", "minas gerais"))
+    in_brazil = _is_brazil_location(location)
 
     if is_women_exclusive:
         warnings.append("vaga exclusiva afirmativa (Women in Tech)")
@@ -108,12 +141,14 @@ def evaluate_google_job(
 
     # Extrai anos de experiência exigidos nas qualificações mínimas
     years_matches = [int(y) for y in re.findall(r"(\d+)\+?\s*years?\s+of\s+experience", min_low)]
-    min_years = max(years_matches) if years_matches else 0
+    min_years = max(years_matches) if years_matches else (posting_signals.extract_min_years_required(min_qual) or 0 if posting_signals else 0)
+
+    accept_sen = set(scrape_run.local_target_seniority() or ["junior", "pleno"])
 
     # Detecta senioridade fora da faixa (Sênior, Staff, Tech Lead, Manager)
-    is_manager = any(k in t_low for k in ("manager", "director", "head of", "lead, americas"))
-    is_staff_lead = any(k in t_low for k in ("staff ", "principal ", "tech lead"))
-    is_senior = "senior " in t_low or "sr." in t_low or " iii" in t_low or min_years >= 5
+    is_manager = ("gestao" not in accept_sen) and any(k in t_low for k in ("manager", "director", "head of", "lead, americas"))
+    is_staff_lead = ("staff" not in accept_sen and "lead" not in accept_sen) and any(k in t_low for k in ("staff ", "principal ", "tech lead"))
+    is_senior = ("senior" not in accept_sen) and ("senior " in t_low or "sr." in t_low or " iii" in t_low or min_years >= 5)
 
     if is_manager:
         warnings.append(f"cargo de gestão/gerência ({min_years or 7}+ anos exigidos)")
@@ -142,10 +177,11 @@ def evaluate_google_job(
 
     # Caso 1: Fora do Brasil sem remoto elegível ou cidadania estrangeira
     if not in_brazil or is_foreign_citizenship:
+        score = 15
         return (
             {
-                "score": 15,
-                "verdict": "Poor Fit",
+                "score": score,
+                "verdict": rank_state.band(score),
                 "summary": (
                     f"Vaga localizada fora das praças elegíveis ({location}) ou com restrição de cidadania/autorização local. "
                     f"As qualificações mínimas pedem {min_years or 3}+ anos de experiência."
@@ -156,12 +192,13 @@ def evaluate_google_job(
 
     # Caso 2: Vagas exclusivas afirmativas (Women in Tech / PcD)
     if is_women_exclusive or is_pcd_exclusive:
+        score = 25
         grupo = "mulheres (Women in Tech)" if is_women_exclusive else "pessoas com deficiência (PcD)"
         exp_info = f"{min_years} ano(s) de experiência" if min_years else "formação na área"
         return (
             {
-                "score": 20,
-                "verdict": "Poor Fit",
+                "score": score,
+                "verdict": rank_state.band(score),
                 "summary": (
                     f"Tecnicamente alinhada ({tech_str}, pede {exp_info} em {location}), "
                     f"porém o anúncio é de ação afirmativa exclusiva para {grupo}."
@@ -187,10 +224,11 @@ def evaluate_google_job(
         )
     )
     if non_tech:
+        score = 22
         return (
             {
-                "score": 22,
-                "verdict": "Poor Fit",
+                "score": score,
+                "verdict": rank_state.band(score),
                 "summary": (
                     f"Vaga fora de engenharia de software/computação ({title}) e que exige {min_years or 4}+ anos "
                     "de experiência corporativa específica na área comercial, jurídica ou financeira."
@@ -200,11 +238,12 @@ def evaluate_google_job(
         )
 
     # Caso 4: Cargos de Gerência / Staff / Tech Lead (8+ anos)
-    if is_manager or is_staff_lead or min_years >= 7:
+    if is_manager or is_staff_lead or ("senior" not in accept_sen and min_years >= 7):
+        score = 38
         return (
             {
-                "score": 38,
-                "verdict": "Weak Fit",
+                "score": score,
+                "verdict": rank_state.band(score),
                 "summary": (
                     f"Alinhada em localidade ({location}) e stack ({tech_str}). "
                     f"Teto aplicado pois as qualificações mínimas exigem {min_years or 8}+ anos de experiência e liderança sênior."
@@ -214,7 +253,7 @@ def evaluate_google_job(
         )
 
     # Caso 5: Cargos Sênior / Pleno-Sênior (5 a 6 anos exigidos no Minimum Qualifications)
-    if is_senior or min_years >= 5:
+    if is_senior or ("senior" not in accept_sen and min_years >= 5):
         return (
             {
                 "score": 45,
@@ -231,27 +270,24 @@ def evaluate_google_job(
     is_swe_or_ai = any(k in t_low for k in ("software engineer", "early career", "ai", "developer", "data scientist"))
     if min_years <= 2 and is_swe_or_ai:
         score = 88
-        verdict = "Strong Fit"
         summary = (
             f"Encaixe direto: pede {min_years or 1} ano(s) de experiência em desenvolvimento "
             f"({tech_str}) em {location}, alinhado à faixa de senioridade inicial/plena."
         )
     elif min_years <= 3:
         score = 74
-        verdict = "Good Fit"
         summary = (
             f"Boa compatibilidade com base técnica em {tech_str} ({location}). "
             f"As qualificações mínimas pedem {min_years} anos de experiência."
         )
     else:
-        score = 64
-        verdict = "Moderate Fit"
+        score = 58
         summary = (
             f"Alinhada às tecnologias ({tech_str}) em {location}. "
             f"Principal ponto de atenção é o requisito de {min_years} anos de experiência nas qualificações mínimas."
         )
 
-    return ({"score": score, "verdict": verdict, "summary": summary}, warnings)
+    return ({"score": score, "verdict": rank_state.band(score), "summary": summary}, warnings)
 
 
 def fetch_google_careers(
@@ -274,7 +310,7 @@ def fetch_google_careers(
             "Data",
         ]
     if locations is None:
-        locations = ["Brazil", "Belo Horizonte", "São Paulo"]
+        locations = _default_brazil_locations()
 
     tasks = []
     for loc in locations:
@@ -295,8 +331,8 @@ def fetch_google_careers(
                 res = fut.result()
                 if res:
                     raw_items.extend(res)
-            except Exception:
-                pass
+            except (OSError, ValueError, RuntimeError) as exc:
+                sys.stderr.write(f"google_careers: page fetch failed: {exc}\n")
 
     jobs_out: list[dict] = []
     for item in raw_items:
@@ -318,7 +354,7 @@ def fetch_google_careers(
 
         # Ignora vagas que o Google retornou fora do Brasil sem modalidade remota
         loc_lower = loc_str.lower()
-        if not any(k in loc_lower for k in ("brazil", "brasil", "belo horizonte", "são paulo", "sao paulo", "remote")):
+        if not (_is_brazil_location(loc_str) or "remote" in loc_lower):
             continue
 
         # Ignora áreas puramente jurídicas, RH, contábeis ou vendas não técnicas

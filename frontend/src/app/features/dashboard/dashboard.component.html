@@ -279,8 +279,7 @@
             @for (p of stats()?.portal_distribution; track p.portal) {
               <div class="portal-item">
                 <div class="portal-info">
-                  <span class="portal-dot"></span>
-                  <strong>{{ p.label }}</strong>
+                  <app-portal-badge [portal]="p.portal" [compact]="true" [labelOverride]="p.label"></app-portal-badge>
                 </div>
                 <span class="portal-badge-count">{{ p.count }} {{ p.count === 1 ? 'vaga' : 'vagas' }}</span>
               </div>

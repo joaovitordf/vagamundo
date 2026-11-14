@@ -23,7 +23,8 @@ class AIMux:
         def _call() -> str:
             env = ai_providers.load_env_file()
             provider = ai_providers.Provider(provider_id, env) if provider_id else ai_providers.get_ai_provider(env)
-            return provider.generate(prompt, system=system)
+            sys_inst = ai_providers.build_system_instruction(provider, system)
+            return provider.generate(prompt, system_instruction=sys_inst)
 
         return await asyncio.to_thread(_call)
 

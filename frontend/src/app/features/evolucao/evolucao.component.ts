@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { EvolutionResponse, SourceAuditItem } from '../../core/models/vaga.model';
@@ -21,8 +21,9 @@ interface SourceDisplayRow {
   templateUrl: './evolucao.component.html',
   styleUrl: './evolucao.component.css'
 })
-export class EvolucaoComponent implements OnInit {
+export class EvolucaoComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
+  private statusTimer: ReturnType<typeof setTimeout> | null = null;
 
   evolutionData = signal<EvolutionResponse | null>(null);
   updating = signal<boolean>(false);
@@ -42,6 +43,13 @@ export class EvolucaoComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadEvolution();
+  }
+
+  ngOnDestroy(): void {
+    if (this.statusTimer) {
+      clearTimeout(this.statusTimer);
+      this.statusTimer = null;
+    }
   }
 
   loadEvolution(): void {
@@ -70,7 +78,13 @@ export class EvolucaoComponent implements OnInit {
         } else {
           this.loadEvolution();
         }
-        setTimeout(() => this.statusMsg.set(''), 4000);
+        if (this.statusTimer) {
+          clearTimeout(this.statusTimer);
+        }
+        this.statusTimer = setTimeout(() => {
+          this.statusTimer = null;
+          this.statusMsg.set('');
+        }, 4000);
       },
       error: (err) => {
         this.updating.set(false);

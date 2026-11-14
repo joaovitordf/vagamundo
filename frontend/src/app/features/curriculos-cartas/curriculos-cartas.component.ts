@@ -2,16 +2,10 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { ToastService } from '../../core/services/toast.service';
+import { GeneratedDoc } from '../../core/models/vaga.model';
 
-export interface GeneratedDoc {
-  name: string;
-  kind: 'cv' | 'carta' | 'entrevista' | string;
-  path: string;
-  date: string;
-  company?: string;
-  role?: string;
-  size_kb?: number;
-}
+export type { GeneratedDoc } from '../../core/models/vaga.model';
 
 @Component({
   selector: 'app-curriculos-cartas',
@@ -22,6 +16,7 @@ export interface GeneratedDoc {
 })
 export class CurriculosCartasComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly toast = inject(ToastService);
 
   kindFilter = '';
   loading = signal<boolean>(true);
@@ -41,6 +36,7 @@ export class CurriculosCartasComponent implements OnInit {
       error: (err) => {
         console.error('Erro ao carregar documentos:', err);
         this.loading.set(false);
+        this.toast.error('Não foi possível carregar os documentos compilados.');
       }
     });
   }
@@ -91,9 +87,10 @@ export class CurriculosCartasComponent implements OnInit {
 
     this.api.deleteDocument(doc.path).subscribe({
       next: () => {
+        this.toast.success(`Documento "${doc.name}" excluído.`);
         this.loadDocs();
       },
-      error: (err) => alert('Erro ao excluir documento: ' + (err.error?.detail || err.message))
+      error: (err) => this.toast.error('Erro ao excluir documento: ' + (err.error?.detail || err.message))
     });
   }
 
@@ -104,11 +101,12 @@ export class CurriculosCartasComponent implements OnInit {
     this.loading.set(true);
     this.api.clearDocuments(true).subscribe({
       next: () => {
+        this.toast.success('Cartas e dossiês antigos limpos com sucesso.');
         this.loadDocs();
       },
       error: (err) => {
         this.loading.set(false);
-        alert('Erro ao limpar arquivos: ' + (err.error?.detail || err.message));
+        this.toast.error('Erro ao limpar arquivos: ' + (err.error?.detail || err.message));
       }
     });
   }

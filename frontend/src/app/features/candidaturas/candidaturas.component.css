@@ -606,7 +606,7 @@ a.doc-pill:hover {
 .modal-header h3 {
   margin: 0;
   font-size: 1.2rem;
-  color: #f8fafc;
+  color: var(--vc-text, #f8fafc);
 }
 
 .modal-subtitle {
@@ -867,6 +867,8 @@ a.doc-pill:hover {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .date-filter-row {
@@ -874,17 +876,20 @@ a.doc-pill:hover {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 1rem;
+  min-width: 0;
 }
 
 .filter-group {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .filter-group.search-group {
-  flex: 1;
-  min-width: 200px;
+  flex: 1 1 200px;
+  min-width: min(200px, 100%);
 }
 
 .filter-label {
@@ -900,6 +905,8 @@ a.doc-pill:hover {
 
 .date-type-toggle {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   background: var(--vc-surface, #0f172a);
   border: 1px solid var(--vc-border, rgba(148, 163, 184, 0.2));
   border-radius: 6px;
@@ -954,6 +961,8 @@ a.doc-pill:hover {
   position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
+  min-width: 0;
 }
 
 .search-input-wrap .vc-input {
@@ -980,6 +989,7 @@ a.doc-pill:hover {
 
 .custom-date-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1rem;
   padding: 0.5rem 0.75rem;
@@ -1005,6 +1015,8 @@ a.doc-pill:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
   padding: 0.5rem 0.75rem;
   background: rgba(56, 189, 248, 0.08);
   border-radius: 6px;
@@ -1015,6 +1027,8 @@ a.doc-pill:hover {
   color: var(--vc-text, #f8fafc);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: 0.35rem;
 }
 

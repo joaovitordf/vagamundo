@@ -1,10 +1,93 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
-import { Observable, of, throwError } from 'rxjs';
-import { map, catchError, switchMap, tap } from 'rxjs/operators';
-import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, DashboardStats, RecruiterPost } from '../models/vaga.model';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { map, catchError, tap } from 'rxjs/operators';
+import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, ApplicationRecord, GeneratedDoc, DashboardStats, RecruiterPost } from '../models/vaga.model';
 import { SearchStateService } from './search-state.service';
 import { RecruiterStateService } from './recruiter-state.service';
+
+export interface SyncRecruiterPortalStats {
+  fetched: number;
+  matched: number;
+  errors: number;
+  last_error?: string | null;
+}
+
+export interface SyncRecruiterPostsResponse {
+  ok: boolean;
+  scanned: number;
+  posts_with_email: number;
+  synced: number;
+  hn_synced?: number;
+  github_synced?: number;
+  remotive_synced?: number;
+  scrapes_synced?: number;
+  portal_synced?: number;
+  linkedin_synced?: number;
+  linkedin_cards_total?: number;
+  linkedin_cooldown_remaining_seconds?: number;
+  linkedin_skipped_reason?: string | null;
+  linkedin_alert?: string | null;
+  collected_urls?: string[];
+  collected_post_ids?: number[];
+  portal_breakdown?: Record<string, SyncRecruiterPortalStats>;
+  warnings?: string[];
+  rate_limited?: boolean;
+  errors?: number;
+}
+
+export interface RecruiterTriageResponse {
+  ok: boolean;
+  triaged: number;
+  active_jobs: number;
+  talent_pools_discarded: number;
+  not_a_job: number;
+  errors: number;
+  posts: RecruiterPost[];
+}
+
+export interface LinkedInWorkerStatus {
+  ok?: boolean;
+  status: 'not_connected' | 'awaiting_login' | 'connected' | 'login_required' | 'checkpoint_required' | 'unavailable';
+  browser_available: boolean;
+  browser_name: string | null;
+  profile_initialized: boolean;
+  login_window_open?: boolean;
+  enabled: boolean;
+  headless: boolean;
+  cooldown_minutes: number;
+  max_daily_searches: number;
+  max_scrolls: number;
+  daily_date: string | null;
+  daily_count: number;
+  cooldown_remaining_seconds: number;
+  last_run_at: string | null;
+  last_error: string;
+  last_query: string;
+  last_imported: number;
+  last_cards_total?: number;
+  message?: string;
+}
+
+export interface PasteRecruiterPostPayload {
+  raw_text: string;
+  url?: string;
+  title?: string;
+  company?: string;
+  location?: string;
+  work_model?: string;
+  published_date?: string;
+}
+
+export interface PasteRecruiterBatchResponse {
+  ok: boolean;
+  imported: number;
+  updated: number;
+  skipped: number;
+  invalid: number;
+  posts: RecruiterPost[];
+  auto_mode_woken?: boolean;
+}
 
 @Injectable({
   providedIn: 'root'
@@ -14,7 +97,6 @@ export class ApiService {
   private readonly searchState = inject(SearchStateService);
   private readonly recruiterState = inject(RecruiterStateService);
   private readonly baseUrl = '/api';
-  private token = '';
   private persistedHydrated = false;
 
   // Estado de busca da sessão atual: inicia vazio e só popula quando o usuário clica em "Buscar vagas"
@@ -29,75 +111,22 @@ export class ApiService {
   );
 
   constructor() {
-    this.initToken();
     this.refreshCounts();
   }
 
   refreshCounts(): void {
     this.getSaved().subscribe({
       next: (jobs) => this.savedCount.set(jobs.length),
-      error: () => {}
+      error: (err) => console.warn('Falha ao atualizar contagem de salvas:', err)
     });
     this.getApplications().subscribe({
       next: (apps) => this.applicationsCount.set(apps.length),
-      error: () => {}
+      error: (err) => console.warn('Falha ao atualizar contagem de candidaturas:', err)
     });
     this.getDiscarded().subscribe({
       next: (disc) => this.discardedCount.set(disc.length),
-      error: () => {}
+      error: (err) => console.warn('Falha ao atualizar contagem de descartadas:', err)
     });
-  }
-
-  private initToken(): void {
-    const meta = document.querySelector('meta[name="painel-token"]') as HTMLMetaElement | null;
-    if (meta && meta.content && meta.content !== '__PAINEL_TOKEN__') {
-      this.token = meta.content;
-    } else {
-      this.fetchToken().subscribe();
-    }
-  }
-
-  private fetchToken(): Observable<string> {
-    return this.http.get<{ token: string }>(`${this.baseUrl}/token`).pipe(
-      map(res => {
-        if (res && res.token) {
-          this.token = res.token;
-        }
-        return this.token;
-      }),
-      catchError(() => of(''))
-    );
-  }
-
-  private getHeaders(): HttpHeaders {
-    let headers = new HttpHeaders({ 'Content-Type': 'application/json' });
-    if (this.token) {
-      headers = headers.set('X-Painel-Token', this.token);
-    }
-    return headers;
-  }
-
-  private postWithToken<T>(endpoint: string, body: any): Observable<T> {
-    const executePost = () => this.http.post<T>(endpoint, body, { headers: this.getHeaders() });
-
-    const initial$ = this.token
-      ? executePost()
-      : this.fetchToken().pipe(switchMap(() => executePost()));
-
-    return initial$.pipe(
-      catchError((err: HttpErrorResponse) => {
-        if (err.status === 403) {
-          // Se o backend reiniciou e trocou o token, busca o token atualizado e tenta mais uma vez
-          return this.fetchToken().pipe(
-            switchMap(newToken => {
-              if (!newToken) return throwError(() => err);
-              return executePost();
-            })
-          );
-        }
-        return throwError(() => err);
-      })
-    );
   }
 
   getResults(): Observable<{ new: Vaga[]; total?: number; meta?: any }> {
@@ -122,7 +151,7 @@ export class ApiService {
         this.sessionVagas.set(this.searchState.allVagas());
       }
       this.getResults().subscribe({
-        error: () => {},
+        error: (err) => console.warn('Falha ao reidratar resultados salvos:', err),
       });
     }
 
@@ -131,25 +160,25 @@ export class ApiService {
         next: (res) => {
           this.recruiterState.allPosts.set(res.posts || []);
         },
-        error: () => {},
+        error: (err) => console.warn('Falha ao reidratar publicações de recrutadores:', err),
       });
     }
   }
 
-  getSaved(): Observable<any[]> {
-    return this.http.get<any>(`${this.baseUrl}/saved`).pipe(
+  getSaved(): Observable<Vaga[]> {
+    return this.http.get<{ saved?: Vaga[] }>(`${this.baseUrl}/saved`).pipe(
       map(res => (res && Array.isArray(res.saved) ? res.saved : []))
     );
   }
 
-  getApplications(): Observable<any[]> {
-    return this.http.get<any>(`${this.baseUrl}/applications`).pipe(
+  getApplications(): Observable<ApplicationRecord[]> {
+    return this.http.get<{ applications?: ApplicationRecord[] }>(`${this.baseUrl}/applications`).pipe(
       map(res => (res && Array.isArray(res.applications) ? res.applications : []))
     );
   }
 
-  getDiscarded(): Observable<any[]> {
-    return this.http.get<any>(`${this.baseUrl}/discarded`).pipe(
+  getDiscarded(): Observable<Vaga[]> {
+    return this.http.get<{ discarded?: Vaga[] }>(`${this.baseUrl}/discarded`).pipe(
       map(res => (res && Array.isArray(res.discarded) ? res.discarded : []))
     );
   }
@@ -163,7 +192,7 @@ export class ApiService {
   }
 
   updateEvolution(): Observable<{ ok: boolean; evolution: EvolutionResponse }> {
-    return this.postWithToken<{ ok: boolean; evolution: EvolutionResponse }>(`${this.baseUrl}/evolucao/atualizar`, {}).pipe(
+    return this.http.post<{ ok: boolean; evolution: EvolutionResponse }>(`${this.baseUrl}/evolucao/atualizar`, {}).pipe(
       tap(() => this.refreshCounts())
     );
   }
@@ -177,15 +206,15 @@ export class ApiService {
   }
 
   saveSettings(payload: any): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/settings`, payload);
+    return this.http.post(`${this.baseUrl}/settings`, payload);
   }
 
   getCvAreas(): Observable<{ areas: any[] }> {
     return this.http.get<{ areas: any[] }>(`${this.baseUrl}/cv-areas`);
   }
 
-  getDocuments(): Observable<any[]> {
-    return this.http.get<any>(`${this.baseUrl}/documents`).pipe(
+  getDocuments(): Observable<GeneratedDoc[]> {
+    return this.http.get<{ documents?: GeneratedDoc[] }>(`${this.baseUrl}/documents`).pipe(
       map(res => (res && Array.isArray(res.documents) ? res.documents : []))
     );
   }
@@ -197,27 +226,38 @@ export class ApiService {
   }
 
   uploadFile(kind: string, name: string, data: string): Observable<{ saved: string; files: any }> {
-    return this.postWithToken<{ saved: string; files: any }>(`${this.baseUrl}/upload`, { kind, name, data });
+    return this.http.post<{ saved: string; files: any }>(`${this.baseUrl}/upload`, { kind, name, data });
   }
 
   removeUpload(kind: string, name: string): Observable<{ files: any }> {
-    return this.postWithToken<{ files: any }>(`${this.baseUrl}/upload-remove`, { kind, name });
+    return this.http.post<{ files: any }>(`${this.baseUrl}/upload-remove`, { kind, name });
   }
 
   saveProfileAnswers(answers: Record<string, any>): Observable<{ answers: any }> {
-    return this.postWithToken<{ answers: any }>(`${this.baseUrl}/profile`, answers);
+    return this.http.post<{ answers: any }>(`${this.baseUrl}/profile`, answers);
   }
 
   triggerClaude(payload: { step: string; url?: string; confirm?: boolean }): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/claude`, payload);
+    return this.http.post(`${this.baseUrl}/claude`, payload);
   }
 
   startBatchScreen(urls: string[]): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/batch-screen`, { urls });
+    return this.http.post(`${this.baseUrl}/batch-screen`, { urls });
+  }
+
+  startBatchReevaluate(urls: string[]): Observable<{ ok: boolean; started: boolean; total: number }> {
+    return this.http.post<{ ok: boolean; started: boolean; total: number }>(
+      `${this.baseUrl}/saved/batch-reevaluate`,
+      { urls }
+    );
+  }
+
+  getSavedBatchStatus(): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/saved/batch-status`);
   }
 
   clearPending(): Observable<{ cleared?: number }> {
-    return this.postWithToken<{ cleared?: number }>(`${this.baseUrl}/clear-pending`, {}).pipe(
+    return this.http.post<{ cleared?: number }>(`${this.baseUrl}/clear-pending`, {}).pipe(
       tap(() => {
         this.sessionVagas.set([]);
         this.hasSearchedInSession.set(false);
@@ -227,7 +267,7 @@ export class ApiService {
   }
 
   markDecision(urls: string[], decision: 'interesse' | 'descartar', jobData?: any): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/mark`, { urls, decision, job_data: jobData }).pipe(
+    return this.http.post(`${this.baseUrl}/mark`, { urls, decision, job_data: jobData }).pipe(
       tap(() => this.refreshCounts())
     );
   }
@@ -240,13 +280,29 @@ export class ApiService {
     contact_channel?: string;
     contacted_email?: string;
   }): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/applied`, payload).pipe(
+    return this.http.post(`${this.baseUrl}/applied`, payload).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  markAppliedBatch(items: Array<{
+    url: string;
+    company?: string;
+    role?: string;
+    portal?: string;
+    contact_channel?: string;
+    contacted_email?: string;
+  }>): Observable<{ ok: boolean; applied: number }> {
+    return this.http.post<{ ok: boolean; applied: number }>(
+      `${this.baseUrl}/applied/batch`,
+      { items }
+    ).pipe(
       tap(() => this.refreshCounts())
     );
   }
 
   removeApplication(payload: { url?: string; id?: number; job_id?: string }): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/applications/remove`, payload).pipe(
+    return this.http.post(`${this.baseUrl}/applications/remove`, payload).pipe(
       tap(() => this.refreshCounts())
     );
   }
@@ -257,7 +313,7 @@ export class ApiService {
     url?: string;
     recruiter_post_id?: number;
   }): Observable<{ ok: boolean; reopened: boolean; post_id?: number; job_id?: string; url?: string }> {
-    return this.postWithToken<{ ok: boolean; reopened: boolean; post_id?: number; job_id?: string; url?: string }>(
+    return this.http.post<{ ok: boolean; reopened: boolean; post_id?: number; job_id?: string; url?: string }>(
       `${this.baseUrl}/applications/reopen-recruiter`,
       payload
     ).pipe(
@@ -279,46 +335,55 @@ export class ApiService {
     questions_and_answers?: string;
     status?: string;
   }): Observable<{ ok: boolean; event_id: number }> {
-    return this.postWithToken<{ ok: boolean; event_id: number }>(`${this.baseUrl}/applications/event`, payload).pipe(
+    return this.http.post<{ ok: boolean; event_id: number }>(`${this.baseUrl}/applications/event`, payload).pipe(
       tap(() => this.refreshCounts())
     );
   }
 
   deleteApplicationEvent(eventId: number): Observable<{ ok: boolean; deleted: boolean }> {
-    return this.postWithToken<{ ok: boolean; deleted: boolean }>(`${this.baseUrl}/applications/event/${eventId}`, {}).pipe(
+    return this.http.delete<{ ok: boolean; deleted: boolean }>(`${this.baseUrl}/applications/event/${eventId}`).pipe(
       tap(() => this.refreshCounts())
     );
   }
 
   discardJob(url: string): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/discard`, { url }).pipe(
+    return this.http.post(`${this.baseUrl}/discard`, { url }).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  discardJobsBatch(urls: string[]): Observable<{ ok: boolean; discarded: number; total: number }> {
+    return this.http.post<{ ok: boolean; discarded: number; total: number }>(
+      `${this.baseUrl}/saved/batch-discard`,
+      { urls }
+    ).pipe(
       tap(() => this.refreshCounts())
     );
   }
 
   restoreJob(url: string): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/restore`, { url }).pipe(
+    return this.http.post(`${this.baseUrl}/restore`, { url }).pipe(
       tap(() => this.refreshCounts())
     );
   }
 
   clearDiscarded(): Observable<{ ok: boolean; deleted_db?: number; cleared_seen?: number }> {
-    return this.postWithToken<{ ok: boolean; deleted_db?: number; cleared_seen?: number }>(`${this.baseUrl}/discarded/clear`, {}).pipe(
+    return this.http.post<{ ok: boolean; deleted_db?: number; cleared_seen?: number }>(`${this.baseUrl}/discarded/clear`, {}).pipe(
       tap(() => this.refreshCounts())
     );
   }
 
   deleteDocument(path: string): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/documents/delete?path=${encodeURIComponent(path)}`, {});
+    return this.http.post(`${this.baseUrl}/documents/delete?path=${encodeURIComponent(path)}`, {});
   }
 
   clearDocuments(keepCv = true): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/documents/clear?keep_cv=${keepCv}`, {});
+    return this.http.post(`${this.baseUrl}/documents/clear?keep_cv=${keepCv}`, {});
   }
 
   startSearch(payload: { priority?: number[]; jobage?: number; all?: boolean; focus?: string; portals?: string[]; region?: string; query?: string }): Observable<any> {
     this.hasSearchedInSession.set(true);
-    return this.postWithToken(`${this.baseUrl}/search`, payload);
+    return this.http.post(`${this.baseUrl}/search`, payload);
   }
 
   getSearchStatus(): Observable<any> {
@@ -344,7 +409,7 @@ export class ApiService {
     continuous?: boolean;
     cooldown_seconds?: number;
   }): Observable<{ ok: boolean; config: any }> {
-    return this.postWithToken<{ ok: boolean; config: any }>(`${this.baseUrl}/recruiters/auto/config`, payload);
+    return this.http.post<{ ok: boolean; config: any }>(`${this.baseUrl}/recruiters/auto/config`, payload);
   }
 
   startRecruiterAutoMode(payload: {
@@ -352,12 +417,17 @@ export class ApiService {
     continuous?: boolean;
     cooldown_seconds?: number;
   }): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/recruiters/auto/start`, payload);
+    return this.http.post(`${this.baseUrl}/recruiters/auto/start`, payload);
   }
 
-  syncRecruiterPosts(query?: string): Observable<{ ok: boolean; scanned: number; posts_with_email: number; synced: number; hn_synced?: number }> {
-    const qs = query && query.trim() ? `?q=${encodeURIComponent(query.trim())}` : '';
-    return this.postWithToken<{ ok: boolean; scanned: number; posts_with_email: number; synced: number; hn_synced?: number }>(
+  syncRecruiterPosts(query?: string, opts?: { includeLinkedin?: boolean; forceLinkedin?: boolean; days?: number | null }): Observable<SyncRecruiterPostsResponse> {
+    const params = new URLSearchParams();
+    if (query && query.trim()) params.set('q', query.trim());
+    if (opts?.includeLinkedin === false) params.set('include_linkedin', 'false');
+    if (opts?.forceLinkedin) params.set('force_linkedin', 'true');
+    if (opts?.days && opts.days > 0) params.set('days', String(opts.days));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.http.post<SyncRecruiterPostsResponse>(
       `${this.baseUrl}/recruiters/sync${qs}`,
       {}
     ).pipe(
@@ -365,15 +435,48 @@ export class ApiService {
     );
   }
 
-  pasteRecruiterPost(payload: {
-    raw_text: string;
-    url?: string;
-    title?: string;
-    company?: string;
-    location?: string;
-    work_model?: string;
-  }): Observable<{ ok: boolean; post: RecruiterPost }> {
-    return this.postWithToken<{ ok: boolean; post: RecruiterPost }>(
+  triageRecruiterPosts(payload: {
+    post_ids?: number[];
+    q?: string;
+    portal?: string;
+    limit?: number;
+  }): Observable<RecruiterTriageResponse> {
+    return this.http.post<RecruiterTriageResponse>(
+      `${this.baseUrl}/recruiters/triage`,
+      payload
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  getLinkedInWorkerStatus(): Observable<LinkedInWorkerStatus> {
+    return this.http.get<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/status`);
+  }
+
+  connectLinkedInWorker(): Observable<LinkedInWorkerStatus> {
+    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/connect`, {});
+  }
+
+  verifyLinkedInWorker(): Observable<LinkedInWorkerStatus> {
+    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/verify`, {});
+  }
+
+  updateLinkedInWorkerConfig(payload: {
+    enabled?: boolean;
+    headless?: boolean;
+    cooldown_minutes?: number;
+    max_daily_searches?: number;
+    max_scrolls?: number;
+  }): Observable<LinkedInWorkerStatus> {
+    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/config`, payload);
+  }
+
+  disconnectLinkedInWorker(): Observable<LinkedInWorkerStatus> {
+    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/disconnect`, {});
+  }
+
+  pasteRecruiterPost(payload: PasteRecruiterPostPayload): Observable<{ ok: boolean; post: RecruiterPost; auto_mode_woken?: boolean }> {
+    return this.http.post<{ ok: boolean; post: RecruiterPost; auto_mode_woken?: boolean }>(
       `${this.baseUrl}/recruiters/paste`,
       payload
     ).pipe(
@@ -381,8 +484,20 @@ export class ApiService {
     );
   }
 
+  pasteRecruiterPostsBatch(payload: {
+    items?: PasteRecruiterPostPayload[];
+    raw_batch_text?: string;
+  }): Observable<PasteRecruiterBatchResponse> {
+    return this.http.post<PasteRecruiterBatchResponse>(
+      `${this.baseUrl}/recruiters/paste-batch`,
+      payload
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
   markRecruiterPostInterested(postId: number): Observable<{ ok: boolean; post_id: number; job_id: string; url: string }> {
-    return this.postWithToken<{ ok: boolean; post_id: number; job_id: string; url: string }>(
+    return this.http.post<{ ok: boolean; post_id: number; job_id: string; url: string }>(
       `${this.baseUrl}/recruiters/${postId}/interested`,
       {}
     ).pipe(
@@ -402,7 +517,7 @@ export class ApiService {
     contacted_email: string;
     contacted_at: string;
   }> {
-    return this.postWithToken<{
+    return this.http.post<{
       ok: boolean;
       post_id: number;
       job_id: string;
@@ -419,7 +534,7 @@ export class ApiService {
   }
 
   dismissRecruiterPost(postId: number): Observable<{ ok: boolean; id: number }> {
-    return this.deleteWithToken<{ ok: boolean; id: number }>(
+    return this.http.delete<{ ok: boolean; id: number }>(
       `${this.baseUrl}/recruiters/${postId}`
     ).pipe(
       tap(() => this.refreshCounts())
@@ -443,7 +558,7 @@ export class ApiService {
     continuous?: boolean;
     cooldown_seconds?: number;
   }): Observable<{ ok: boolean; config: any }> {
-    return this.postWithToken<{ ok: boolean; config: any }>(`${this.baseUrl}/auto-mode/config`, payload);
+    return this.http.post<{ ok: boolean; config: any }>(`${this.baseUrl}/auto-mode/config`, payload);
   }
 
   startAutoMode(payload: {
@@ -456,19 +571,19 @@ export class ApiService {
     cooldown_seconds?: number;
   }): Observable<any> {
     this.hasSearchedInSession.set(true);
-    return this.postWithToken(`${this.baseUrl}/auto-mode/start`, payload);
+    return this.http.post(`${this.baseUrl}/auto-mode/start`, payload);
   }
 
   cancelAutoMode(): Observable<any> {
-    return this.postWithToken(`${this.baseUrl}/auto-mode/cancel`, {});
+    return this.http.post(`${this.baseUrl}/auto-mode/cancel`, {});
   }
 
   skipAutoModeCooldown(): Observable<{ ok: boolean; skipped: boolean }> {
-    return this.postWithToken<{ ok: boolean; skipped: boolean }>(`${this.baseUrl}/auto-mode/skip-cooldown`, {});
+    return this.http.post<{ ok: boolean; skipped: boolean }>(`${this.baseUrl}/auto-mode/skip-cooldown`, {});
   }
 
   undoAutoModeRun(runId?: string): Observable<{ ok: boolean; run_id?: string; reverted: number; error?: string }> {
-    return this.postWithToken<{ ok: boolean; run_id?: string; reverted: number; error?: string }>(
+    return this.http.post<{ ok: boolean; run_id?: string; reverted: number; error?: string }>(
       `${this.baseUrl}/auto-mode/undo`,
       runId ? { run_id: runId } : {}
     ).pipe(
@@ -477,30 +592,11 @@ export class ApiService {
   }
 
   undoAutoModeJob(payload: { url?: string; job_id?: string }): Observable<{ ok: boolean; reverted: number; error?: string }> {
-    return this.postWithToken<{ ok: boolean; reverted: number; error?: string }>(
+    return this.http.post<{ ok: boolean; reverted: number; error?: string }>(
       `${this.baseUrl}/auto-mode/undo-job`,
       payload
     ).pipe(
       tap(() => this.refreshCounts())
     );
-  }
-
-  private deleteWithToken<T>(url: string): Observable<T> {
-    const doDelete = (token: string) =>
-      this.http.delete<T>(url, {
-        headers: new HttpHeaders({ 'X-Painel-Token': token }),
-      });
-
-    if (this.token) {
-      return doDelete(this.token).pipe(
-        catchError((err: HttpErrorResponse) => {
-          if (err.status === 403) {
-            return this.fetchToken().pipe(switchMap((newToken) => doDelete(newToken)));
-          }
-          return throwError(() => err);
-        })
-      );
-    }
-    return this.fetchToken().pipe(switchMap((token) => doDelete(token)));
   }
 }

@@ -157,6 +157,47 @@ PORTAL_SENIORITY = [
 ROMAN = [("junior", r"(?<![\w/])I(?![\w/])"), ("pleno", r"(?<![\w/])II(?![\w/])"),
          ("senior", r"(?<![\w/])(?:III|IV)(?![\w/])")]
 
+_YEARS_REQ_PATTERNS = (
+    re.compile(
+        r"(?:m[íi]nimo\s+de\s+|at\s+least\s+|minimum\s+(?:of\s+)?)?"
+        r"(\d{1,2})\s*\+?\s*(?:a\s*\d{1,2}\s*)?(?:anos?|years?)\s+"
+        r"(?:de\s+)?(?:experi[êe]ncia|atua[çc][ãa]o|viv[êe]ncia|(?:of\s+)?(?:software|relevant|professional|work|industry|hands-on|development|engineering)?\s*experience)\b",
+        re.I,
+    ),
+    re.compile(
+        r"experi[êe]ncia\s+(?:comprovada\s+|m[íi]nima\s+|pr[áa]tica\s+)?(?:acima\s+de\s+|de\s+|em\s+)?"
+        r"(?:pelo\s+menos\s+|no\s+m[íi]nimo\s+)?(\d{1,2})\s*\+?\s*anos?\b",
+        re.I,
+    ),
+)
+_YEARS_FALSE_CTX = re.compile(
+    r"(?:mercado|hist[óo]ria|tradi[çc][ãa]o|funda[çc][ãa]o|exist[êe]ncia|atuando\s+h[áa]|empresa\s+com|in\s+business)",
+    re.I,
+)
+_BODY_ACCESSIBLE_RE = re.compile(
+    r"\b(?:j[úu]nior|junior|jr\.?|pleno|mid[- ]?level|new\s+grad|early\s+career|entry[- ]?level|est[áa]gio|trainee)\b",
+    re.I,
+)
+
+
+def extract_min_years_required(text: str) -> int | None:
+    """Extrai o maior requisito explícito de anos de experiência (1..20), ignorando tempo de empresa."""
+    if not text:
+        return None
+    years: list[int] = []
+    for pat in _YEARS_REQ_PATTERNS:
+        for m in pat.finditer(text):
+            ctx = text[max(0, m.start() - 35):min(len(text), m.end() + 35)]
+            if _YEARS_FALSE_CTX.search(ctx):
+                continue
+            try:
+                val = int(m.group(1))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= val <= 20:
+                years.append(val)
+    return max(years) if years else None
+
 
 def _excerpt(text: str, match: re.Match) -> str:
     return re.sub(r"\s+", " ", match.group(0)).strip()[:EXCERPT]
@@ -237,6 +278,8 @@ def analyse(text: str, title: str = "", company: str = "", accept=None, portal_l
         "seniority": levels,
         "seniority_source": source,
         "seniority_verdict": level_verdict,
+        "min_years_required": extract_min_years_required(body),
+        "body_has_accessible_level": bool(_BODY_ACCESSIBLE_RE.search(body)),
     }
 
 

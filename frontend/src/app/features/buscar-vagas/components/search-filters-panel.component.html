@@ -1,0 +1,255 @@
+<section class="vc-panel filter-console">
+  <div class="filter-header">
+    <h2>Filtros e Busca de Oportunidades</h2>
+  </div>
+
+  <div class="filter-grid">
+    <!-- Campo 1: Cargo / Tecnologia com Randomizador do CV -->
+    <div class="filter-field wide">
+      <div class="filter-label-row">
+        <label for="f-text">Cargo, Tecnologia ou Empresa</label>
+        @if (cvAreaBadge()) {
+          <span class="cv-area-badge">{{ cvAreaBadge() }}</span>
+        }
+      </div>
+      <div class="input-with-action">
+        <input type="text"
+          id="f-text"
+          class="vc-input"
+          placeholder="Filtrar por cargo, tecnologia ou empresa (separe por vírgula)..."
+          [(ngModel)]="filterText"
+          (ngModelChange)="filterChange.emit()">
+        <div class="input-actions-cluster">
+          @if (filterText) {
+            <button type="button" class="btn-clear-input" (click)="clearTextFilter.emit()" title="Limpar palavras-chave">&times;</button>
+          }
+          <button type="button" class="btn-random-cv" (click)="pickRandomCv.emit()" title="Sortear área do seu currículo">
+            <i class="bi bi-dice-5"></i>
+            <span>Sortear área CV</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Campo 2: Fontes da Busca (Dropdown Checkbox Multi-seleção) -->
+    <div class="filter-field portals-dropdown-container">
+      <div class="filter-label-row">
+        <label>Fontes da Busca (Portais)</label>
+        <span class="portals-count-badge"
+          [class.partial]="selectedPortalIds().size > 0 && selectedPortalIds().size < availablePortals.length"
+          [class.empty]="selectedPortalIds().size === 0">
+          {{ selectedPortalIds().size }} / {{ availablePortals.length }}
+        </span>
+      </div>
+
+      <div class="custom-dropdown" (click)="$event.stopPropagation()">
+        <button type="button"
+                class="vc-select dropdown-trigger-btn"
+                [class.active]="portalsDropdownOpen()"
+                (click)="togglePortalsDropdown($event)"
+                title="Clique para escolher os portais de busca">
+          <div class="trigger-label">
+            <i class="bi bi-diagram-3 trigger-icon"></i>
+            <span class="trigger-text">{{ portalsSummaryLabel() }}</span>
+          </div>
+          <i class="bi trigger-arrow" [class.bi-chevron-down]="!portalsDropdownOpen()" [class.bi-chevron-up]="portalsDropdownOpen()"></i>
+        </button>
+
+        @if (portalsDropdownOpen()) {
+          <div class="dropdown-menu-panel" (click)="$event.stopPropagation()">
+            <div class="dropdown-header-actions">
+              <button type="button" class="btn-action-small select-all" (click)="selectAllPortals()">
+                <i class="bi bi-check-all"></i> Marcar Todos
+              </button>
+              <button type="button" class="btn-action-small deselect-all" (click)="deselectAllPortals()">
+                <i class="bi bi-dash-circle"></i> Desmarcar
+              </button>
+            </div>
+
+            <div class="dropdown-search-box">
+              <i class="bi bi-search search-icon"></i>
+              <input type="text"
+                     class="dropdown-search-input"
+                     placeholder="Filtrar portal por nome ou nicho..."
+                     [ngModel]="filterPortalSearchText()"
+                     (ngModelChange)="filterPortalSearchText.set($event)">
+              @if (filterPortalSearchText()) {
+                <button type="button" class="btn-clear-portal-search" (click)="filterPortalSearchText.set('')">&times;</button>
+              }
+            </div>
+
+            <div class="dropdown-list-scroll">
+              @for (cat of portalCategories; track cat.id) {
+                @if (hasMatchingPortalsInCategory(cat.id)) {
+                  <div class="dropdown-category-group">
+                    <div class="category-header" (click)="toggleCategoryPortals(cat.id)" title="Clique para alternar todo o grupo">
+                      <span class="category-title">{{ cat.label }}</span>
+                      <span class="category-toggle-btn">
+                        {{ isCategoryFullySelected(cat.id) ? 'Desmarcar' : 'Marcar' }}
+                      </span>
+                    </div>
+                    <div class="category-items">
+                      @for (portal of getFilteredPortalsByCategory(cat.id); track portal.id) {
+                        <label class="dropdown-item-row" (click)="$event.stopPropagation()">
+                          <input type="checkbox"
+                                 class="portal-checkbox"
+                                 [checked]="isPortalSelected(portal.id)"
+                                 (change)="togglePortal(portal.id, $event)">
+                          <span class="portal-name">{{ portal.name }}</span>
+                          @if (portal.badge) {
+                            <span class="portal-badge">{{ portal.badge }}</span>
+                          }
+                        </label>
+                      }
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Campo 3: Modelo de Trabalho -->
+    <div class="filter-field">
+      <label for="f-model">Modelo de Trabalho</label>
+      <select id="f-model" class="vc-select" [(ngModel)]="filterModel" (ngModelChange)="filterChange.emit()">
+        <option value="">Qualquer modelo</option>
+        <option value="remote">Remoto</option>
+        <option value="hybrid">Híbrido</option>
+        <option value="on-site">Presencial</option>
+        <option value="none">Não informado</option>
+      </select>
+    </div>
+
+    <!-- Campo 4: Região / Polo -->
+    <div class="filter-field">
+      <label for="f-region">Região / Polo</label>
+      <select id="f-region" class="vc-select" [(ngModel)]="filterRegion" (ngModelChange)="filterChange.emit()">
+        <option value="">Todas as regiões</option>
+        <option value="brasil">Brasil</option>
+        <option value="estados-unidos">Estados Unidos</option>
+        <option value="europa">Europa</option>
+        <option value="global">Global / Remoto</option>
+        <option value="remote">Somente Remoto</option>
+      </select>
+    </div>
+
+    <!-- Campo 5: Data de Publicação -->
+    <div class="filter-field">
+      <label for="jobage">Data de Publicação</label>
+      <select id="jobage" class="vc-select" [(ngModel)]="filterJobAge" (ngModelChange)="filterChange.emit()">
+        <option value="">Todas as datas (Mostrar tudo)</option>
+        <option value="1">Últimas 24 horas</option>
+        <option value="2">Últimos 2 dias</option>
+        <option value="3">Últimos 3 dias</option>
+        <option value="7">Últimos 7 dias</option>
+        <option value="14">Últimos 14 dias (Recomendado)</option>
+        <option value="30">Últimos 30 dias</option>
+      </select>
+    </div>
+
+    <!-- Campo 6: Nota de Aderência (Fit IA) -->
+    @if (hasTriagedJobs) {
+      <div class="filter-field">
+        <label for="f-score">Nota de Aderência ({{ triagedCount }} triadas)</label>
+        <select id="f-score" class="vc-select" [(ngModel)]="filterScore" (ngModelChange)="filterChange.emit()">
+          <option value="">Todas as notas</option>
+          <option value="high">Alta afinidade (75+)</option>
+          <option value="med_plus">Notas médias ou maiores (60+)</option>
+          <option value="med">Apenas média (60 a 74)</option>
+          <option value="low">Menores notas (&lt; 60)</option>
+          <option value="triadas">Apenas vagas com nota</option>
+          <option value="untriaged">Sem nota (Não triadas)</option>
+        </select>
+      </div>
+    }
+
+    <!-- Campo 7: Ordenação -->
+    <div class="filter-field">
+      <label for="f-sort">Ordenação</label>
+      <select id="f-sort" class="vc-select" [(ngModel)]="filterSort" (ngModelChange)="filterChange.emit()">
+        <option value="date">Mais recentes primeiro</option>
+        <option value="score-desc">Maior nota primeiro</option>
+        <option value="score-asc">Menor nota primeiro</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Barra de Ações: Botão Buscar, Checkboxes e Status -->
+  <div class="search-actions-bar">
+    <div class="search-actions-left">
+      <button type="button" class="btn-search-trigger" (click)="searchTrigger.emit()" [disabled]="searching || autoRunning">
+        @if (searching) {
+          <span class="vc-spinner"></span> Buscando…
+        } @else {
+          <i class="bi bi-search"></i> Buscar vagas
+        }
+      </button>
+
+      <div class="auto-mode-trigger-group">
+        <button type="button"
+          class="btn-auto-mode"
+          [class.is-running]="autoRunning"
+          (click)="autoRunning ? autoCancel.emit() : autoTrigger.emit()"
+          [disabled]="searching || autoCancelling"
+          title="IA sorteia 1 palavra-chave focalizada do seu CV por rodada, busca nos últimos até 7 dias (sem limite de vagas) e envia notas altas para Me Interessam">
+          @if (autoRunning) {
+            <span class="vc-spinner"></span> {{ autoCancelling ? 'Parando…' : 'Parar Automático' }}
+          } @else {
+            <i class="bi bi-robot"></i> Modo Automático (7d)
+          }
+        </button>
+
+        <label class="auto-score-field" title="Nota mínima para enviar automaticamente para Me Interessam (padrão 60: evita vagas presenciais fora da região com teto 50 e stack ausente com teto 55)">
+          <span>Nota ≥</span>
+          <input type="number" min="45" max="95" step="5"
+            [(ngModel)]="autoMinScore"
+            (ngModelChange)="autoConfigChange.emit()"
+            [disabled]="autoRunning">
+        </label>
+
+        <label class="auto-continuous-toggle" title="Quando marcado, sorteia novas palavras-chave em loop com intervalo anti-ban até você clicar em Parar">
+          <input type="checkbox"
+            [(ngModel)]="autoContinuous"
+            (ngModelChange)="autoConfigChange.emit()"
+            [disabled]="autoRunning">
+          <span>Contínuo</span>
+        </label>
+
+        <label class="auto-cooldown-field" title="Intervalo base em minutos entre rodadas (2 a 30 min, com jitter e backoff automático anti-ban)">
+          <span>Intervalo</span>
+          <input type="number" min="2" max="30" step="1"
+            [(ngModel)]="autoCooldownMinutes"
+            (change)="autoConfigChange.emit()"
+            [disabled]="autoRunning || !autoContinuous">
+          <span>min</span>
+        </label>
+      </div>
+
+      <label class="filter-checkbox-label">
+        <input type="checkbox" [(ngModel)]="filterNoWarn" (ngModelChange)="filterChange.emit()">
+        <span>Só vagas sem avisos</span>
+      </label>
+
+      <label class="filter-checkbox-label" title="Oculta vagas cujo portal não informou a data de publicação">
+        <input type="checkbox" [(ngModel)]="filterHideUndated" (ngModelChange)="filterChange.emit()">
+        <span>Ocultar vagas sem data</span>
+      </label>
+
+      <label class="filter-checkbox-label">
+        <input type="checkbox" [(ngModel)]="filterVisa" (ngModelChange)="filterChange.emit()">
+        <span>Só com VISA</span>
+      </label>
+    </div>
+
+    <div class="search-actions-right">
+      @if (searchStatus && !showProgressPanel) {
+        <span class="search-status-text">{{ searchStatus }}</span>
+      }
+    </div>
+  </div>
+
+  <ng-content></ng-content>
+</section>

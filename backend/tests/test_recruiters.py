@@ -13,12 +13,13 @@ from backend.db.repository import Repository
 from backend.core.recruiter_service import (
     extract_clean_emails,
     extract_email_context,
+    extract_linkedin_snowflake_date,
     match_cv_keywords,
     RecruiterService,
 )
 from backend.tools import painel, painel_ia
 from backend.api.app import app
-from backend.api.deps import get_repository, get_recruiter_service, get_tracker
+from backend.api.deps import get_auto_mode, get_repository, get_recruiter_service, get_tracker
 from backend.api.security import get_token
 from backend.core.tracker import TrackerService
 
@@ -203,7 +204,7 @@ class TestRecruiterService(unittest.TestCase):
 
             migrated_repo = Repository(db_path=legacy_file.name)
             cols = {r["name"] for r in migrated_repo.conn.execute("PRAGMA table_info(recruiter_posts)").fetchall()}
-            for col in ("ai_classification", "ai_score", "ai_verdict", "ai_summary", "ai_best_email", "ai_evaluated_at", "auto_promoted", "auto_run_id"):
+            for col in ("ai_classification", "ai_score", "ai_verdict", "ai_summary", "ai_best_email", "ai_model", "ai_evaluated_at", "auto_promoted", "auto_run_id"):
                 self.assertIn(col, cols)
             migrated_repo.close()
         finally:
@@ -219,11 +220,12 @@ class TestRecruiterService(unittest.TestCase):
             "description": "Estamos contratando dev Python pleno. Enviar CV para talentos@techco.com.",
         }
         with patch("backend.tools.painel_ia.candidate_profile", return_value="Perfil Python Pleno"), \
-             patch("backend.tools.painel_ia.call_llm", return_value='{"classification": "vaga_ativa", "best_email": "talentos@techco.com", "score": 82, "verdict": "Strong Fit", "summary": "Casa com stack e senioridade."}'):
+             patch("backend.tools.painel_ia.call_llm", return_value='{"model": "gemini-4-hydrogen-high", "classification": "vaga_ativa", "best_email": "talentos@techco.com", "score": 82, "verdict": "Strong Fit", "summary": "Casa com stack e senioridade."}'):
             out = painel_ia.triar_post_recrutador(post)
         self.assertEqual(out["classification"], "vaga_ativa")
         self.assertEqual(out["best_email"], "talentos@techco.com")
         self.assertEqual(out["score"], 82)
+        self.assertEqual(out["ai_model"], "gemini-4-hydrogen-high")
 
         with patch("backend.tools.painel_ia.candidate_profile", return_value="Perfil"), \
              patch("backend.tools.painel_ia.call_llm", return_value='{"classification": "banco_talentos", "best_email": "", "score": 65, "summary": "Captação genérica."}'):
@@ -365,6 +367,52 @@ class TestRecruitersApi(unittest.TestCase):
             "company": "AI Company",
         }, headers={"X-Painel-Token": self.token})
         self.assertEqual(paste_resp.status_code, 200)
+
+    def test_api_paste_batch_requires_csrf_imports_and_wakes_recruiter_cooldown(self):
+        from datetime import datetime, timezone
+
+        ts_ms = int(datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc).timestamp() * 1000)
+        act_id = str(ts_ms << 22)
+
+        class _FakeAutoMode:
+            def __init__(self):
+                self.woken = 0
+                self.queued = []
+            def enqueue_recruiter_posts(self, post_ids):
+                self.queued.extend(post_ids)
+                self.woken += 1
+                return True
+
+        fake_auto = _FakeAutoMode()
+        app.dependency_overrides[get_auto_mode] = lambda: fake_auto
+
+        # Sem CSRF -> 403
+        forbidden = self.client.post("/api/recruiters/paste-batch", json={
+            "items": [{"raw_text": "Dev Angular remoto CV: rh@teste.com"}]
+        })
+        self.assertEqual(forbidden.status_code, 403)
+
+        batch_resp = self.client.post("/api/recruiters/paste-batch", json={
+            "items": [
+                {
+                    "raw_text": "Vaga 100% remota Angular/TypeScript! Envie CV para talent@angularbr.dev",
+                    "company": "AngularBR",
+                    "url": f"https://www.linkedin.com/feed/update/urn:li:activity:{act_id}/",
+                },
+                {
+                    "raw_text": "Post sem nenhum endereço de contato.",
+                },
+            ]
+        }, headers={"X-Painel-Token": self.token})
+        self.assertEqual(batch_resp.status_code, 200)
+        body = batch_resp.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["imported"], 1)
+        self.assertEqual(body["invalid"], 1)
+        self.assertTrue(body["auto_mode_woken"])
+        self.assertEqual(fake_auto.woken, 1)
+        self.assertEqual(body["posts"][0]["published_date"], "2026-11-10")
+        self.assertEqual(body["posts"][0]["work_model"], "remoto")
 
     def test_api_contacted_enriches_applications_and_reopens(self):
         post = self.service.add_pasted_post(
@@ -674,6 +722,372 @@ class TestRecruitersApi(unittest.TestCase):
         self.assertEqual(len(clone_hits), 2)
         angular_hits = [c for c in candidates if "Angular" in c["title"]]
         self.assertEqual(len(angular_hits), 1)
+
+    def test_extract_clean_emails_filters_compliance_and_keeps_hiring(self):
+        text = (
+            "How to apply: send your resume to jobs@acme.dev today.\n"
+            "If you require a reasonable accommodation due to a disability, contact hr@acme.dev or accommodations@acme.dev.\n"
+            "You can request access or deletion of your personal data by emailing careers@story.io.\n"
+            "If someone is claiming to be from OurCo, email peopleteam@ourco.com before taking any further steps."
+        )
+        emails = extract_clean_emails(text)
+        self.assertEqual(emails, ["jobs@acme.dev"])
+
+        # E-mail mencionado primeiro para envio de CV e depois citado no rodapé continua válido
+        mixed = "Apply by sending your CV to hiring@dual.io. If you need accommodation, contact hiring@dual.io."
+        self.assertEqual(extract_clean_emails(mixed), ["hiring@dual.io"])
+
+    def test_github_sync_uses_etag_304_and_handles_rate_limit(self):
+        import io
+        import urllib.error
+        from datetime import datetime, timezone, timedelta
+
+        recent = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT10:00:00Z")
+        payload = json.dumps([{
+            "html_url": "https://github.com/phpdevbr/vagas/issues/55",
+            "title": "[Remoto] Dev PHP/Laravel",
+            "created_at": recent,
+            "user": {"login": "phpco"},
+            "labels": [{"name": "Remoto"}],
+            "body": "Enviar CV para vagas@phpco.com.br",
+        }]).encode("utf-8")
+
+        class _Headers:
+            def get(self, k, d=None):
+                return 'W/"etag-1"' if k.lower() == "etag" else d
+
+        class _Resp:
+            headers = _Headers()
+            def read(self):
+                return payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        seen_if_none_match = []
+
+        def fake_urlopen(req, timeout=7):
+            seen_if_none_match.append(req.headers.get("If-none-match"))
+            if len(seen_if_none_match) == 1:
+                return _Resp()
+            raise urllib.error.HTTPError(req.full_url, 304, "Not Modified", {}, io.BytesIO(b""))
+
+        with patch("backend.core.recruiter_service.RECRUITER_GITHUB_REPOS", ("phpdevbr/vagas",)), \
+             patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            n1 = self.service.sync_from_github_repos(query="PHP", cache_ttl_seconds=0)
+            n2 = self.service.sync_from_github_repos(query="PHP", cache_ttl_seconds=0)
+
+        self.assertEqual(n1, 1)
+        self.assertEqual(n2, 1)
+        self.assertEqual(seen_if_none_match, [None, 'W/"etag-1"'])
+
+        # Rate limit 403 interrompe loop sem disparar requisições extras nos repositórios seguintes
+        rl_calls = []
+
+        def fake_rate_limit(req, timeout=7):
+            rl_calls.append(req.full_url)
+            raise urllib.error.HTTPError(req.full_url, 403, "rate limit exceeded", {}, io.BytesIO(b""))
+
+        status_out = {"errors": 0, "rate_limited": False}
+        with patch("backend.core.recruiter_service.RECRUITER_GITHUB_REPOS", ("backend-br/vagas", "soujava/vagas-java")), \
+             patch("urllib.request.urlopen", side_effect=fake_rate_limit):
+            self.service.sync_from_github_repos(query="Java", cache_ttl_seconds=0, _status_out=status_out)
+
+        self.assertEqual(len(rl_calls), 1)
+        self.assertTrue(status_out["rate_limited"])
+        self.assertEqual(status_out["errors"], 1)
+
+    def test_sync_all_reports_portal_breakdown_and_remotar_international_location(self):
+        fake_remotar = ([{
+            "url": "https://remotar.com.br/job/intl-1",
+            "title": "Angular Engineer",
+            "company": "IntlCo",
+            "international": True,
+            "work_model": "remoto",
+            "description": "Send CV to careers@intlco.dev",
+        }], None)
+        with patch.object(self.service, "sync_from_hn", return_value=0), \
+             patch.object(self.service, "sync_from_github_repos", return_value=0), \
+             patch.object(self.service, "sync_from_remotive", return_value=0), \
+             patch.object(self.service, "sync_from_recent_scrapes", return_value=0), \
+             patch("backend.tools.scrape_run.installed_portals", return_value={"remotar-search": True}), \
+             patch("backend.tools.scrape_run.run_cli", return_value=fake_remotar):
+            res = self.service.sync_all(query="Angular")
+
+        self.assertEqual(res["portal_breakdown"]["remotar-search"]["matched"], 1)
+        posts = self.service.list_posts(portal="remotar-search")
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]["location"], "Remoto / Internacional")
+
+    def test_extract_linkedin_snowflake_date_and_batch_dedup(self):
+        from datetime import datetime, timezone
+
+        ts_ms = int(datetime(2026, 11, 8, 15, 30, tzinfo=timezone.utc).timestamp() * 1000)
+        act_id = str(ts_ms << 22)
+        post_url = f"https://pt.linkedin.com/posts/alguem_vaga-dev-activity-{act_id}-xYz1"
+        feed_url = f"https://www.linkedin.com/feed/update/urn:li:activity:{act_id}/"
+
+        self.assertEqual(extract_linkedin_snowflake_date(post_url), "2026-11-08")
+        self.assertEqual(extract_linkedin_snowflake_date(feed_url), "2026-11-08")
+        self.assertIsNone(extract_linkedin_snowflake_date("https://linkedin.com/jobs/view/123"))
+
+        payload = "VAGAMUNDO_LI_BATCH_V1:" + json.dumps({
+            "v": 1,
+            "posts": [
+                {
+                    "text": "Hiring Python/FastAPI Dev! Email: careers@pyco.dev",
+                    "author": "PyCo",
+                    "url": post_url,
+                },
+                {
+                    "text": "Post sem email",
+                },
+            ],
+        })
+        r1 = self.service.add_pasted_posts_batch(raw_batch_text=payload)
+        self.assertEqual(r1["imported"], 1)
+        self.assertEqual(r1["invalid"], 1)
+        self.assertEqual(r1["posts"][0]["published_date"], "2026-11-08")
+
+        # Mesmo post em formato URL diferente (/feed/update/urn:li:activity:...) deve ser deduplicado e não ressuscitado após dismiss
+        self.service.dismiss_post(r1["posts"][0]["id"])
+        r2 = self.service.add_pasted_posts_batch(items=[{
+            "raw_text": "Hiring Python/FastAPI Dev! Email: careers@pyco.dev",
+            "url": feed_url,
+            "company": "PyCo",
+        }])
+        self.assertEqual(r2["imported"], 0)
+        self.assertEqual(r2["skipped"], 1)
+        self.assertEqual(self.service.list_posts(), [])
+
+    def test_find_untriaged_candidates_includes_imported_linkedin_across_keywords(self):
+        self.service.add_pasted_post(
+            raw_text="Vaga Rust Systems Developer! Enviar CV para rust@core.dev",
+            company="CoreRust",
+            title="Rust Developer",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7525862923169132544/",
+        )
+        # Sem include_portals: rodada sorteou 'Angular', logo 'Rust' fica de fora
+        without_portal = self.service.find_untriaged_candidates(keywords=["Angular"])
+        self.assertEqual(without_portal, [])
+
+        # Com include_portals=('linkedin_post',): entra imediatamente na rodada multiplataforma
+        with_portal = self.service.find_untriaged_candidates(
+            keywords=["Angular"],
+            include_portals=("linkedin_post",),
+        )
+        self.assertEqual(len(with_portal), 1)
+        self.assertEqual(with_portal[0]["portal"], "linkedin_post")
+        self.assertEqual(with_portal[0]["company"], "CoreRust")
+
+    def test_github_sync_persists_disk_cache_and_pauses_repeat_403_calls(self):
+        import io
+        import time
+        import urllib.error
+        from datetime import datetime, timezone, timedelta
+        from tempfile import TemporaryDirectory
+
+        recent = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT10:00:00Z")
+        payload = json.dumps([{
+            "html_url": "https://github.com/datascience-br/vagas/issues/99",
+            "title": "[Remoto] Cientista de Dados",
+            "created_at": recent,
+            "user": {"login": "dsbr"},
+            "labels": [{"name": "Remoto"}],
+            "body": "Enviar currículo para talento@dsbr.org",
+        }]).encode("utf-8")
+
+        class _Headers:
+            def get(self, k, d=None):
+                lk = k.lower()
+                if lk == "etag":
+                    return 'W/"ds-1"'
+                if lk == "x-ratelimit-remaining":
+                    return "5"
+                return d
+
+        class _Resp:
+            headers = _Headers()
+            def read(self):
+                return payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        with TemporaryDirectory() as tmpdir:
+            svc1 = RecruiterService(self.repo, cache_dir=Path(tmpdir))
+            with patch("backend.core.recruiter_service.RECRUITER_GITHUB_REPOS", ("datascience-br/vagas",)), \
+                 patch("urllib.request.urlopen", return_value=_Resp()):
+                n1 = svc1.sync_from_github_repos(query="Dados", cache_ttl_seconds=1200)
+            self.assertEqual(n1, 1)
+            self.assertTrue((Path(tmpdir) / "github_vagas_cache.json").is_file())
+
+            # Nova instância carrega cache/ETag em disco sem gastar cota do GitHub
+            svc2 = RecruiterService(self.repo, cache_dir=Path(tmpdir))
+            with patch("backend.core.recruiter_service.RECRUITER_GITHUB_REPOS", ("datascience-br/vagas",)), \
+                 patch("urllib.request.urlopen", side_effect=AssertionError("Não deveria consultar API")):
+                n2 = svc2.sync_from_github_repos(query="Dados", cache_ttl_seconds=1200)
+            self.assertEqual(n2, 1)
+
+            # Após 403 com X-RateLimit-Reset futuro, próximas chamadas não martelam a API
+            reset_future = str(int(time.time() + 600))
+            rl_calls = []
+
+            def fake_403(req, timeout=7):
+                rl_calls.append(req.full_url)
+                raise urllib.error.HTTPError(
+                    req.full_url, 403, "rate limit exceeded", {"X-RateLimit-Reset": reset_future}, io.BytesIO(b"")
+                )
+
+            svc3 = RecruiterService(self.repo, cache_dir=Path(tmpdir))
+            status_1 = {"errors": 0, "rate_limited": False, "warnings": []}
+            status_2 = {"errors": 0, "rate_limited": False, "warnings": []}
+            with patch("backend.core.recruiter_service.RECRUITER_GITHUB_REPOS", ("pydevbr/vagas",)), \
+                 patch("urllib.request.urlopen", side_effect=fake_403):
+                svc3.sync_from_github_repos(query="Python", cache_ttl_seconds=1200, _status_out=status_1)
+                svc3.sync_from_github_repos(query="Python", cache_ttl_seconds=1200, _status_out=status_2)
+
+            self.assertEqual(len(rl_calls), 1)
+            self.assertTrue(any("pausa temporária" in w for w in status_2["warnings"]))
+            self.assertFalse(status_2["rate_limited"])
+
+    def test_obfuscated_emails_and_relative_age_date_fallback(self):
+        from datetime import date, timedelta
+
+        extracted = extract_clean_emails(
+            "Envie CV para talentos [arroba] nuvem (ponto) com (dot) br ou ana(at)corp[dot]io"
+        )
+        self.assertEqual(extracted, ["talentos@nuvem.com.br", "ana@corp.io"])
+
+        batch = self.service.add_pasted_posts_batch([
+            {
+                "raw_text": "Vaga Java Sênior! Contato: hiring [arroba] cloudstack (ponto) dev",
+                "company": "CloudStack",
+                "posted_age_text": "3 d",
+            },
+            {
+                "raw_text": "Dev Angular remoto! CV: rh(at)front[dot]io",
+                "company": "FrontIO",
+                "posted_age_text": "4 h",
+            },
+        ])
+        self.assertEqual(batch["imported"], 2)
+        posts_by_company = {p["company"]: p for p in self.service.list_posts()}
+        self.assertEqual(posts_by_company["CloudStack"]["emails"], ["hiring@cloudstack.dev"])
+        self.assertEqual(
+            posts_by_company["CloudStack"]["published_date"],
+            (date.today() - timedelta(days=3)).isoformat(),
+        )
+        self.assertEqual(posts_by_company["FrontIO"]["emails"], ["rh@front.io"])
+        self.assertEqual(posts_by_company["FrontIO"]["published_date"], date.today().isoformat())
+
+    def test_save_post_as_interested_never_fakes_rank_score_and_persists_ai_eval_when_triaged(self):
+        from tempfile import TemporaryDirectory
+
+        with patch("backend.core.recruiter_service.match_cv_keywords", return_value=(["Python", "SQL"], 74)):
+            untriaged = self.service.add_pasted_post(
+                raw_text="Vaga Python Pleno remoto! CV: jobs@untriaged.dev",
+                title="Python Pleno",
+                company="Untriaged Corp",
+                url="https://www.linkedin.com/feed/update/urn:li:activity:7500000000000000001/",
+            )
+            triaged = self.service.add_pasted_post(
+                raw_text="Vaga Java/Angular! CV: jobs@triaged.dev",
+                title="Java/Angular Dev",
+                company="Triaged Corp",
+                url="https://www.linkedin.com/feed/update/urn:li:activity:7500000000000000002/",
+            )
+
+        self.repo.update_recruiter_post_ai(
+            triaged["id"],
+            "vaga_ativa",
+            86,
+            "Strong Fit",
+            "Boa aderência técnica.",
+            "jobs@triaged.dev",
+            ai_model="gemini-test",
+        )
+
+        with TemporaryDirectory() as tmpdir, \
+             patch("backend.tools.painel_ia.PAINEL_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel_ia.save_job_cache"):
+            self.service.save_post_as_interested(untriaged["id"])
+            self.service.save_post_as_interested(triaged["id"])
+
+            saved_jobs = {j["company"]: j for j in self.repo.list_jobs(status="interested")}
+            # Untriaged post must NOT copy keyword match_score (74) as rank_score
+            u_job = saved_jobs["Untriaged Corp"]
+            self.assertIsNone(u_job["rank_score"])
+            self.assertIsNone(u_job["rank_verdict"])
+            self.assertEqual(self.repo.get_latest_evaluation_details([u_job["id"]]), {})
+
+            # AI-triaged post MUST copy real score/verdict + evaluation record + markdown
+            t_job = saved_jobs["Triaged Corp"]
+            self.assertEqual(t_job["rank_score"], 86)
+            self.assertEqual(t_job["rank_verdict"], "Strong Fit")
+            ev_row = self.repo.conn.execute(
+                "SELECT score_global, verdict, ai_provider FROM evaluations WHERE job_id = ?",
+                (t_job["id"],),
+            ).fetchone()
+            self.assertIsNotNone(ev_row)
+            self.assertEqual(ev_row["score_global"], 86)
+            self.assertEqual(ev_row["verdict"], "Strong Fit")
+            self.assertEqual(ev_row["ai_provider"], "gemini-test")
+            self.assertIn(t_job["id"], self.repo.get_latest_evaluation_details([t_job["id"]]))
+            md_files = list(Path(tmpdir).glob("*_avaliacao.md"))
+            self.assertEqual(len(md_files), 1)
+            self.assertIn("86/100", md_files[0].read_text(encoding="utf-8"))
+
+    def test_api_recruiters_triage_evaluates_linkedin_posts_and_handles_missing_consent(self):
+        post = self.service.add_pasted_post(
+            raw_text="Vaga Java & Angular! Enviar currículo para talento@linkedintech.dev",
+            title="Engenheiro Java/Angular",
+            company="LinkedInTech",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7500000000000000009/",
+        )
+        headers = {"X-Painel-Token": self.token}
+
+        no_csrf = self.client.post("/api/recruiters/triage", json={"portal": "linkedin_post"})
+        self.assertEqual(no_csrf.status_code, 403)
+
+        with patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=False):
+            no_consent = self.client.post("/api/recruiters/triage", json={"portal": "linkedin_post"}, headers=headers)
+            self.assertEqual(no_consent.status_code, 400)
+
+        with patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={"AI_CONSENT": "1"}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=True), \
+             patch("backend.tools.painel_ia.is_available", return_value=True), \
+             patch("backend.tools.painel_ia.get_active_model_name", return_value="gemini-triage"), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", return_value={
+                 "classification": "vaga_ativa",
+                 "best_email": "talento@linkedintech.dev",
+                 "score": 88,
+                 "verdict": "Strong Fit",
+                 "summary": "Stack Java e Angular compatível.",
+                 "ai_model": "gemini-triage",
+             }):
+            ok_resp = self.client.post(
+                "/api/recruiters/triage",
+                json={"post_ids": [post["id"]], "portal": "linkedin_post"},
+                headers=headers,
+            )
+
+        self.assertEqual(ok_resp.status_code, 200)
+        body = ok_resp.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["triaged"], 1)
+        self.assertEqual(body["active_jobs"], 1)
+        self.assertEqual(len(body["posts"]), 1)
+        self.assertEqual(body["posts"][0]["ai_score"], 88)
+        self.assertEqual(body["posts"][0]["ai_verdict"], "Strong Fit")
+        self.assertEqual(body["posts"][0]["portal"], "linkedin_post")
+
+        refreshed = self.repo.get_recruiter_post(post["id"])
+        self.assertEqual(refreshed["ai_score"], 88)
+        self.assertIsNotNone(refreshed["ai_evaluated_at"])
 
 
 if __name__ == "__main__":

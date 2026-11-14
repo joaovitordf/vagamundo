@@ -11,7 +11,7 @@ O repositório é estruturado para ser clonado e usado por qualquer colega **sem
 1. **Arquivos pessoais desacoplados via `skip-worktree`:**
    - [CLAUDE.md](../CLAUDE.md), `.claude/skills/job-application-assistant/01-candidate-profile.md` e `.claude/skills/job-scraper/search-queries.md` permanecem limpos com placeholders no `HEAD`. Após personalizar com `/setup`, o fluxo marca `git update-index --skip-worktree` para impedir commits acidentais.
 2. **Regras estritas de `.gitignore`:**
-   - Bloqueiam `.env`, banco `data/vagamundo.db`, planilhas pessoais (`job_search_tracker.csv`), arquivos sob `documents/*` (exceto `.gitkeep` e `README.md`) e PDFs/TeX compilados sob `backend/cv/` e `backend/cover_letters/` (mantendo apenas os modelos `*_example.*`).
+   - Bloqueiam `.env`, banco `data/vagamundo.db`, perfil isolado do navegador do LinkedIn (`data/browser_profile/`), planilhas pessoais (`job_search_tracker.csv`), arquivos sob `documents/*` (exceto `.gitkeep` e `README.md`) e PDFs/TeX compilados sob `backend/cv/` e `backend/cover_letters/` (mantendo apenas os modelos `*_example.*`).
 3. **Auditoria automatizada (`backend/tools/check_privacy.py`):**
    - Verifica segredos (chaves API, tokens, CPF/CNPJ formatados), dados do perfil local carregados em memória sem vazar os valores nos logs e integridade do `.gitignore` / `skip-worktree`.
 4. **Código e Testes agnósticos ao candidato:**

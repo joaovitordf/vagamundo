@@ -1,8 +1,11 @@
 """Scanner service coordinating portal job searches with real-time progress streaming."""
 
 from __future__ import annotations
+import asyncio
 import json
+import logging
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -11,11 +14,11 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from backend.core.constants import LOW_SCORE_AUTO_DISCARD_THRESHOLD, ROOT
 from backend.db.repository import Repository
 from backend.tools import painel, scrape_run
 
-_here = Path(__file__).resolve()
-ROOT = _here.parent.parent.parent if _here.parent.parent.name == "backend" else _here.parent.parent
+logger = logging.getLogger(__name__)
 
 
 def default_results_path(day: str | None = None) -> Path:
@@ -52,26 +55,37 @@ class ScannerService:
         try:
             proc.terminate()
             return True
-        except Exception:
+        except OSError as exc:
+            logger.warning("Failed to terminate scanner subprocess: %s", exc)
             return False
 
     def subscribe(self, q: Any) -> None:
+        try:
+            loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
         with self.lock:
-            self.subscribers.append(q)
+            self.subscribers.append((q, loop))
 
     def unsubscribe(self, q: Any) -> None:
         with self.lock:
-            if q in self.subscribers:
-                self.subscribers.remove(q)
+            self.subscribers = [
+                entry for entry in self.subscribers
+                if (entry[0] if isinstance(entry, tuple) else entry) is not q
+            ]
 
     def _notify(self, event: Dict[str, Any]) -> None:
         with self.lock:
             subs = list(self.subscribers)
-        for s in subs:
+        for entry in subs:
+            q, loop = entry if isinstance(entry, tuple) else (entry, None)
             try:
-                s.put_nowait(event)
-            except Exception:
-                pass
+                if loop is not None and not loop.is_closed():
+                    loop.call_soon_threadsafe(q.put_nowait, event)
+                else:
+                    q.put_nowait(event)
+            except Exception as exc:
+                logger.debug("Failed to notify SSE subscriber: %s", exc)
 
     def status(self) -> Dict[str, Any]:
         with self.lock:
@@ -144,10 +158,10 @@ class ScannerService:
         if query and query.strip():
             cmd.extend(["--query", query.strip()])
 
-        threading.Thread(target=self._run, args=(cmd, focus), daemon=True).start()
+        threading.Thread(target=self._run, args=(cmd,), daemon=True).start()
         return True
 
-    def _run(self, cmd: List[str], focus: str = "all") -> None:
+    def _run(self, cmd: List[str]) -> None:
         stdout_lines = []
         try:
             proc = subprocess.Popen(
@@ -188,8 +202,8 @@ class ScannerService:
                             }
                             copy_prog = dict(self.progress)
                         self._notify({"type": "progress", **copy_prog})
-                    except Exception:
-                        pass
+                    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                        logger.debug("Ignoring malformed scanner PROGRESS line: %s", exc)
                 else:
                     stdout_lines.append(line_str)
 
@@ -217,8 +231,8 @@ class ScannerService:
                         "total_seen": 0,
                         "portals_summary": data.get("meta"),
                     })
-                except Exception:
-                    pass
+                except (OSError, json.JSONDecodeError, sqlite3.Error) as exc:
+                    logger.warning("Failed to record scan_run summary: %s", exc)
         except Exception as exc:
             with self.lock:
                 self.error = str(exc)
@@ -246,22 +260,49 @@ class ScannerService:
         """URLs e pares (empresa, cargo) de vagas já candidatadas, vindos do ledger de candidaturas e da tabela jobs."""
         urls: set = set()
         pairs: set = set()
-        queries = (
-            "SELECT job_url AS url, company, role AS title FROM application_ledger",
-            "SELECT url, company, title FROM jobs WHERE status = 'applied'",
-        )
-        for sql in queries:
-            try:
-                for row in self.repo.conn.execute(sql).fetchall():
-                    u = self._norm_url(row["url"])
-                    if u:
-                        urls.add(u)
-                    c, t = self._norm_text(row["company"]), self._norm_text(row["title"])
-                    if c and t:
-                        pairs.add((c, t))
-            except Exception:
-                continue
+        if hasattr(self.repo, "get_applied_index_rows"):
+            rows = self.repo.get_applied_index_rows()
+        else:
+            rows = []
+            for sql in (
+                "SELECT job_url AS url, company, role AS title FROM application_ledger",
+                "SELECT url, company, title FROM jobs WHERE status = 'applied'",
+            ):
+                try:
+                    rows.extend(dict(r) for r in self.repo.conn.execute(sql).fetchall())
+                except sqlite3.Error as exc:
+                    logger.debug("Legacy/mock conn query skipped in _load_applied_index: %s", exc)
+        for row in rows:
+            u = self._norm_url(row.get("url"))
+            if u:
+                urls.add(u)
+            c, t = self._norm_text(row.get("company")), self._norm_text(row.get("title"))
+            if c and t:
+                pairs.add((c, t))
         return urls, pairs
+
+    def _lookup_job_by_url_or_pair(self, url: str | None, company: str | None, title: str | None) -> dict | None:
+        if hasattr(self.repo, "get_job_by_url"):
+            row = self.repo.get_job_by_url(url) if url else None
+            if row:
+                return row
+            if hasattr(self.repo, "get_job_by_company_title"):
+                return self.repo.get_job_by_company_title(company or "", title or "")
+            return None
+        if url:
+            cur = self.repo.conn.execute("SELECT status, fit FROM jobs WHERE url = ?", (url,))
+            r = cur.fetchone()
+            if r:
+                return dict(r)
+        if company and title:
+            cur = self.repo.conn.execute(
+                "SELECT status, fit FROM jobs WHERE LOWER(TRIM(company)) = LOWER(TRIM(?)) AND LOWER(TRIM(title)) = LOWER(TRIM(?))",
+                (company, title),
+            )
+            r = cur.fetchone()
+            if r:
+                return dict(r)
+        return None
 
     def load_results(self) -> Dict[str, Any]:
         """Load currently available results, filtering already-seen jobs."""
@@ -269,7 +310,8 @@ class ScannerService:
             return {"meta": None, "new": []}
         try:
             data = json.loads(self.out.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Failed to read scanner results %s: %s", self.out, exc)
             return {"meta": None, "new": []}
 
         # Filter against SQLite jobs marked as discarded or interested
@@ -284,20 +326,17 @@ class ScannerService:
                 (self._norm_text(company), self._norm_text(title)) in applied_pairs
             ):
                 continue
-            cur = self.repo.conn.execute(
-                "SELECT id, status, fit FROM jobs WHERE url = ? OR (LOWER(TRIM(company)) = LOWER(TRIM(?)) AND LOWER(TRIM(title)) = LOWER(TRIM(?)))",
-                (url, company or "", title or ""),
-            )
-            row = cur.fetchone()
+            row = self._lookup_job_by_url_or_pair(url, company, title)
             if row and row["status"] in ("interested", "discarded", "applied", "skipped"):
                 continue
             if url:
                 try:
                     scr = painel.get_cached_score(url)
-                except Exception:
+                except (OSError, json.JSONDecodeError, ValueError) as exc:
+                    logger.debug("Could not load cached score for %s: %s", url, exc)
                     scr = None
                 if scr:
-                    if isinstance(scr, dict) and scr.get("score") is not None and scr["score"] < 40:
+                    if isinstance(scr, dict) and scr.get("score") is not None and scr["score"] < LOW_SCORE_AUTO_DISCARD_THRESHOLD:
                         continue
                     j = {**j, "screening": scr}
             filtered.append(j)
@@ -311,7 +350,8 @@ class ScannerService:
                 count = len(data.get("new", []))
                 self.out.unlink(missing_ok=True)
                 return count
-            except Exception:
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Failed to parse pending scanner file before clearing: %s", exc)
                 self.out.unlink(missing_ok=True)
         return 0
 

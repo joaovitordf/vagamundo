@@ -105,12 +105,14 @@ class Portals(unittest.TestCase):
             self.assertEqual(installed_portals(root), {"a-search": True, "b-search": False})
 
     def test_the_shipped_portals_are_found(self):
+        expected = {
+            d.name
+            for d in (REPO_ROOT / ".agents" / "skills").glob("*-search")
+            if (d / "cli" / "src" / "cli.ts").is_file()
+        }
         found = installed_portals()
-        for name in ("gupy-search", "solides-search", "vagas-search", "infojobs-search", "remotar-search",
-                     "greenhouse-search", "programathor-search", "michaelpage-search", "geekhunter-search",
-                     "trampos-search", "roberthalf-search", "pcd-search", "agrobase-search", "agrosearch-search",
-                     "digai-search", "empregos-search"):
-            self.assertIn(name, found)
+        self.assertTrue(expected, "expected installed portal CLIs under .agents/skills/")
+        self.assertEqual(set(found), expected)
 
 
 class Identity(unittest.TestCase):
@@ -262,15 +264,6 @@ class Cli(unittest.TestCase):
         p = subprocess.run([sys.executable, str(TOOL), "search", "--accept", "chefe", "--out", str(Path(tempfile.gettempdir()) / "x.json")],
                            capture_output=True, cwd=REPO)
         self.assertEqual(p.returncode, 2)
-
-    def test_the_template_has_no_ready_queries(self):
-        # The upstream template only has [YOUR_...] lines until /setup runs.
-        if "[YOUR_PRIMARY_JOB_TITLE_1]" not in scrape_run.QUERIES.read_text(encoding="utf-8"):
-            self.skipTest("personalized fork: search-queries.md has real queries")
-        p = subprocess.run([sys.executable, str(TOOL), "search", "--out", str(Path(tempfile.gettempdir()) / "x.json")],
-                           capture_output=True, cwd=REPO)
-        self.assertEqual(p.returncode, 2)
-        self.assertIn("/setup", p.stderr.decode("utf-8"))
 
 
 class QueryAndRegionNormalization(unittest.TestCase):

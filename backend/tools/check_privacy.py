@@ -63,6 +63,7 @@ FORBIDDEN_TRACKED = [
     (re.compile(r"(^|/)(salary_data\.json|job_search_tracker\.csv|\.privacy-patterns)$"), "dado pessoal local"),
     (re.compile(r"(^|/)documents/(cv|linkedin|diplomas|references|projects|perfil|postings|applications|interview)/(?!\.gitkeep$)"),
      "documento pessoal"),
+    (re.compile(r"(^|/)data/browser_profile/"), "perfil de navegador com sessão/cookies"),
 ]
 
 # Caminhos de exemplo que o .gitignore precisa cobrir (`git check-ignore`).
@@ -71,6 +72,7 @@ MUST_BE_IGNORED = [
     "backend/documents/cv/curriculo.docx", "backend/documents/perfil/respostas.json",
     "backend/documents/comprovante.pdf", "backend/documents/comprovante.docx",
     "backend/documents/applications/_painel/x_avaliacao.md", "backend/cv/main_empresa_cargo.tex",
+    "data/browser_profile/Default/Cookies",
 ]
 
 

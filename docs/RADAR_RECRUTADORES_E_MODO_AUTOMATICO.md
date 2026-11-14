@@ -16,6 +16,7 @@ A coleta consolida múltiplas origens com cache temporário por feed (`_get_cach
 3. **GitHub Vagas BR (`sync_from_github_repos`):** Lê *issues* abertas de repositórios públicos listados em `RECRUITER_GITHUB_REPOS` (suporta opcionalmente `GITHUB_TOKEN` ou `GH_TOKEN` no ambiente para ampliar cota da API do GitHub).
 4. **Remotive (`sync_from_remotive`):** Consulta vagas remotas públicas em `https://remotive.com/api/remote-jobs` que contenham endereço de contato direto.
 5. **Coleta em portais ao vivo (`sync_from_live_portals`) e colagem manual (`add_pasted_post`):** Permite acionar varreduras focadas por palavra-chave ou colar manualmente um anúncio (ex.: post do LinkedIn) via `POST /api/recruiters/paste`.
+6. **Publicações do LinkedIn com perfil isolado (`sync_from_linkedin_browser` / `backend/core/linkedin_browser.py`):** Coleta publicações de contratação no LinkedIn usando sessão local isolada em `data/browser_profile/` (fora do Git), com filtro limpo por palavra-chave e `datePosted` (`past-24h`, `past-week`, `past-month`), suporte a triagem sob demanda via `POST /api/recruiters/triage` e importação automática também para publicações válidas com link direto sem e-mail literal.
 
 ### 1.2 Higienização de E-mails e Trecho de Contexto
 - `extract_clean_emails(text)` remove endereços inválidos, placeholders genéricos, sufixos truncados ou arquivos de imagem/extensões confundidas com e-mail.

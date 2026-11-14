@@ -66,12 +66,9 @@
           [ngModel]="statusFilter()"
           (ngModelChange)="statusFilter.set($event)">
           <option value="all">Todos os status</option>
-          <option value="applied">Enviada</option>
-          <option value="screening">Triagem</option>
-          <option value="interview">Entrevista</option>
-          <option value="offer">Proposta</option>
-          <option value="hired">Contratação</option>
-          <option value="rejected">Não seguiu</option>
+          @for (opt of statusOptions; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+          }
         </select>
       </div>
 
@@ -227,7 +224,7 @@
               <td class="cell-role">{{ app.role || app.title || app.job_title || '-' }}</td>
               <td class="cell-channel">
                 <div class="channel-cell-wrap">
-                  <span class="portal-badge">{{ getPortalLabel(app.channel || app.portal) }}</span>
+                  <app-portal-badge [portal]="app.channel || app.portal"></app-portal-badge>
                   @if (app.contact_channel === 'recruiter_email' || app.contacted_email) {
                     <span class="direct-email-badge" title="Candidatura enviada por e-mail direto de recrutador">
                       <i class="bi bi-envelope-at"></i> E-mail direto
@@ -537,13 +534,9 @@
             <div class="form-group">
               <label for="appStatus">Novo Status da Candidatura</label>
               <select id="appStatus" [(ngModel)]="formStatus" class="form-control">
-                <option value="applied">Enviada</option>
-                <option value="screening">Triagem</option>
-                <option value="interview">Em Entrevista</option>
-                <option value="offer">Proposta Recebida</option>
-                <option value="hired">Contratação</option>
-                <option value="rejected">Não seguiu</option>
-                <option value="no_response">Sem resposta</option>
+                @for (opt of statusOptions; track opt.value) {
+                  <option [value]="opt.value">{{ opt.label }}</option>
+                }
               </select>
             </div>
           </div>

@@ -118,7 +118,7 @@ import unicodedata
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from pathlib import Path
 
@@ -613,7 +613,7 @@ def build_args(args: list, jobage: int) -> list:
 
 
 
-def run_cli(portal: str, args: list):
+def run_cli(portal: str, args: list, timeout: int = CALL_TIMEOUT):
 
     """(results, None) or (None, error) for one `search` call."""
 
@@ -623,7 +623,7 @@ def run_cli(portal: str, args: list):
 
             ["bun", "run", f".agents/skills/{portal}/cli/src/cli.ts", "search", *args],
 
-            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=CALL_TIMEOUT,
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
 
         )
 
@@ -744,7 +744,13 @@ def collect(calls, portals: dict, seen: SeenIndex, accept, jobage: int, runner=r
 
             if jobage and jobage < 9999 and r.get("date"):
                 cutoff_date = (date.today() - timedelta(days=jobage)).isoformat()
-                if str(r["date"])[:10] < cutoff_date:
+                raw_date_str = str(r["date"]).strip()[:10]
+                if len(raw_date_str) == 10 and raw_date_str[2:3] == "/" and raw_date_str[5:6] == "/":
+                    try:
+                        raw_date_str = datetime.strptime(raw_date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+                    except ValueError:
+                        raw_date_str = ""
+                if raw_date_str and raw_date_str[:4].isdigit() and raw_date_str < cutoff_date:
                     continue
 
             if seen.match(company, title, url):
@@ -959,8 +965,8 @@ def record(rows: list, seen_path: Path = SEEN, today: str | None = None) -> dict
                 "gaps": entry.get("gaps"),
             })
         repo.close()
-    except Exception:
-        pass
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"scrape_run: sqlite mirror failed: {exc}", file=sys.stderr)
 
     return {"added": added, "already_seen": kept, "invalid": invalid, "total": len(state["seen"])}
 
@@ -1044,6 +1050,23 @@ def summary(result: dict) -> str:
 
 
 
+def _default_search_query(fallback: str = "analista") -> str:
+    """Resolve fallback search query from candidate answers (cargos -> competencias_busca -> fallback)."""
+    if LOCAL_ANSWERS.exists():
+        try:
+            ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
+            if isinstance(ans, dict):
+                for key in ("cargos", "competencias_busca"):
+                    vals = ans.get(key)
+                    if isinstance(vals, list):
+                        first = next((str(v).strip() for v in vals if str(v).strip()), "")
+                        if first:
+                            return first
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+    return fallback
+
+
 def _filter_calls_by_region(
     calls: list[tuple],
     region: str | None,
@@ -1059,14 +1082,7 @@ def _filter_calls_by_region(
     filtered = [c for c in calls if c[1] in region_set]
     if not filtered and not has_explicit_portal:
         resolved_installed = installed if installed is not None else installed_portals()
-        default_q = default_query or "desenvolvedor"
-        if not default_query and LOCAL_ANSWERS.exists():
-            try:
-                ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
-                if ans.get("cargos"):
-                    default_q = ans["cargos"][0]
-            except Exception:
-                pass
+        default_q = default_query or _default_search_query()
         for p in sorted(region_set):
             if resolved_installed.get(p):
                 extra_cargs = ["-q", default_q]
@@ -1207,22 +1223,15 @@ def main(argv=None) -> int:
             elif "--query" in cargs:
                 default_q = cargs[cargs.index("--query") + 1]
                 break
-        if not default_q and LOCAL_ANSWERS.exists():
-            try:
-                ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
-                if ans.get("cargos"):
-                    default_q = ans["cargos"][0]
-            except Exception:
-                pass
         if not default_q:
-            default_q = "desenvolvedor"
+            default_q = _default_search_query()
 
         for tp in target_portals:
             if not any(c[1] == tp for c in filtered_calls):
                 if tp in installed:
                     extra_cargs = ["-q", default_q]
                     if tp == "linkedin-search":
-                        extra_cargs.extend(["-l", "Brazil"])
+                        extra_cargs.extend(["-l", REGION_LINKEDIN_LOCATION.get(getattr(args, "region", None) or "brasil", "Brazil")])
                     filtered_calls.append((1, tp, extra_cargs))
 
         calls = filtered_calls

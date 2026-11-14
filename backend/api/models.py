@@ -1,8 +1,8 @@
 """Pydantic schemas for Vagamundo v2 API."""
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TokenResponse(BaseModel):
@@ -11,15 +11,14 @@ class TokenResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     priority: Optional[List[int]] = Field(default_factory=list, alias="priorities")
-    jobage: int = 14
+    jobage: int = Field(default=14, ge=1, le=365)
     focus: str = "all"
     portals: Optional[List[str]] = None
     region: str = "all"
     all: bool = False
     query: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class SearchProgress(BaseModel):
@@ -61,13 +60,17 @@ class BatchScreenRequest(BaseModel):
     urls: List[str]
 
 
-class EvaluateRequest(BaseModel):
-    ids: Optional[List[str]] = Field(default_factory=list)
-    urls: Optional[List[str]] = Field(default_factory=list)
+class ProviderSettingsInput(BaseModel):
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+    clear_key: Optional[bool] = None
+    base_url: Optional[str] = None
 
 
 class SettingsSaveRequest(BaseModel):
     provider: Optional[str] = None
+    consent: Optional[bool] = None
+    providers: Optional[Dict[str, ProviderSettingsInput]] = None
     model: Optional[str] = None
     key: Optional[str] = None
     base_url: Optional[str] = None
@@ -77,14 +80,28 @@ class SettingsSaveRequest(BaseModel):
     openai_base_url: Optional[str] = None
     gemini_key: Optional[str] = None
     gemini_model: Optional[str] = None
+    claude_key: Optional[str] = None
     anthropic_key: Optional[str] = None
     anthropic_model: Optional[str] = None
 
+    model_config = ConfigDict(extra="allow")
+
+
+class ProfileSaveRequest(BaseModel):
+    answers: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+    def to_answers_dict(self) -> Dict[str, Any]:
+        """Extract questionnaire fields whether nested under `answers` or sent flat."""
+        if isinstance(self.answers, dict):
+            return self.answers
+        return self.model_dump(exclude={"answers"})
+
 
 class ClaudeStepRequest(BaseModel):
-    step: str
+    step: Literal["perfil", "avaliar", "curriculo", "carta", "redigir", "entrevista"]
     url: Optional[str] = None
-    confirm: bool = False
 
 
 class UploadFileRequest(BaseModel):
@@ -127,6 +144,10 @@ class AppliedRequest(BaseModel):
     contacted_email: Optional[str] = None
 
 
+class BatchAppliedRequest(BaseModel):
+    items: List[AppliedRequest]
+
+
 class RecruiterContactedRequest(BaseModel):
     email: Optional[str] = None
     notes: Optional[str] = None
@@ -157,6 +178,22 @@ class PasteRecruiterPostRequest(BaseModel):
     company: Optional[str] = None
     location: Optional[str] = None
     work_model: Optional[str] = None
+    published_date: Optional[str] = None
+
+
+class PasteRecruiterBatchItem(BaseModel):
+    raw_text: str
+    url: Optional[str] = None
+    title: Optional[str] = None
+    company: Optional[str] = None
+    location: Optional[str] = None
+    work_model: Optional[str] = None
+    published_date: Optional[str] = None
+
+
+class PasteRecruiterBatchRequest(BaseModel):
+    items: Optional[List[PasteRecruiterBatchItem]] = None
+    raw_batch_text: Optional[str] = None
 
 
 class AutoModeStartRequest(BaseModel):
@@ -198,3 +235,18 @@ class RecruiterAutoConfigRequest(BaseModel):
     min_score: Optional[int] = None
     continuous: Optional[bool] = None
     cooldown_seconds: Optional[int] = None
+
+
+class LinkedInWorkerConfigRequest(BaseModel):
+    enabled: Optional[bool] = None
+    headless: Optional[bool] = None
+    cooldown_minutes: Optional[int] = None
+    max_daily_searches: Optional[int] = None
+    max_scrolls: Optional[int] = None
+
+
+class RecruiterTriageRequest(BaseModel):
+    post_ids: Optional[List[int]] = None
+    q: Optional[str] = None
+    portal: Optional[str] = None
+    limit: int = 12

@@ -97,6 +97,22 @@
         </div>
       </div>
 
+      <!-- Filtro de Portal -->
+      <div class="filter-group">
+        <label class="filter-label" for="mi-portal-filter">
+          <i class="bi bi-diagram-3"></i> Portal:
+        </label>
+        <select id="mi-portal-filter"
+          class="vc-select"
+          [ngModel]="portalFilter()"
+          (ngModelChange)="portalFilter.set($event)">
+          <option value="all">Todos</option>
+          @for (p of availablePortals(); track p) {
+            <option [value]="p">{{ getPortalName(p) }}</option>
+          }
+        </select>
+      </div>
+
       <!-- Busca textual -->
       <div class="filter-group search-group">
         <label class="filter-label" for="mi-search-text">
@@ -149,6 +165,9 @@
           @if (dateRange() !== 'all') {
             <strong>{{ dateCriterion() === 'saved' ? 'Adicionada em' : 'Publicada em' }} ({{ dateRange() === 'custom' ? ((customStartDate() || '...') + ' até ' + (customEndDate() || '...')) : dateRange() }})</strong>
           }
+          @if (portalFilter() !== 'all') {
+            &bull; Portal: <strong>{{ getPortalName(portalFilter()) }}</strong>
+          }
           @if (searchTerm()) {
             &bull; Busca: "<strong>{{ searchTerm() }}</strong>"
           }
@@ -178,35 +197,126 @@
     </button>
   </div>
 } @else {
+  <div class="vc-panel selection-toolbar">
+    <div class="selection-toolbar__row">
+      <div class="selection-toolbar__left">
+        <button type="button"
+          class="btn-select-all"
+          [class.active]="isAllVisibleSelected()"
+          (click)="toggleSelectAllVisible()"
+          [disabled]="bulkBusy()"
+          [title]="isAllVisibleSelected() ? 'Desmarcar todas as vagas visíveis' : 'Selecionar todas as vagas visíveis na lista'">
+          <i class="bi" [class.bi-check-square-fill]="isAllVisibleSelected()" [class.bi-square]="!isAllVisibleSelected()"></i>
+          {{ isAllVisibleSelected() ? 'Desmarcar todas' : 'Selecionar todas (' + filteredJobs().length + ')' }}
+        </button>
+
+        <span class="selection-count-pill" [class.has-selection]="selectedVisibleCount() > 0">
+          {{ selectedVisibleCount() }} {{ selectedVisibleCount() === 1 ? 'selecionada' : 'selecionadas' }}
+        </span>
+
+        @if (selectedVisibleCount() > 0 && !isAllVisibleSelected()) {
+          <button type="button"
+            class="btn-clear-selection"
+            (click)="clearSelection()"
+            [disabled]="bulkBusy()"
+            title="Limpar seleção atual">
+            <i class="bi bi-x-lg"></i> Limpar
+          </button>
+        }
+      </div>
+
+      <div class="selection-toolbar__actions">
+        <button type="button"
+          class="btn-bulk-reevaluate"
+          (click)="reevaluateSelected()"
+          [disabled]="selectedVisibleCount() === 0 || bulkBusy()"
+          title="Executar nova avaliação completa com IA nas vagas selecionadas">
+          @if (reevalRunning()) {
+            <span class="vc-spinner"></span> Reavaliando…
+          } @else {
+            <i class="bi bi-stars"></i> Reavaliar com IA{{ selectedVisibleCount() > 0 ? ' (' + selectedVisibleCount() + ')' : '' }}
+          }
+        </button>
+
+        <button type="button"
+          class="btn-bulk-apply"
+          (click)="markSelectedApplied()"
+          [disabled]="selectedVisibleCount() === 0 || bulkBusy()"
+          title="Enviar vagas selecionadas para a aba Candidaturas">
+          <i class="bi bi-send-check"></i> Já me candidatei{{ selectedVisibleCount() > 0 ? ' (' + selectedVisibleCount() + ')' : '' }}
+        </button>
+
+        <button type="button"
+          class="btn-bulk-discard"
+          (click)="discardSelected()"
+          [disabled]="selectedVisibleCount() === 0 || bulkBusy()"
+          title="Mover vagas selecionadas para Descartadas">
+          <i class="bi bi-trash3"></i> Descartar{{ selectedVisibleCount() > 0 ? ' (' + selectedVisibleCount() + ')' : '' }}
+        </button>
+      </div>
+    </div>
+
+    @if (reevalRunning()) {
+      <div class="reeval-progress-box" aria-live="polite">
+        <div class="reeval-progress-meta">
+          <span>
+            <span class="vc-spinner"></span>
+            Reavaliando <strong>{{ reevalCurrent() }}</strong> de <strong>{{ reevalTotal() }}</strong>
+            @if (reevalCurrentTitle()) {
+              &mdash; {{ reevalCurrentTitle() }}
+            }
+            @if (reevalErrors() > 0) {
+              ({{ reevalErrors() }} com erro)
+            }
+          </span>
+          <span class="reeval-progress-right">
+            @if (reevalProvider()) {
+              <span class="reeval-provider-chip"><i class="bi bi-cpu"></i> {{ reevalProvider() }}</span>
+            }
+            <strong>{{ reevalPercent() }}%</strong>
+          </span>
+        </div>
+        <div class="reeval-progress-track">
+          <div class="reeval-progress-fill" [style.width.%]="reevalPercent()"></div>
+        </div>
+      </div>
+    } @else if (bulkStatusMsg()) {
+      <div class="bulk-status-banner" aria-live="polite">
+        <i class="bi bi-check-circle-fill"></i> {{ bulkStatusMsg() }}
+      </div>
+    }
+  </div>
+
   <div class="cards-grid">
     @for (job of filteredJobs(); track job.url) {
-      <article class="job-card">
+      <article class="job-card" [class.job-card--selected]="isSelected(job.url)">
         <div class="job-card__header">
-          <div>
-            <h3 class="job-card__title">{{ job.title }}</h3>
-            <p class="job-card__company">
-              {{ job.company || 'Empresa não informada' }} &bull; {{ getPortalName(job.portal) }}
-            </p>
+          <div class="job-card__title-group">
+            <label class="job-select-wrap" [title]="isSelected(job.url) ? 'Desmarcar vaga' : 'Selecionar vaga'">
+              <input type="checkbox"
+                class="job-select-checkbox"
+                [checked]="isSelected(job.url)"
+                (change)="toggleJobSelection(job.url, $event)"
+                [attr.aria-label]="'Selecionar vaga ' + (job.title || '')">
+            </label>
+            <div>
+              <h3 class="job-card__title">{{ job.title }}</h3>
+              <p class="job-card__company">
+                <span>{{ job.company || 'Empresa não informada' }}</span>
+                <app-portal-badge [portal]="job.portal" [compact]="true"></app-portal-badge>
+              </p>
+            </div>
           </div>
-          <div class="job-card__badges">
-            @if (job.auto_promoted) {
-              <span class="badge-auto-promoted"
-                    [title]="job.auto_origin === 'recruiter' ? 'Promovida automaticamente pelo Modo Automático (Recrutadores)' : 'Promovida automaticamente pelo Modo Automático'">
-                <i class="bi bi-robot"></i> Auto{{ job.auto_origin === 'recruiter' ? ' · Recrutador' : '' }}
-              </span>
-            }
-            @if (job.screening && job.screening.score !== undefined && job.screening.score !== null) {
-              <span class="vc-badge-fit"
-                [class.vc-badge-fit--high]="job.screening.score >= 75"
-                [class.vc-badge-fit--med]="job.screening.score >= 50 && job.screening.score < 75"
-                [class.vc-badge-fit--low]="job.screening.score < 50">
-                {{ job.screening.score }}/100 &bull; {{ job.screening.verdict || (job.screening.score >= 75 ? 'Alta Afinidade' : (job.screening.score >= 50 ? 'Média Afinidade' : 'Baixa Afinidade')) }}
-              </span>
-            }
-          </div>
+          <app-job-badges
+            containerClass="job-card__badges"
+            [screening]="job.screening"
+            [autoPromoted]="!!job.auto_promoted"
+            [autoOrigin]="job.auto_origin"
+            modelTitle="Modelo de IA que avaliou/triou esta vaga">
+          </app-job-badges>
         </div>
 
-        @if (job.recruiter_emails?.length) {
+        @if (job.recruiter_emails && job.recruiter_emails.length) {
           <div class="recruiter-emails-banner">
             <span class="recruiter-emails-label"><i class="bi bi-envelope-at"></i> E-mail direto:</span>
             @for (email of job.recruiter_emails; track email) {

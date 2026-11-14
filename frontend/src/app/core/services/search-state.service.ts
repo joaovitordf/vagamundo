@@ -107,7 +107,7 @@ export class SearchStateService {
   readonly triageMedFitCount = signal<number>(0);
   readonly triageLowFitCount = signal<number>(0);
   readonly triageErrorCount = signal<number>(0);
-  readonly triageProviderLabel = signal<string>('Google Gemini (Antigravity)');
+  readonly triageProviderLabel = signal<string>('IA ativa');
 
   constructor() {
     this.restoreFromStorage();

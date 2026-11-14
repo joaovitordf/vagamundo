@@ -1,6 +1,7 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
+const { findPython } = require('./install');
 
 console.log('\x1b[35m%s\x1b[0m', '==================================================');
 console.log('\x1b[35m%s\x1b[0m', '   🚀 Vagamundo - Iniciando Ambiente Completo     ');
@@ -8,21 +9,44 @@ console.log('\x1b[35m%s\x1b[0m', '==============================================
 
 // 1. Libera apenas processos LISTENING nas portas 8765 (Python) e 4200 (Angular)
 function killPort(port) {
-  try {
-    const stdout = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8' });
-    const lines = stdout.trim().split('\n');
-    const killedPids = new Set();
-    for (const line of lines) {
-      if (!line.includes('LISTENING')) continue;
-      const parts = line.trim().split(/\s+/);
-      const pid = parseInt(parts[parts.length - 1], 10);
-      if (pid && pid > 0 && pid !== process.pid && !killedPids.has(pid)) {
-        killedPids.add(pid);
-        try {
-          execSync(`taskkill /PID ${pid} /F /T`, { stdio: 'ignore' });
-        } catch (_) {}
+  if (process.platform === 'win32') {
+    try {
+      const stdout = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8' });
+      const lines = stdout.trim().split('\n');
+      const killedPids = new Set();
+      for (const line of lines) {
+        if (!line.includes('LISTENING')) continue;
+        const parts = line.trim().split(/\s+/);
+        const pid = parseInt(parts[parts.length - 1], 10);
+        if (pid && pid > 0 && pid !== process.pid && !killedPids.has(pid)) {
+          killedPids.add(pid);
+          try {
+            execSync(`taskkill /PID ${pid} /F /T`, { stdio: 'ignore' });
+          } catch (_) {}
+        }
       }
+    } catch (_) {}
+    return;
+  }
+
+  // Linux / macOS: tenta lsof primeiro e recorre a fuser caso disponível
+  try {
+    const out = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`, { encoding: 'utf8' }).trim();
+    if (out) {
+      for (const rawPid of out.split(/\s+/)) {
+        const pid = parseInt(rawPid, 10);
+        if (pid && pid > 0 && pid !== process.pid) {
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch (_) {}
+        }
+      }
+      return;
     }
+  } catch (_) {}
+
+  try {
+    execSync(`fuser -k ${port}/tcp >/dev/null 2>&1 || true`, { stdio: 'ignore' });
   } catch (_) {}
 }
 
@@ -30,17 +54,30 @@ killPort(8765);
 killPort(4200);
 
 // 2. Inicia o Backend Python (com auto-restart caso caia inesperadamente)
-const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+const py = findPython() || { cmd: process.platform === 'win32' ? 'python' : 'python3', prefixArgs: [] };
 let backend = null;
 let isCleaningUp = false;
 
 function startBackend() {
   if (isCleaningUp) return;
   console.log('\x1b[36m[backend]\x1b[0m Iniciando servidor FastAPI / Uvicorn (porta 8765)...');
-  backend = spawn(pythonCmd, ['-m', 'uvicorn', 'backend.api.app:app', '--port', '8765', '--host', '127.0.0.1'], {
-    cwd: __dirname,
-    stdio: ['pipe', 'pipe', 'pipe']
-  });
+  backend = spawn(
+    py.cmd,
+    [
+      ...py.prefixArgs,
+      '-m', 'uvicorn', 'backend.api.app:app',
+      '--port', '8765', '--host', '127.0.0.1',
+      '--reload',
+      '--reload-dir', 'backend/api',
+      '--reload-dir', 'backend/core',
+      '--reload-dir', 'backend/db',
+      '--reload-dir', 'backend/tools',
+    ],
+    {
+      cwd: __dirname,
+      stdio: ['pipe', 'pipe', 'pipe']
+    }
+  );
 
   backend.stdout.on('data', (data) => {
     const msg = data.toString();

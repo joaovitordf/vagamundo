@@ -1,5 +1,5 @@
 ---
-framework_version: 1.3.1
+framework_version: 1.3.2
 ---
 
 # Método de avaliação de vagas
@@ -9,7 +9,7 @@ framework_version: 1.3.1
 > **Vocabulário fixo.** Os vereditos `PASS`/`FAIL`/`FLAG`, as faixas `Strong Fit`, `Good Fit`,
 > `Moderate Fit`, `Weak Fit` e `Poor Fit` e os nomes de campo (`language_gate`, `location_verdict`
 > etc.) ficam em inglês porque são gravados como dados no `seen_jobs.json` e lidos por
-> `tools/rank_state.py`. Ao falar com a pessoa, traduza à vontade; ao gravar, use o código.
+> `backend/tools/rank_state.py`. Ao falar com a pessoa, traduza à vontade; ao gravar, use o código.
 
 ## Filtro de elegibilidade — antes da pontuação
 
@@ -141,7 +141,7 @@ avaliações, notícias, conexões no LinkedIn e contatos que conheçam a empres
 
 **Vale o texto da vaga, não o rótulo do portal.** O "Remoto" da Gupy e o filtro de remoto do
 LinkedIn já deixaram passar vagas cujo próprio texto dizia "híbrida (4x presenciais)" ou
-"Híbrido" no título. Rode `python3 tools/posting_signals.py` no texto da vaga: ele aponta o
+"Híbrido" no título. Rode `python3 backend/tools/posting_signals.py` no texto da vaga: ele aponta o
 modelo de trabalho que o texto declara (híbrido, presencial, remoto com exigência de residência,
 remoto com idas ao escritório), citando o trecho, e também seleção interna, vaga exclusiva,
 intermediário e senioridade fora da `Senioridade-alvo` do perfil. Seleção interna ("só para
@@ -232,7 +232,7 @@ salarial" de `08-application-forms.md`.
 Se a ferramenta de consulta salarial estiver configurada (existe `salary_data.json`), consulte a
 empresa:
 ```
-python salary_lookup.py "<Nome da empresa>" --json
+python backend/salary_lookup.py "<Nome da empresa>" --json
 ```
 
 Se a cidade for conhecida pela vaga, acrescente `--city "<Cidade>"` para afinar.

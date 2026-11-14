@@ -285,7 +285,7 @@ describe('MeInteressamComponent', () => {
           saved_at: '2026-11-11',
           auto_promoted: true,
           auto_origin: 'recruiter',
-          recruiter_emails: ['caldasvieiramarcos@gmail.com'],
+          recruiter_emails: ['recruiter@example.com'],
           screening: {
             score: 82,
             verdict: 'Good Fit',

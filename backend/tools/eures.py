@@ -334,24 +334,38 @@ def is_tech_role(title: str, desc: str = "") -> bool:
     return any(k in t_low for k in TECH_TITLE_KEYWORDS)
 
 
+def _queries_expect_tech(queries: list[str]) -> bool:
+    """Retorna True quando as palavras-chave ativas apontam para vagas técnicas/TI."""
+    if not queries:
+        return True
+    joined = " ".join(str(q or "").lower() for q in queries)
+    return any(kw.strip() in joined for kw in TECH_TITLE_KEYWORDS)
+
+
 def _profile_eures_keywords() -> list[str]:
-    """Extrai palavras-chave técnicas do perfil ativo com fallback neutro."""
+    """Extrai palavras-chave do perfil ativo (qualquer área) com fallback neutro."""
     try:
         from backend.tools import painel_perfil
-        areas = painel_perfil.extract_cv_areas()
+        answers = painel_perfil.load_answers() or {}
+        raw_terms: list[str] = []
+        for field in ("cargos", "palavras_chave_sorteio"):
+            val = answers.get(field)
+            if isinstance(val, list):
+                raw_terms.extend(str(item or "").strip() for item in val)
+        if not raw_terms:
+            for area in painel_perfil.extract_cv_areas():
+                raw_terms.extend(str(kw or "").strip() for kw in area.get("keywords", []))
         kws: list[str] = []
         seen: set[str] = set()
-        for area in areas:
-            for kw in area.get("keywords", []):
-                clean = str(kw or "").strip()
-                if clean and clean.lower() not in seen:
-                    seen.add(clean.lower())
-                    kws.append(clean)
+        for clean in raw_terms:
+            if clean and clean.lower() not in seen:
+                seen.add(clean.lower())
+                kws.append(clean)
         if kws:
             return kws[:8]
     except (ImportError, OSError, AttributeError, ValueError):
         pass
-    return ["Software Engineer", "Backend", "Data Engineer", "Machine Learning", "Python"]
+    return ["Software Engineer", "Project Manager", "Data Analyst", "Product"]
 
 
 def _accepted_eures_languages() -> set[str]:
@@ -483,13 +497,14 @@ def evaluate_eures_job(title: str, desc: str, location: str, languages: list) ->
 
 
 def fetch_eures_for_panel(focus: str = "all", max_per_query: int = 15) -> list[dict]:
-    """Busca vagas técnicas no EURES para alimentar o painel unificado usando termos do perfil."""
+    """Busca vagas no EURES para alimentar o painel unificado usando termos do perfil."""
     profile_kws = _profile_eures_keywords()
     if focus and focus not in ("all", "europa"):
         queries = [focus] + [k for k in profile_kws[:3] if k.lower() != focus.lower()]
     else:
         queries = profile_kws[:5]
 
+    enforce_tech = _queries_expect_tech(queries)
     seen_urls: set[str] = set()
     collected: list[dict] = []
 
@@ -499,7 +514,7 @@ def fetch_eures_for_panel(focus: str = "all", max_per_query: int = 15) -> list[d
             url = job.get("url")
             if not url or url in seen_urls:
                 continue
-            if not is_tech_role(job.get("title", ""), job.get("description", "")):
+            if enforce_tech and not is_tech_role(job.get("title", ""), job.get("description", "")):
                 continue
             seen_urls.add(url)
             collected.append(job)

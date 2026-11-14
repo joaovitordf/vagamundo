@@ -17,35 +17,18 @@ _CALIBRATION_ANCHORS = """CALIBRAÇÃO POR ÂNCORAS (USE COMO REFERÊNCIA DE NOT
 - Âncora C (Vaga Sênior/Lead/Staff ou 5+ anos exclusivos sem trilha Júnior/Pleno, mesmo com stack idêntica): technical ~85, experience <= 20, behavioral ~70, career <= 35 -> teto máximo 45 (Weak Fit)."""
 
 _LOW_YIELD_SEARCH_TERMS: set[str] = {
-    "bootstrap",
     "css3",
     "html5",
-    "rxjs",
-    "chart.js",
-    "hls.js",
-    "vitest",
-    "maven",
-    "gradle",
     "git",
     "github",
     "gitlab",
-    "sqlite",
-    "jpa",
-    "jsf",
-    "primefaces",
-    "openlayers",
-    "vercel",
-    "grafana",
-    "docker compose",
+    "office",
+    "pacote office",
+    "excel básico",
     "componentes reutilizáveis",
     "componentes reutilizaveis",
-    "arquitetura limpa",
     "visualização",
     "visualizacao",
-    "rest apis",
-    "arquitetura front-end modular",
-    "sistemas erp corporativos",
-    "ocr e processamento de imagens",
 }
 
 
@@ -594,7 +577,7 @@ CATEGORIAS OBRIGATÓRIAS ("classification"):
 REGRAS E RUBRICA PARA `"vaga_ativa"` (SUBNOTAS `technical` 30%, `experience` 25%, `behavioral` 15%, `career` 30%):
 - **Múltiplas vagas no mesmo anúncio:** se a publicação listar 2 ou mais cargos/trilhas (ex.: Backend Rust e Machine Learning Python/Frontend Júnior), avalie e pontue considerando a vaga com **MAIOR aderência** ao perfil (não penalize o post por requisitos exclusivos de uma segunda trilha).
 - Se exigir exclusivamente senioridade acima da faixa-alvo do perfil (Sênior/5+ anos, Lead, Staff, Principal, Founding sênior ou Gerência quando não houver abertura Júnior/Pleno/New Grad compatível), atribua `experience` <= 25 (teto máximo **45 "Weak Fit"**).
-- Se exigir linguagem/ecossistema central totalmente ausente para posição dedicada (ex.: Rust, C++, Swift/iOS nativo, Ruby/Rails como stack principal exclusiva), teto máximo é **55**. Porém, em vagas Júnior, Pleno ou New Grad que peçam um framework irmão dentro de um ecossistema já dominado (ex.: React/Vue quando o perfil domina Angular + TypeScript + SPA e atende backend/IA/SQL), não aplique teto 55: pontue na faixa **65–78** sinalizando a adaptação de framework em `gaps` e no resumo.
+- Se exigir especialidade ou ecossistema central totalmente ausente do perfil como requisito exclusivo (quando não houver base equivalente compatível), teto máximo é **55**. Porém, em vagas Júnior, Pleno ou equivalentes que peçam uma ferramenta ou framework irmão dentro de um ecossistema já dominado pelo perfil, não aplique teto 55: pontue na faixa **65–78** sinalizando a adaptação necessária em `gaps` e no resumo.
 - Avalie também os gates `eligibility` (`PASS | FAIL_INTERNAL | FAIL_AFFIRMATIVE | FAIL_VISA | FLAG`), `language` (`PASS | FLAG | FAIL`) + `language_note`, e `location` (`PASS | FLAG | FAIL` — presencial/híbrida fora das praças aceitas ou remota restrita US/EU-only -> `FAIL`).
 - Se for `"banco_talentos"` ou `"nao_e_vaga"`, retorne `"score": 0`, `"verdict": "Poor Fit"` e subnotas zeradas.
 

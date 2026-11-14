@@ -122,6 +122,7 @@ class TestFastAPI(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertIn("areas", data)
+        self.assertIn(data.get("source"), ("profile", "fallback"))
 
     def test_profile_endpoint(self):
         resp = self.client.get("/api/profile")

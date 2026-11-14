@@ -21,30 +21,30 @@ Mantenha esse conteúdo no contexto durante todo o comando. Não releia esses ar
 
 Examine toda fonte disponível atrás de "itens de experiência" — qualquer coisa que indique competência, conhecimento ou habilidade. Processe as fontes nesta ordem.
 
-### 1a. documents/cv/
-Leia todos os arquivos em `documents/cv/`. Extraia:
+### 1a. backend/documents/cv/
+Leia todos os arquivos em `backend/documents/cv/`. Extraia:
 - Todo curso ou disciplina listado (inclusive disciplinas da faculdade e cursos online)
 - Toda certificação citada, com emissor e data
 - Todo tópico de responsabilidade profissional (ferramentas, métodos, resultados)
 - Todo projeto independente ou paralelo
 - Todo trabalho voluntário ou atividade extracurricular (empresa júnior, iniciação científica, monitoria, centro acadêmico)
 
-### 1b. documents/linkedin/
-Leia todos os arquivos em `documents/linkedin/`. Extraia:
+### 1b. backend/documents/linkedin/
+Leia todos os arquivos em `backend/documents/linkedin/`. Extraia:
 - Cursos e certificações da seção "Licenças e certificados"
 - A lista de competências e recomendações de competências
 - Experiências de voluntariado
 - A seção de projetos
 - Qualquer item da plataforma que ainda não apareceu no currículo
 
-### 1c. documents/diplomas/
-Leia todos os arquivos em `documents/diplomas/`. Extraia:
+### 1c. backend/documents/diplomas/
+Leia todos os arquivos em `backend/documents/diplomas/`. Extraia:
 - Todos os nomes de disciplinas listados nos históricos
 - O título e a área do TCC, da dissertação ou da tese
 - Qualquer ênfase, habilitação ou linha de pesquisa
 
-### 1d. documents/references/
-Leia todos os arquivos em `documents/references/`. Extraia:
+### 1d. backend/documents/references/
+Leia todos os arquivos em `backend/documents/references/`. Extraia:
 - A linguagem de competências usada por quem recomenda (que habilidades ou qualidades cita)
 - Quaisquer projetos, ferramentas ou métodos específicos citados
 

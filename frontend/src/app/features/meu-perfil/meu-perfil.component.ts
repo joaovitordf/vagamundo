@@ -2,6 +2,7 @@ import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ProfileResponse } from '../../core/models/vaga.model';
@@ -32,6 +33,7 @@ export class MeuPerfilComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute, { optional: true });
 
   profileData = signal<ProfileResponse | null>(null);
   schema = signal<Array<{ title: string; fields: any[] }>>([]);
@@ -42,42 +44,85 @@ export class MeuPerfilComponent implements OnInit {
 
   aiStatus = signal<string>('');
   isAiRunning = signal<boolean>(false);
+  isOrganizing = signal<boolean>(false);
+  organizeStatus = signal<string>('');
   dismissedWarning = signal<boolean>(false);
+  highlightedFieldKey = signal<string>('');
+
+  autoOrganizeOnUpload = true;
+  overwriteExistingFields = false;
 
   // Armazena diretamente os valores dos campos com suporte a two-way data-binding limpo
   formValues: Record<string, any> = {};
 
   private currentUploadKind: 'cv' | 'linkedin' = 'cv';
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
 
   ngOnInit(): void {
-    this.loadProfile();
+    const focusKey = this.route?.snapshot?.queryParamMap?.get('foco') || '';
+    this.loadProfile(false, () => {
+      if (focusKey) {
+        this.focusSchemaField(focusKey);
+      }
+    });
   }
 
-  loadProfile(refresh = false): void {
+  private focusSchemaField(key: string): void {
+    this.highlightedFieldKey.set(key);
+    if (this.focusTimer) clearTimeout(this.focusTimer);
+    setTimeout(() => {
+      const el = document.getElementById(`pf-${key}`) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus();
+      }
+    }, 60);
+    this.focusTimer = setTimeout(() => {
+      this.highlightedFieldKey.set('');
+    }, 3000);
+  }
+
+  countLines(value: unknown): number {
+    if (Array.isArray(value)) {
+      return value.map((v) => String(v || '').trim()).filter(Boolean).length;
+    }
+    return String(value || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean).length;
+  }
+
+  loadProfile(refresh = false, onLoaded?: () => void): void {
     this.api.getProfile(refresh).subscribe({
       next: (res) => {
-        this.profileData.set(res);
-        this.schema.set(res.schema || []);
-
-        const newVals: Record<string, any> = {};
-        const ans = res.answers || {};
-
-        for (const sec of res.schema || []) {
-          for (const field of sec.fields) {
-            const raw = ans[field.key];
-            if (field.type === 'lines') {
-              newVals[field.key] = Array.isArray(raw) ? raw.join('\n') : (raw || '');
-            } else if (field.type === 'multi') {
-              newVals[field.key] = Array.isArray(raw) ? [...raw] : [];
-            } else {
-              newVals[field.key] = raw ?? '';
-            }
-          }
-        }
-        this.formValues = newVals;
+        this.applyProfileResponse(res);
+        if (onLoaded) onLoaded();
       },
       error: (err) => console.error('Erro ao carregar perfil:', err)
     });
+  }
+
+  private hydrateFormValues(ans: Record<string, any>, schema = this.schema()): Record<string, any> {
+    const newVals: Record<string, any> = {};
+    for (const sec of schema || []) {
+      for (const field of sec.fields) {
+        const raw = ans[field.key];
+        if (field.type === 'lines') {
+          newVals[field.key] = Array.isArray(raw) ? raw.join('\n') : (raw || '');
+        } else if (field.type === 'multi') {
+          newVals[field.key] = Array.isArray(raw) ? [...raw] : [];
+        } else {
+          newVals[field.key] = raw ?? '';
+        }
+      }
+    }
+    return newVals;
+  }
+
+  private applyProfileResponse(res: ProfileResponse): void {
+    this.profileData.set(res);
+    this.schema.set(res.schema || []);
+    this.formValues = this.hydrateFormValues(res.answers || {}, res.schema || []);
   }
 
   get privacyInfo(): { type: 'ok' | 'warn'; message: string } | null {
@@ -96,7 +141,7 @@ export class MeuPerfilComponent implements OnInit {
       return { type: 'warn', message: '[Aviso] Este projeto está ligado a um repositório fora do GitHub. Confira se ele é privado antes de enviar (push) o seu perfil.' };
     }
     if (status === 'publico') {
-      return { type: 'warn', message: `[Aviso] Atenção: seu repositório${repo} é PÚBLICO. O perfil (nome, contatos, histórico, pretensão) vai para arquivos que o git publica. Não faça push dele, ou passe a usar um repositório privado (seção 8 do SETUP.md).` };
+      return { type: 'warn', message: `[Aviso] Atenção: seu repositório${repo} é PÚBLICO. A interface salva os dados localmente em backend/documents/perfil/ (no .gitignore); evite gravar dados pessoais em arquivos versionados (CLAUDE.md/.claude) ou use um repositório privado (seção 8 do SETUP.md).` };
     }
     return null;
   }
@@ -139,16 +184,20 @@ export class MeuPerfilComponent implements OnInit {
       return;
     }
 
-    this.uploadStatus.set('Enviando…');
+    this.uploadStatus.set(this.autoOrganizeOnUpload ? '1/2 Enviando PDF…' : 'Enviando…');
     const reader = new FileReader();
     reader.onload = () => {
       const base64Data = String(reader.result).split(',', 2)[1] || '';
       this.api.uploadFile(this.currentUploadKind, file.name, base64Data).subscribe({
         next: (res) => {
           this.uploadStatus.set(`Recebido: ${res.saved}.`);
-          this.loadProfile(true);
+          this.loadProfile(true, () => {
+            if (this.autoOrganizeOnUpload) {
+              this.organizeFromDocuments(true);
+            }
+          });
         },
-        error: (err) => this.uploadStatus.set('Não consegui guardar: ' + err.message)
+        error: (err) => this.uploadStatus.set('Não consegui guardar: ' + (err?.error?.detail || err.message))
       });
     };
     reader.readAsDataURL(file);
@@ -191,19 +240,7 @@ export class MeuPerfilComponent implements OnInit {
     this.saveStatus.set('Salvando…');
     this.api.saveProfileAnswers(this.formValues).subscribe({
       next: (res) => {
-        const ans = res.answers || {};
-        for (const sec of this.schema()) {
-          for (const field of sec.fields) {
-            const raw = ans[field.key];
-            if (field.type === 'lines') {
-              this.formValues[field.key] = Array.isArray(raw) ? raw.join('\n') : (raw || '');
-            } else if (field.type === 'multi') {
-              this.formValues[field.key] = Array.isArray(raw) ? [...raw] : [];
-            } else {
-              this.formValues[field.key] = raw ?? '';
-            }
-          }
-        }
+        this.formValues = this.hydrateFormValues(res.answers || {});
         this.saveStatus.set('Respostas salvas.');
         this.saving.set(false);
       },
@@ -215,10 +252,75 @@ export class MeuPerfilComponent implements OnInit {
   }
 
   isAiDisabled(): boolean {
-    if (this.isAiRunning()) return true;
+    if (this.isAiRunning() || this.isOrganizing()) return true;
     if (this.allUploadedFiles().length === 0) return true;
     if (this.showConfirmBox() && !this.confirmedPrivacy) return true;
     return false;
+  }
+
+  isOrganizeDisabled(): boolean {
+    if (this.isOrganizing() || this.isAiRunning()) return true;
+    if (this.allUploadedFiles().length === 0) return true;
+    if (this.showConfirmBox() && !this.confirmedPrivacy) return true;
+    return false;
+  }
+
+  organizeFromDocuments(fromUpload = false): void {
+    if (this.isOrganizing() || this.isAiRunning()) return;
+    if (this.allUploadedFiles().length === 0) {
+      this.organizeStatus.set('Envie ao menos um currículo ou perfil do LinkedIn em PDF.');
+      return;
+    }
+    if (this.showConfirmBox() && !this.confirmedPrivacy) {
+      this.organizeStatus.set(
+        fromUpload
+          ? 'PDF salvo! Confirme o aviso de privacidade abaixo e clique em "Organizar tudo do PDF com a IA".'
+          : 'Confirme o aviso de privacidade abaixo antes de acionar a IA.'
+      );
+      return;
+    }
+
+    this.isOrganizing.set(true);
+    this.organizeStatus.set(
+      fromUpload
+        ? '2/2 IA lendo PDF, preenchendo o formulário e montando seu perfil…'
+        : 'IA lendo PDF, preenchendo o formulário e montando seu perfil…'
+    );
+
+    this.api.organizeProfile({
+      overwrite: this.overwriteExistingFields,
+      confirm: this.confirmedPrivacy,
+    }).pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe({
+      next: (res) => {
+        this.isOrganizing.set(false);
+        if (res.profile) {
+          this.applyProfileResponse(res.profile);
+        } else {
+          this.loadProfile(true);
+        }
+
+        if (res.organized) {
+          const count = res.updated_fields?.length ?? 0;
+          const msg = count > 0
+            ? `Tudo organizado! ${count} campo(s) do formulário preenchido(s) e perfil consolidado.`
+            : 'Perfil e buscas consolidados a partir dos documentos enviados!';
+          this.organizeStatus.set(msg);
+          this.toast.success(msg);
+        } else {
+          this.organizeStatus.set(
+            res.detail || 'PDF salvo! Configure sua IA em Configurações para organizar tudo automaticamente.'
+          );
+        }
+      },
+      error: (err) => {
+        this.isOrganizing.set(false);
+        const detail = err?.error?.detail || err?.message || 'falha inesperada';
+        this.organizeStatus.set('Não consegui organizar automaticamente: ' + detail);
+        this.toast.error('Erro ao organizar perfil com a IA: ' + detail);
+      }
+    });
   }
 
   updateButtonState(): void {

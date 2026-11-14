@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Supply-chain guards for the template's riskiest surfaces.
 
-Run from anywhere: python tools/security_guards.py
+Run from anywhere: python backend/tools/security_guards.py
 
 This repo ships pre-approved Claude Code permissions and CLI code that every
 fork user executes. These guards make the dangerous changes LOUD, not
@@ -84,37 +84,37 @@ ALLOWED_PERMISSIONS = {
     "Bash(bun run .agents/skills/hn-search/cli/src/cli.ts:*)",
     "Bash(bun run .agents/skills/hh-search/cli/src/cli.ts:*)",
     "Bash(bun run .agents/skills/habrcareer-search/cli/src/cli.ts:*)",
-    "Bash(python salary_lookup.py:*)",
-    "Bash(python3 salary_lookup.py:*)",
-    "Bash(python tools/rank_state.py:*)",
-    "Bash(python3 tools/rank_state.py:*)",
-    "Bash(python tools/job_key.py:*)",
-    "Bash(python3 tools/job_key.py:*)",
-    "Bash(python tools/verify_pdf.py:*)",
-    "Bash(python3 tools/verify_pdf.py:*)",
-    "Bash(python tools/verify_layout.py:*)",
-    "Bash(python3 tools/verify_layout.py:*)",
+    "Bash(python backend/salary_lookup.py:*)",
+    "Bash(python3 backend/salary_lookup.py:*)",
+    "Bash(python backend/tools/rank_state.py:*)",
+    "Bash(python3 backend/tools/rank_state.py:*)",
+    "Bash(python backend/tools/job_key.py:*)",
+    "Bash(python3 backend/tools/job_key.py:*)",
+    "Bash(python backend/tools/verify_pdf.py:*)",
+    "Bash(python3 backend/tools/verify_pdf.py:*)",
+    "Bash(python backend/tools/verify_layout.py:*)",
+    "Bash(python3 backend/tools/verify_layout.py:*)",
     "Bash(pdftotext:*)",
     # The browser-header retry in 09-web-research.md. fetch_page.py is GET-only
     # with a fixed argv and refuses to write inside the repo, which is why the
     # grant names the script and not `curl`.
-    "Bash(python tools/robots_check.py:*)",
-    "Bash(python3 tools/robots_check.py:*)",
-    "Bash(python tools/fetch_page.py:*)",
-    "Bash(python3 tools/fetch_page.py:*)",
+    "Bash(python backend/tools/robots_check.py:*)",
+    "Bash(python3 backend/tools/robots_check.py:*)",
+    "Bash(python backend/tools/fetch_page.py:*)",
+    "Bash(python3 backend/tools/fetch_page.py:*)",
     # The posting integrity gate (/apply Step 0, /rank Step 2, /interview Step 1).
     # Reads a file or stdin, writes only to an explicit --out, never fetches.
-    "Bash(python tools/posting_guard.py:*)",
-    "Bash(python3 tools/posting_guard.py:*)",
+    "Bash(python backend/tools/posting_guard.py:*)",
+    "Bash(python3 backend/tools/posting_guard.py:*)",
     # Fit signals from a posting's text (/scrape Steps 2-3, /rank Step 2).
     # Reads a file or stdin, prints findings, writes nothing, never fetches.
-    "Bash(python tools/posting_signals.py:*)",
-    "Bash(python3 tools/posting_signals.py:*)",
+    "Bash(python backend/tools/posting_signals.py:*)",
+    "Bash(python3 backend/tools/posting_signals.py:*)",
     # The mechanical half of /scrape. Runs only the installed portal CLIs (fixed
     # argv per query line), writes its results outside the repo and appends to
     # job_scraper/seen_jobs.json; never fetches anything else.
-    "Bash(python tools/scrape_run.py:*)",
-    "Bash(python3 tools/scrape_run.py:*)",
+    "Bash(python backend/tools/scrape_run.py:*)",
+    "Bash(python3 backend/tools/scrape_run.py:*)",
 }
 
 # Rules that must stay in .claude/settings.json permissions.ask. An ask rule
@@ -131,7 +131,7 @@ REQUIRED_ASK_RULES = [
     "Edit(.claude/commands/*.md)",
     "Edit(.claude/agents/**)",
     "Edit(.github/**)",
-    "Edit(tools/security_guards.py)",
+    "Edit(backend/tools/security_guards.py)",
     "Bash(git push:*)",
 ]
 
@@ -145,6 +145,8 @@ REQUIRED_ASK_RULES = [
 REQUIRED_DENY_RULES = [
     "Read(.env)",
     "Read(.env.*)",
+    "Read(backend/.env)",
+    "Read(backend/.env.*)",
     "Read(~/.ssh/**)",
     "Read(~/.aws/**)",
     "Read(~/.gnupg/**)",
@@ -199,28 +201,35 @@ REQUIRED_IGNORE_RULES = [
     # Belt-and-braces, not the primary guard: nothing writes here.
     # /interview's prep packs land under documents/applications/**, above.
     "documents/interview/**",
+    "backend/cv/main_*.*",
+    "backend/cv/*.txt",
+    "backend/cover_letters/cover_*.*",
+    "backend/cover_letters/Cover_*.*",
+    "backend/documents/cv/**",
+    "backend/documents/linkedin/**",
+    "backend/documents/diplomas/**",
+    "backend/documents/references/**",
+    "backend/documents/projects/**",
+    "backend/documents/applications/**",
+    "backend/documents/postings/**",
+    "backend/documents/perfil/**",
+    "backend/documents/interview/**",
     "job_search_tracker.csv",
+    "backend/job_search_tracker.csv",
     "gmail_sync/",
     "reports/",
     "upskill/*.md",
-    # Depth-independent twin of the rule above. The upskill *skill* resolves
-    # `upskill/` relative to its own directory - the same observed behavior
-    # the **/job_scraper rules exist for - so reports can land at
-    # .claude/skills/upskill/upskill/*.md where the rooted rule cannot see
-    # them. `**/upskill/*.md` would also ignore the skill's own SKILL.md
-    # (the directory shares the name), so the report-file prefix is pinned.
+    "backend/upskill/*.md",
     "**/upskill/report-*.md",
-    # Not personal data but the same failure mode: /add-portal can generate a
-    # skill for a portal that only returns usable content through a paid
-    # fetching service, and that skill reads an API token from the environment.
     ".env",
     ".env.*",
-    # Company research cache (/apply Step 3, /interview Step 2). Referenced
-    # from commands, not a skill, so a plain rooted rule is correct here -
-    # unlike the **/-prefixed job_scraper/upskill rules above.
     "company_research/*.json",
-    # Machine-local Claude Code user configuration and ad-hoc permissions approvals.
+    "backend/company_research/*.json",
     ".claude/settings.local.json",
+    "data/*.db",
+    "data/*.db-wal",
+    "data/*.db-shm",
+    "data/browser_profile/",
 ]
 
 # Negation (re-include) rules the template legitimately ships. .gitignore is
@@ -279,12 +288,12 @@ ALLOWED_SKILL_TOOLS = {
     "AskUserQuestion",
     "Agent",
     "Bash(bun --version)",
-    "Bash(python tools/job_key.py:*)",
-    "Bash(python3 tools/job_key.py:*)",
-    "Bash(python tools/scrape_run.py:*)",
-    "Bash(python3 tools/scrape_run.py:*)",
-    "Bash(python tools/posting_signals.py:*)",
-    "Bash(python3 tools/posting_signals.py:*)",
+    "Bash(python backend/tools/job_key.py:*)",
+    "Bash(python3 backend/tools/job_key.py:*)",
+    "Bash(python backend/tools/scrape_run.py:*)",
+    "Bash(python3 backend/tools/scrape_run.py:*)",
+    "Bash(python backend/tools/posting_signals.py:*)",
+    "Bash(python3 backend/tools/posting_signals.py:*)",
 }
 
 # The tools a shipped .claude/agents/*.md may list. These agents read untrusted
@@ -413,7 +422,7 @@ def check_skill_tool_grants() -> None:
                 "skill, with no prompt and regardless of workspace trust, so this line is "
                 "a permission allowlist like settings.json. Bare Bash means any command. "
                 "If the grant is intentional, add it to ALLOWED_SKILL_TOOLS in "
-                "tools/security_guards.py in the same PR; a portal skill may grant only "
+                "backend/tools/security_guards.py in the same PR; a portal skill may grant only "
                 "its own .agents/skills/<name>/cli/src/cli.ts."
             )
 
@@ -468,7 +477,7 @@ def check_permissions() -> None:
                             f"{command!r}. A hook runs automatically when its event fires - it "
                             "is never gated by the permissions prompt, so it executes on every "
                             "fork without the user agreeing to anything. If this hook is "
-                            "intentional, add it to ALLOWED_HOOKS in tools/security_guards.py "
+                            "intentional, add it to ALLOWED_HOOKS in backend/tools/security_guards.py "
                             "in the same PR so the addition is explicit and reviewable."
                         )
 
@@ -485,7 +494,7 @@ def check_permissions() -> None:
             errors.append(
                 f".claude/settings.json: permission not in the reviewed allowlist: {entry!r}. "
                 "Pre-approved permissions run without prompting on every fork. If this entry is "
-                "intentional, add it to ALLOWED_PERMISSIONS in tools/security_guards.py in the "
+                "intentional, add it to ALLOWED_PERMISSIONS in backend/tools/security_guards.py in the "
                 "same PR so the widening is explicit and reviewable."
             )
     for entry in ALLOWED_PERMISSIONS - set(allow):
@@ -508,7 +517,7 @@ def check_permissions() -> None:
                     f".claude/settings.json: required {key} rule missing: {rule!r}. "
                     f"Removing it silently re-opens what it closed ({effect}). If the "
                     f"change is intentional, update REQUIRED_{key.upper()}_RULES in "
-                    "tools/security_guards.py in the same PR so the widening is explicit "
+                    "backend/tools/security_guards.py in the same PR so the widening is explicit "
                     "and reviewable."
                 )
 
@@ -527,7 +536,7 @@ def check_gitignore() -> None:
                 f".gitignore: required personal-data rule missing: {rule!r}. "
                 "These rules keep fork users from committing personal data. If the rule moved "
                 "or was renamed intentionally, update REQUIRED_IGNORE_RULES in "
-                "tools/security_guards.py in the same PR."
+                "backend/tools/security_guards.py in the same PR."
             )
     for line in lines:
         if line.startswith("!") and line not in ALLOWED_IGNORE_NEGATIONS:
@@ -536,7 +545,7 @@ def check_gitignore() -> None:
                 "A negation re-includes a path an earlier rule excluded and can silently "
                 "re-expose personal data (a required ignore rule stays present but stops "
                 "taking effect). If this negation is intentional, add it to "
-                "ALLOWED_IGNORE_NEGATIONS in tools/security_guards.py in the same PR."
+                "ALLOWED_IGNORE_NEGATIONS in backend/tools/security_guards.py in the same PR."
             )
 
 
@@ -634,7 +643,7 @@ def check_agent_tool_grants() -> None:
                 f"{rel}: tools entry not in the reviewed allowlist: {entry!r}. Shipped agent "
                 "definitions read untrusted posting text, so they may not edit or write "
                 "files or spawn further agents. If the grant is intentional, add it to "
-                "ALLOWED_AGENT_TOOLS in tools/security_guards.py in the same PR."
+                "ALLOWED_AGENT_TOOLS in backend/tools/security_guards.py in the same PR."
             )
 
 

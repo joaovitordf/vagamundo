@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Compila um currículo, carta ou dossiê de entrevista, com argumentos fixos.
 
-Existe para o painel (tools/painel.py), em que o assistente roda sem ninguém para
+Existe para o painel (backend/tools/painel.py), em que o assistente roda sem ninguém para
 aprovar comandos: em vez de liberar `lualatex:*` - que também aprovaria
 `-shell-escape` e deixaria o LaTeX rodar comandos do sistema -, o painel libera
 só este script. Ele:
 
   * aceita cv/main_*.tex (compila com lualatex), cover_letters/cover_*.tex
-    ou Cover_*.tex (com xelatex), e documents/interview/prep_*.tex (com lualatex);
+    ou Cover_*.tex (com xelatex), e documents/interview/prep_*.tex (com lualatex)
+    relativos à pasta backend/;
   * sempre desliga a execução de comandos pelo LaTeX (`--disable-write18` no
     MiKTeX, `-no-shell-escape` no TeX Live);
   * com --clean, só apaga os arquivos intermediários daquele documento
@@ -17,9 +18,9 @@ Modelos próprios registrados pelo /add-template não passam por aqui: o comando
 deles é declarado no bloco ACTIVE-TEMPLATE e continua pedindo aprovação.
 
 Uso:
-  python3 tools/compile_doc.py cv/main_<empresa>_<cargo>.tex
-  python3 tools/compile_doc.py cover_letters/cover_<empresa>_<cargo>.tex --clean
-  python3 tools/compile_doc.py documents/interview/prep_<empresa>_<cargo>.tex
+  python3 backend/tools/compile_doc.py cv/main_<empresa>_<cargo>.tex
+  python3 backend/tools/compile_doc.py cover_letters/cover_<empresa>_<cargo>.tex --clean
+  python3 backend/tools/compile_doc.py documents/interview/prep_<empresa>_<cargo>.tex
 Saída 0 = compilou (ou limpou); 1 = a compilação falhou; 2 = arquivo recusado.
 """
 

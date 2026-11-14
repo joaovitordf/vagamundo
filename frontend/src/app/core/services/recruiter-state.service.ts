@@ -24,6 +24,7 @@ interface PersistedRecruiterState {
   workModelFilter?: string;
   regionFilter?: string;
   jobAgeFilter?: string;
+  jobAgeDefault24hApplied?: boolean;
   hideUndated?: boolean;
   scoreFilter?: string;
   sortBy?: RecruiterSortMode;
@@ -49,12 +50,15 @@ export function filterAndSortRecruiterPosts(
     sortBy: RecruiterSortMode;
     onlyCvMatch: boolean;
     hideNonJobs: boolean;
+    autoMinScore?: number;
+    ignoreTextFilter?: boolean;
   }
 ): RecruiterPost[] {
   if (!opts.hasSearched) return [];
 
   const query = opts.filterText.trim();
   const days = opts.jobAgeFilter ? Number(opts.jobAgeFilter) : null;
+  const minScore = opts.autoMinScore ?? 60;
 
   let posts = allPosts.filter(p => {
     if (opts.hideNonJobs && p.ai_classification === 'nao_e_vaga') {
@@ -62,9 +66,10 @@ export function filterAndSortRecruiterPosts(
     }
 
     if (opts.onlyCvMatch) {
-      const matched =
-        (p.matched_keywords && p.matched_keywords.length > 0) ||
-        (p.ai_classification === 'vaga_ativa' && (p.ai_score || 0) > 0);
+      const aiMatch = p.ai_classification === 'vaga_ativa' && (p.ai_score ?? 0) >= minScore;
+      const matched = p.ai_evaluated_at
+        ? aiMatch
+        : ((p.matched_keywords && p.matched_keywords.length > 0) || aiMatch);
       if (!matched) return false;
     }
 
@@ -95,7 +100,11 @@ export function filterAndSortRecruiterPosts(
       if (within === null) {
         if (opts.hideUndated) return false;
       } else if (days && !within) {
-        return false;
+        const createdWithin = isWithinDays(p.created_at, days);
+        const keepAutoLinkedIn = Boolean(opts.ignoreTextFilter && p.portal === 'linkedin_post');
+        if (createdWithin !== true && !keepAutoLinkedIn) {
+          return false;
+        }
       }
     }
 
@@ -110,7 +119,7 @@ export function filterAndSortRecruiterPosts(
       }
     }
 
-    if (query) {
+    if (query && !opts.ignoreTextFilter) {
       const hay = `${p.title || ''} ${p.company || ''} ${p.location || ''} ${p.description || ''} ${p.portal || ''} ${getPortalDisplayName(p.portal)} ${getWorkModelLabel(resolveEffectiveWorkModel(p))} ${(p.emails || []).join(' ')} ${(p.matched_keywords || []).join(' ')}`;
       if (!matchesTextFilter(hay, query)) return false;
     }
@@ -169,6 +178,32 @@ export function filterAndSortRecruiterPosts(
   return posts;
 }
 
+/**
+ * Filtra e ordena o histórico acumulado de vagas relevantes já triadas pela IA local.
+ * Inclui todas as `vaga_ativa` com nota atribuída (inclusive < 45 para limpeza manual),
+ * ignorando os filtros temporários do console de busca.
+ */
+export function filterAndSortRelevantHistoryPosts(posts: RecruiterPost[]): RecruiterPost[] {
+  return [...posts]
+    .filter(
+      p =>
+        p.portal === 'linkedin_post' &&
+        Array.isArray(p.emails) &&
+        p.emails.length > 0 &&
+        Boolean(p.ai_evaluated_at) &&
+        p.ai_classification === 'vaga_ativa' &&
+        typeof p.ai_score === 'number'
+    )
+    .sort((a, b) => {
+      const scoreDiff = (b.ai_score ?? -1) - (a.ai_score ?? -1);
+      if (scoreDiff !== 0) return scoreDiff;
+      const da = parseCalendarDateMs(a.published_date || a.created_at) ?? -1;
+      const db = parseCalendarDateMs(b.published_date || b.created_at) ?? -1;
+      if (db !== da) return db - da;
+      return b.id - a.id;
+    });
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -180,7 +215,7 @@ export class RecruiterStateService {
   readonly portalFilter = signal<string>('');
   readonly workModelFilter = signal<string>('');
   readonly regionFilter = signal<string>('');
-  readonly jobAgeFilter = signal<string>('');
+  readonly jobAgeFilter = signal<string>('1');
   readonly hideUndated = signal<boolean>(false);
   readonly scoreFilter = signal<string>('');
   readonly sortBy = signal<RecruiterSortMode>('relevance');
@@ -211,7 +246,13 @@ export class RecruiterStateService {
       sortBy: this.sortBy(),
       onlyCvMatch: this.onlyCvMatch(),
       hideNonJobs: this.hideNonJobs(),
+      autoMinScore: this.autoMinScore(),
+      ignoreTextFilter: this.autoRunFilterApplied(),
     })
+  );
+
+  readonly historyPosts = computed(() =>
+    filterAndSortRelevantHistoryPosts(this.allPosts())
   );
 
   readonly hasSecondaryFilters = computed(() => {
@@ -219,7 +260,7 @@ export class RecruiterStateService {
       this.portalFilter() ||
       this.workModelFilter() ||
       this.regionFilter() ||
-      this.jobAgeFilter() ||
+      (this.jobAgeFilter() && this.jobAgeFilter() !== '1') ||
       this.hideUndated() ||
       this.scoreFilter() ||
       this.onlyCvMatch() ||
@@ -240,7 +281,7 @@ export class RecruiterStateService {
     this.portalFilter.set('');
     this.workModelFilter.set('');
     this.regionFilter.set('');
-    this.jobAgeFilter.set('');
+    this.jobAgeFilter.set('1');
     this.hideUndated.set(false);
     this.scoreFilter.set('');
     this.onlyCvMatch.set(false);
@@ -260,6 +301,7 @@ export class RecruiterStateService {
         workModelFilter: this.workModelFilter(),
         regionFilter: this.regionFilter(),
         jobAgeFilter: this.jobAgeFilter(),
+        jobAgeDefault24hApplied: true,
         hideUndated: this.hideUndated(),
         scoreFilter: this.scoreFilter(),
         sortBy: this.sortBy(),
@@ -289,7 +331,15 @@ export class RecruiterStateService {
       if (typeof parsed.portalFilter === 'string') this.portalFilter.set(parsed.portalFilter);
       if (typeof parsed.workModelFilter === 'string') this.workModelFilter.set(parsed.workModelFilter);
       if (typeof parsed.regionFilter === 'string') this.regionFilter.set(parsed.regionFilter);
-      if (typeof parsed.jobAgeFilter === 'string') this.jobAgeFilter.set(parsed.jobAgeFilter);
+      if (parsed.jobAgeDefault24hApplied !== true) {
+        if (typeof parsed.jobAgeFilter === 'string' && parsed.jobAgeFilter) {
+          this.jobAgeFilter.set(parsed.jobAgeFilter);
+        } else {
+          this.jobAgeFilter.set('1');
+        }
+      } else if (typeof parsed.jobAgeFilter === 'string') {
+        this.jobAgeFilter.set(parsed.jobAgeFilter);
+      }
       if (typeof parsed.hideUndated === 'boolean') this.hideUndated.set(parsed.hideUndated);
       if (
         typeof parsed.scoreFilter === 'string' &&

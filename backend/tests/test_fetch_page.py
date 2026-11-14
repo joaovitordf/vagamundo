@@ -354,7 +354,7 @@ class Fetching(FetchPageFixture):
 
 
 class CurlArgvShape(unittest.TestCase):
-    """The grant is `Bash(python tools/fetch_page.py:*)`, so what curl is handed
+    """The grant is `Bash(python backend/tools/fetch_page.py:*)`, so what curl is handed
     is the whole security property: GET only, no body, no upload, and the URL
     can never be parsed as an option."""
 

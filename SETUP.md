@@ -61,41 +61,32 @@ git clone https://github.com/joaovitordf/vagamundo.git
 cd vagamundo
 ```
 
-### Passo 2: Criar e Ativar o Ambiente Virtual Python
-Recomenda-se utilizar um ambiente virtual:
+### Passo 2: Ambiente Virtual Python *(Opcional, mas recomendado)*
+Se desejar isolar as dependências Python em `.venv` (o `npm run install:all` e o `npm run dev` detectam a `.venv` automaticamente mesmo sem ativá-la no terminal):
 
 - **No Windows:**
   ```powershell
   python -m venv .venv
-  .venv\Scripts\activate
   ```
 - **No Linux/macOS:**
   ```bash
   python3 -m venv .venv
-  source .venv/bin/activate
   ```
 
-Instale as dependências do backend:
-```bash
-pip install -r requirements.txt
-```
-
-### Passo 3: Instalar as Dependências do Frontend
+### Passo 3: Instalar Tudo com Um Comando
 Na raiz do projeto, execute:
 ```bash
-npm install
-npm --prefix frontend install
+npm run install:all
 ```
+Esse comando instala automaticamente:
+1. As dependências Python do backend (`requirements.txt`).
+2. As dependências do frontend Angular (`frontend/`).
+3. Todas as **24 CLIs de portais de vagas** sob `.agents/skills/` (para reinstalar só os portais, use `npm run install:portals`).
 
-### Passo 4: Instalar as Dependências dos Portais de Vagas
-O Vagamundo conta com um script automatizado que instala todas as CLIs de portais sob `.agents/skills/`:
-```bash
-npm run install:portals
-```
-*(Ou execute diretamente: `python backend/tools/install_portal_clis.py`)*
+### Passo 4: Configurar as Chaves de IA (`.env`) — *Opcional*
+Você não precisa criar nenhum arquivo manual se preferir cadastrar sua chave direto pela interface web (aba **Configurações**, que grava localmente no `.env` da raiz — nunca versionado).
 
-### Passo 5: Configurar as Chaves de IA (`.env`)
-Copie o arquivo de exemplo para criar o seu `.env`:
+Se preferir configurar via arquivo, crie **1 único `.env` na raiz** a partir de `.env.example` (o caminho legado `backend/.env` continua lido como fallback caso já exista):
 
 ```bash
 # Windows (PowerShell):
@@ -105,14 +96,14 @@ copy .env.example .env
 cp .env.example .env
 ```
 
-Abra o arquivo `.env` gerado e defina seu provedor e sua respectiva chave de API:
+Abra o arquivo `.env` gerado e preencha sua chave (`AI_PROVIDER=auto` detecta automaticamente a primeira chave preenchida):
 ```env
-AI_PROVIDER=gemini
+AI_PROVIDER=auto
 AI_DATA_CONSENT=yes
 GEMINI_API_KEY=sua_chave_do_google_ai_studio_aqui
 ```
 > **Dica:** A chave do **Google Gemini** é gratuita e pode ser gerada instantaneamente em [aistudio.google.com](https://aistudio.google.com/app/apikey).
-> Você também pode optar por usar **Anthropic Claude** ou **OpenAI / Ollama**.
+> Você também pode optar por usar **Anthropic Claude**, **OpenAI** ou **Ollama** (local).
 
 ---
 
@@ -125,9 +116,10 @@ npm run dev
 ```
 
 O comando irá:
-1. Liberar automaticamente portas residuais (`8765` e `4200`).
-2. Iniciar o servidor FastAPI com Uvicorn na porta `8765`.
-3. Iniciar o servidor de desenvolvimento do Angular na porta `4200`.
+1. Detectar `.venv` automaticamente (ou o Python do sistema).
+2. Liberar portas residuais em Windows, Linux e macOS (`8765` e `4200`).
+3. Iniciar o servidor FastAPI com Uvicorn na porta `8765`.
+4. Iniciar o servidor de desenvolvimento do Angular na porta `4200`.
 
 ### Acesso:
 - **Interface Web:** [http://localhost:4200](http://localhost:4200)
@@ -137,13 +129,13 @@ Para encerrar a aplicação, pressione `Ctrl + C` no terminal.
 
 ---
 
-## 5. Personalizando o Seu Perfil
+## 5. Personalizando o Seu Perfil *(0 arquivos versionados editados)*
 
-O Vagamundo personaliza materiais, notas e recomendações com base nas suas experiências reais:
+O Vagamundo personaliza notas de triagem, currículos, cartas e dossiês com base no seu perfil real, **sem editar nenhum arquivo rastreado pelo Git**:
 1. Acesse a aba **"Meu Perfil"** na interface web (`http://localhost:4200`).
-2. Faça o upload do seu currículo em PDF e informe suas preferências (senioridade, modelo de trabalho, pretensão).
-3. Alternativamente, você pode editar diretamente o arquivo canônico:
-   `.claude/skills/job-application-assistant/01-candidate-profile.md`
+2. Faça o upload do seu currículo (PDF/DOCX/TXT) ou perfil do LinkedIn (salvo localmente em `backend/documents/perfil/`, já no `.gitignore`).
+3. Preencha suas preferências (cargo-alvo, senioridade, cidades, modelo de trabalho) e clique em **Gerar perfil com IA** (opcional — mesmo sem clicar, o formulário e os CVs enviados já alimentam a triagem e o `Sortear área CV`).
+4. **Uso avançado (opcional):** quem utiliza agentes de terminal (Claude Code / Antigravity slash commands) pode opcionalmente manter `CLAUDE.md`, `.claude/skills/job-application-assistant/01-candidate-profile.md` e `.claude/skills/job-scraper/search-queries.md`.
 
 ---
 

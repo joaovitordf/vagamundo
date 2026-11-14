@@ -24,19 +24,19 @@ Caso contrário, primeiro confira para onde esta cópia publicaria — **antes d
 
 Espere a confirmação antes de mostrar a escolha de caminho. Um origin privado, nenhum origin ou um remoto que não é fork não precisam de aviso — siga em silêncio.
 
-Depois, antes de cumprimentar, examine a pasta `documents/`. Use Glob com `documents/**/*` e conte os arquivos por subpasta (`cv/`, `linkedin/`, `diplomas/`, `references/`, `projects/`, `applications/`).
+Depois, antes de cumprimentar, examine a pasta `backend/documents/`. Use Glob com `backend/documents/**/*` e conte os arquivos por subpasta (`cv/`, `linkedin/`, `diplomas/`, `references/`, `projects/`, `applications/`).
 
 Então dê as boas-vindas numa única mensagem que apresente os três caminhos. O texto muda conforme o que foi encontrado.
 
-**Se `documents/` tiver arquivos** em uma ou mais subpastas, comece pelo Caminho A:
+**Se `backend/documents/` tiver arquivos** em uma ou mais subpastas, comece pelo Caminho A:
 
 > **Boas-vindas à configuração do vagamundo!**
 >
 > Vou montar o seu perfil profissional para o Claude avaliar vagas, personalizar currículos, escrever cartas de apresentação e preparar você para entrevistas.
 >
-> Encontrei arquivos na sua pasta `documents/`: [lista por subpasta, ex.: "2 em cv/, 1 em linkedin/, 3 em references/"]. Três jeitos de começar:
+> Encontrei arquivos na sua pasta `backend/documents/`: [lista por subpasta, ex.: "2 em cv/, 1 em linkedin/, 3 em references/"]. Três jeitos de começar:
 >
-> **Caminho A: Ler a minha pasta de documentos** (recomendado com o que você já tem) - Leio tudo em `documents/`, cruzo as informações para conferir a consistência e monto o perfil a partir dos materiais reais. Pode rodar de novo à medida que você acrescentar documentos, sem duplicar nada.
+> **Caminho A: Ler a minha pasta de documentos** (recomendado com o que você já tem) - Leio tudo em `backend/documents/`, cruzo as informações para conferir a consistência e monto o perfil a partir dos materiais reais. Pode rodar de novo à medida que você acrescentar documentos, sem duplicar nada.
 >
 > **Caminho B: Importar um currículo** - Cole ou mencione (@) um currículo aqui. Eu extraio as informações e pergunto o que faltar.
 >
@@ -44,7 +44,7 @@ Então dê as boas-vindas numa única mensagem que apresente os três caminhos. 
 >
 > Qual você prefere?
 
-**Se `documents/` estiver vazia ou não existir**, apresente o Caminho A como opção para quem tem materiais:
+**Se `backend/documents/` estiver vazia ou não existir**, apresente o Caminho A como opção para quem tem materiais:
 
 > **Boas-vindas à configuração do vagamundo!**
 >
@@ -52,7 +52,7 @@ Então dê as boas-vindas numa única mensagem que apresente os três caminhos. 
 >
 > Três jeitos de começar:
 >
-> **Caminho A: Pasta de documentos** (o melhor sinal, se você tem vários materiais) - Coloque o seu currículo, a exportação do LinkedIn, diplomas, cartas de recomendação e resumos de projetos na pasta `documents/` e diga "pode ir". Leio tudo e monto o perfil a partir disso. O `documents/README.md` explica a organização das pastas.
+> **Caminho A: Pasta de documentos** (o melhor sinal, se você tem vários materiais) - Coloque o seu currículo, a exportação do LinkedIn, diplomas, cartas de recomendação e resumos de projetos na pasta `backend/documents/` e diga "pode ir". Leio tudo e monto o perfil a partir disso. O `backend/documents/README.md` explica a organização das pastas.
 >
 > **Caminho B: Importar um currículo** - Cole ou mencione (@) um currículo aqui. Eu extraio as informações e pergunto o que faltar.
 >
@@ -60,19 +60,19 @@ Então dê as boas-vindas numa única mensagem que apresente os três caminhos. 
 >
 > Qual você prefere?
 
-Espere a escolha. Se a pessoa escolher A mas a pasta continuar vazia, diga o que acrescentar (indique o `documents/README.md`) e pare.
+Espere a escolha. Se a pessoa escolher A mas a pasta continuar vazia, diga o que acrescentar (indique o `backend/documents/README.md`) e pare.
 
 ---
 
 ## Caminho A: Pasta de documentos
 
-Lê os documentos organizados em `documents/`, cruza as informações para conferir a consistência e incorpora os dados extraídos aos sete arquivos de perfil. Lê antes de gravar e é idempotente: mudanças que já estão lá não são propostas de novo.
+Lê os documentos organizados em `backend/documents/`, cruza as informações para conferir a consistência e incorpora os dados extraídos aos sete arquivos de perfil. Lê antes de gravar e é idempotente: mudanças que já estão lá não são propostas de novo.
 
 Siga estes passos **exatamente na ordem**.
 
 ### Passo A1: Inventário
 
-Use Glob com `documents/**/*` para examinar a árvore inteira. Imprima:
+Use Glob com `backend/documents/**/*` para examinar a árvore inteira. Imprima:
 
 ```
 ## Documentos encontrados
@@ -87,7 +87,7 @@ Use Glob com `documents/**/*` para examinar a árvore inteira. Imprima:
 Vou ler e cruzar tudo antes de propor qualquer mudança.
 ```
 
-Se todas as subpastas estiverem vazias, pare e diga à pessoa para preencher a pasta. Indique o `documents/README.md` para a organização.
+Se todas as subpastas estiverem vazias, pare e diga à pessoa para preencher a pasta. Indique o `backend/documents/README.md` para a organização.
 
 ### Passo A2: Ler os arquivos de perfil existentes
 
@@ -246,7 +246,7 @@ Os documentos cobrem competências, experiência, formação, referências e sin
 - Restrições de deslocamento ou local (se não estiverem visíveis no currículo)
 - Configuração da busca de vagas (use as perguntas da Seção 9 do Caminho C abaixo)
 
-Depois siga para o Passo 3 para preencher os arquivos que não são de perfil (`CLAUDE.md`, `cv/main_example.tex`, `.claude/skills/job-scraper/search-queries.md`). O Passo 3 vai perceber que os sete arquivos de perfil já estão preenchidos e pular esses subpassos.
+Depois siga para o Passo 3 para preencher os arquivos que não são de perfil (`CLAUDE.md`, `backend/cv/main_example.tex`, `.claude/skills/job-scraper/search-queries.md`). O Passo 3 vai perceber que os sete arquivos de perfil já estão preenchidos e pular esses subpassos.
 
 ---
 
@@ -384,7 +384,7 @@ Personalize a linha de contato e a assinatura dentro do modelo LaTeX do arquivo:
 ### 7. Atualizar `07-interview-prep.md` *(Caminhos B e C; pule se o Caminho A preencheu)*
 Crie exemplos STAR a partir da experiência real (pelo menos 3 ou 4). O Caminho A deixa esboços STAR em "## Candidatos a STAR (completar à mão)" em vez de exemplos completos; se houver esboços, mencione no Passo 4 para a pessoa saber que precisa completá-los.
 
-### 8. Atualizar `cv/main_example.tex`
+### 8. Atualizar `backend/cv/main_example.tex`
 Troque os dados pessoais de exemplo pelo nome e contatos reais, e acrescente a formação e as experiências mais recentes. Siga as convenções do currículo brasileiro (sem CPF, idade, estado civil ou foto) e o idioma de currículo escolhido, inclusive nos títulos de seção.
 
 ### 9. Gerar `.claude/skills/job-scraper/search-queries.md`
@@ -414,7 +414,7 @@ Apresente um resumo:
 > - `.claude/skills/job-application-assistant/05-cv-templates.md` - Modelos de currículo com os seus resumos e o bloco de contato
 > - `.claude/skills/job-application-assistant/06-cover-letter-templates.md` - Modelos de carta com a sua linha de contato e assinatura
 > - `.claude/skills/job-application-assistant/07-interview-prep.md` - Exemplos STAR da sua experiência
-> - `cv/main_example.tex` - O seu modelo de currículo em LaTeX
+> - `backend/cv/main_example.tex` - O seu modelo de currículo em LaTeX
 > - `.claude/skills/job-scraper/search-queries.md` - Buscas de vagas para o `/scrape`
 >
 > **Aviso de privacidade:** os arquivos acima agora contêm os seus dados pessoais e são *rastreados pelo git*.
@@ -435,7 +435,7 @@ Se o Caminho A deixou esboços STAR em `07-interview-prep.md`, diga também:
 
 ## Princípios de projeto
 
-- Três caminhos de configuração chegam aos mesmos arquivos de perfil. O Passo 0 escolhe o caminho certo conforme o que há em `documents/`. Os Passos 3 e 4 são comuns.
+- Três caminhos de configuração chegam aos mesmos arquivos de perfil. O Passo 0 escolhe o caminho certo conforme o que há em `backend/documents/`. Os Passos 3 e 4 são comuns.
 - O Caminho A lê antes de gravar e é idempotente. Rodá-lo de novo à medida que documentos são acrescentados não duplica nem sobrescreve o conteúdo existente; conflitos aparecem para resolução explícita.
 - O Caminho A marca os acréscimos comportamentais ou de estilo inferidos, para a pessoa revisá-los com senso crítico antes de confiar neles.
 - Cada seção do Caminho C é uma conversa natural, não um formulário. A pessoa pode pular as seções opcionais.

@@ -23,10 +23,10 @@
           @if (filterText) {
             <button type="button" class="btn-clear-input" (click)="clearTextFilter.emit()" title="Limpar palavras-chave">&times;</button>
           }
-          <button type="button" class="btn-random-cv" (click)="pickRandomCv.emit()" title="Sortear área do seu currículo">
-            <i class="bi bi-dice-5"></i>
-            <span>Sortear área CV</span>
-          </button>
+          <app-cv-random-control
+            [areasCount]="cvAreasCount"
+            [source]="cvAreasSource"
+            (pickRandom)="pickRandomCv.emit()" />
         </div>
       </div>
     </div>

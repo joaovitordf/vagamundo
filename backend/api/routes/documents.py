@@ -30,8 +30,8 @@ def list_documents(
 
 @router.get("/cv-areas")
 def cv_areas() -> Dict[str, Any]:
-    """List available CV specialization templates/areas."""
-    return {"areas": painel_perfil.extract_cv_areas()}
+    """List available CV specialization keywords/areas."""
+    return painel_perfil.get_cv_areas_payload()
 
 
 @router.get("/file")

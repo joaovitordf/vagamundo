@@ -49,8 +49,8 @@ class ResetDocuments(unittest.TestCase):
     def run_reset(self, populated):
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            documents = root / "documents"
-            documents.mkdir()
+            documents = root / "backend" / "documents"
+            documents.mkdir(parents=True)
             readme = documents / "README.md"
             readme.write_text("Keep these framework instructions.\n")
             sibling = root / "outside-documents.md"
@@ -83,15 +83,15 @@ class ResetDocuments(unittest.TestCase):
 
     @unittest.skipUnless(SYMLINKS, "requires filesystem symlinks and Windows symlink privilege")
     def test_symlinked_roots_stop_before_any_deletion(self):
-        for linked_root in ("documents", *(f"documents/{name}" for name in FOLDERS)):
+        for linked_root in ("backend/documents", *(f"backend/documents/{name}" for name in FOLDERS)):
             with self.subTest(linked_root=linked_root), TemporaryDirectory() as directory:
                 root = Path(directory)
                 outside = root / "outside"
                 outside.mkdir()
                 sentinel = outside / "keep.md"
                 sentinel.write_text("External document.\n")
-                documents = root / "documents"
-                documents.mkdir()
+                documents = root / "backend" / "documents"
+                documents.mkdir(parents=True)
                 for name in FOLDERS:
                     folder = documents / name
                     folder.mkdir()
@@ -116,8 +116,8 @@ class ResetDocuments(unittest.TestCase):
             sentinel = outside / "keep.md"
             sentinel.write_text("External document.\n")
             for name in FOLDERS:
-                (root / "documents" / name).mkdir(parents=True)
-            link = root / "documents/projects/external"
+                (root / "backend" / "documents" / name).mkdir(parents=True)
+            link = root / "backend/documents/projects/external"
             link.symlink_to(outside, target_is_directory=True)
             result = subprocess.run([BASH, "-c", self.reset_script()], cwd=root, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)

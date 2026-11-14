@@ -31,7 +31,7 @@ Pergunte à pessoa (pule o que `$ARGUMENTS` já responder):
 
 ## Passo 2: Investigar o portal
 
-Faça o reconhecimento antes de escrever código. Use o WebFetch (ou `python3 tools/fetch_page.py '<URL>' --text` via Bash quando o WebFetch for recusado) no portal:
+Faça o reconhecimento antes de escrever código. Use o WebFetch (ou `python3 backend/tools/fetch_page.py '<URL>' --text` via Bash quando o WebFetch for recusado) no portal:
 
 1. **Ache o padrão da URL de busca.** Carregue a página de busca do portal, faça uma busca (mentalmente na barra de endereço ou via coleta) e identifique: o endpoint de busca, o parâmetro de consulta e os parâmetros de local, idade da vaga e paginação. Prefira uma API JSON se houver uma por trás do site (procure endpoints `/api/` nas chamadas do JavaScript da página, ou dados embutidos como `__NEXT_DATA__` — foi assim que o `gupy-search` foi feito, veja o `url-reference.md` dele); senão, planeje ler a página HTML de resultados.
 2. **Colete uma resposta de busca** para a busca de teste e identifique os campos de cada resultado: **id, título, empresa, local, data de publicação e URL**. Para HTML, anote as classes ou atributos que ancoram cada campo. Para JSON, anote os caminhos dos campos. No Brasil, procure também o **regime** (CLT, PJ, estágio), que vale ouro na avaliação.
@@ -123,7 +123,7 @@ Não siga para o Passo 5 enquanto busca, detalhe e testes não passarem.
 
 1. Pergunte se a pessoa quer o portal novo na estratégia de busca do `/scrape`. Se quiser:
    - A CLI do portal já é encontrada automaticamente pelo `/scrape` (ele descobre `.agents/skills/*/SKILL.md`) — não é preciso mais nenhuma ligação para busca e detalhe pela CLI.
-   - **A pré-aprovação é por portal e deliberada.** O `/scrape` roda a CLI pelo Bash, e as únicas permissões permanentes são as entradas por portal em `.claude/settings.json`. Acrescente `Bash(bun run .agents/skills/<nome>/cli/src/cli.ts:*)` a `permissions.allow` ali **e** a `ALLOWED_PERMISSIONS` em `tools/security_guards.py` no mesmo commit — o guarda reprova o CI do fork por uma entrada de settings que ele não conhece, e esse é o passo de revisão funcionando como deve. Até as duas estarem no lugar, o `/scrape` pede permissão a cada chamada da CLI deste portal; a linha `allowed-tools` do próprio `SKILL.md` gerado só cobre as rodadas que acionam aquela skill diretamente.
+   - **A pré-aprovação é por portal e deliberada.** O `/scrape` roda a CLI pelo Bash, e as únicas permissões permanentes são as entradas por portal em `.claude/settings.json`. Acrescente `Bash(bun run .agents/skills/<nome>/cli/src/cli.ts:*)` a `permissions.allow` ali **e** a `ALLOWED_PERMISSIONS` em `backend/tools/security_guards.py` no mesmo commit — o guarda reprova o CI do fork por uma entrada de settings que ele não conhece, e esse é o passo de revisão funcionando como deve. Até as duas estarem no lugar, o `/scrape` pede permissão a cada chamada da CLI deste portal; a linha `allowed-tools` do próprio `SKILL.md` gerado só cobre as rodadas que acionam aquela skill diretamente.
    - Opcionalmente, acrescente buscas `site:` de reserva para esse portal em `.claude/skills/job-scraper/search-queries.md`, para o plano B continuar cobrindo o portal se a CLI não estiver disponível.
 2. Lembre a pessoa de anotar a linha de instalação, se ela mantiver um README no fork:
    ```bash

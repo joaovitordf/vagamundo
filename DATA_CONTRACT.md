@@ -27,11 +27,11 @@ Contém as preferências, credenciais, histórico de buscas, dados cadastrais e 
 | Caminho | Descrição | Tratamento |
 | :--- | :--- | :--- |
 | `data/vagamundo.db*` | Banco de dados local primário SQLite (WAL mode) | Gitignored |
-| `data/documents/` | Documentos originais do candidato | Gitignored |
-| `data/generated/` | PDFs e arquivos derivados de candidaturas | Gitignored |
-| `.env` | Chaves de API de provedores de IA (OpenAI, Gemini, Anthropic) | Gitignored |
-| `documents/cv/` e `documents/linkedin/` | Uploads locais do candidato | Gitignored |
-| `documents/perfil/respostas.json` | Respostas do formulário de perfil | Gitignored |
+| `.env` | Chaves de API de provedores de IA (OpenAI, Gemini, Anthropic) na raiz (editadas na aba Configurações ou manualmente; fallback legado em `backend/.env`) | Gitignored |
+| `backend/documents/perfil/` | Perfil e respostas estruturadas pela Web UI (`respostas.json`, `candidate-profile.md`, `search-queries.md`) | Gitignored |
+| `backend/documents/cv/` e `backend/documents/linkedin/` | Uploads locais da pessoa candidata (currículos e exportação LinkedIn) | Gitignored |
+| `backend/documents/applications/` e `backend/documents/interview/` | Dossiês de candidatura, cartas arquivadas e pacotes de entrevista | Gitignored |
+| `backend/cv/` e `backend/cover_letters/` | PDFs e arquivos `.tex` personalizados compilados por vaga (além de `main_example.tex` / `cover_example.tex`) | Gitignored (exceto exemplos) |
 
 ---
 

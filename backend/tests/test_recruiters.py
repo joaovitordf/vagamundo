@@ -261,14 +261,18 @@ class TestRecruiterService(unittest.TestCase):
         mock_carta.assert_not_called()
         mock_llm.assert_not_called()
 
-        # Saiu da caixa de entrada de Recrutadores e foi para Me Interessam sem auto_promoted
-        self.assertEqual(self.service.list_posts(), [])
+        # Publicação do LinkedIn permanece em Recrutadores (com job_status='interested') até exclusão manual
+        remaining = self.service.list_posts(portal="linkedin_post")
+        self.assertEqual([p["id"] for p in remaining], [post["id"]])
+        self.assertEqual(remaining[0]["job_status"], "interested")
         saved = self.repo.list_jobs(status="interested")
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["url"], f"recruiter://post/{post['id']}")
         refreshed_post = self.repo.get_recruiter_post(post["id"])
         self.assertEqual(refreshed_post["auto_promoted"], 0)
         self.assertEqual(refreshed_post["job_id"], saved[0]["id"])
+        self.assertTrue(self.service.dismiss_post(post["id"]))
+        self.assertEqual(self.service.list_posts(), [])
 
     def test_mark_post_contacted_duplicate_warning_and_reopen_roundtrip(self):
         post_1 = self.service.add_pasted_post(
@@ -503,6 +507,59 @@ class TestRecruitersApi(unittest.TestCase):
             self.assertEqual(len(apps), 1)
             self.assertEqual(apps[0]["contact_channel"], "recruiter_email")
             self.assertEqual(apps[0]["contacted_email"], "vagas@studio.dev")
+
+    def test_api_dismiss_batch_requires_csrf_and_moves_only_target_ids_to_limbo(self):
+        p1 = self.service.add_pasted_post(
+            raw_text="Dev Java Sênior remoto. CV para rh@alpha.dev",
+            title="Dev Java Sênior",
+            company="Alpha Tech",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000201/",
+        )
+        p2 = self.service.add_pasted_post(
+            raw_text="Dev Python Júnior presencial. CV para rh@alpha.dev",
+            title="Dev Python Júnior",
+            company="Alpha Tech",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000202/",
+        )
+        p3 = self.service.add_pasted_post(
+            raw_text="Dev Angular Pleno híbrido. CV para talento@beta.dev",
+            title="Dev Angular Pleno",
+            company="Beta Soft",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000203/",
+        )
+
+        # Sem CSRF -> 403
+        forbidden = self.client.post(
+            "/api/recruiters/dismiss-batch",
+            json={"post_ids": [p1["id"], p2["id"]]},
+        )
+        self.assertEqual(forbidden.status_code, 403)
+
+        # Com CSRF -> descarta em lote p1 e p2 (incluindo deduplicação/ID inexistente), preserva p3
+        resp = self.client.post(
+            "/api/recruiters/dismiss-batch",
+            json={"post_ids": [p1["id"], p1["id"], p2["id"], 999999]},
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["dismissed_count"], 2)
+        self.assertEqual(body["dismissed_ids"], [p1["id"], p2["id"]])
+
+        # Apenas p3 permanece listado no radar
+        remaining = self.client.get("/api/recruiters").json()["posts"]
+        self.assertEqual([p["id"] for p in remaining], [p3["id"]])
+
+        # Segunda chamada nos mesmos IDs é idempotente
+        again = self.client.post(
+            "/api/recruiters/dismiss-batch",
+            json={"post_ids": [p1["id"], p2["id"]]},
+            headers={"X-Painel-Token": self.token},
+        )
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()["dismissed_count"], 0)
+        self.assertEqual(again.json()["dismissed_ids"], [])
 
     def test_legacy_db_adds_application_and_recruiter_outreach_columns(self):
         legacy_file = NamedTemporaryFile(suffix=".db", delete=False)
@@ -1088,6 +1145,149 @@ class TestRecruitersApi(unittest.TestCase):
         refreshed = self.repo.get_recruiter_post(post["id"])
         self.assertEqual(refreshed["ai_score"], 88)
         self.assertIsNotNone(refreshed["ai_evaluated_at"])
+
+    def test_linkedin_posts_remain_listed_until_manual_dismiss_and_only_cv_uses_local_ai_score(self):
+        p_promoted = self.service.add_pasted_post(
+            raw_text="Vaga Java Angular Pleno remota! Enviar CV para selecao@promovida.dev",
+            title="Dev Java Angular Pleno",
+            company="Promovida Tech",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000001/",
+        )
+        p_low = self.service.add_pasted_post(
+            raw_text="Vaga Java Angular Sênior 15 anos. Contato: senior@outra.dev",
+            title="Arquiteto Java Angular",
+            company="Outra Tech",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000002/",
+        )
+        p_pool = self.service.add_pasted_post(
+            raw_text="Banco de talentos Python/Angular. Envie currículo para talentos@pool.dev",
+            title="Banco de Talentos TI",
+            company="Pool Corp",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000003/",
+        )
+
+        # Auto-promoção de p_promoted para Me Interessam mantém registro na lista do LinkedIn
+        with patch("backend.tools.painel_ia.save_job_cache"):
+            self.service.promote_post_to_interested(
+                p_promoted,
+                run_id="run-1",
+                score=85,
+                verdict="Strong Fit",
+                summary="Ótima aderência.",
+                best_email="selecao@promovida.dev",
+                ai_model="ollama-local",
+            )
+        self.repo.update_recruiter_post_ai(
+            p_promoted["id"], "vaga_ativa", 85, "Strong Fit", "Ótima aderência.", "selecao@promovida.dev", ai_model="ollama-local"
+        )
+        self.repo.update_recruiter_post_ai(
+            p_low["id"], "vaga_ativa", 40, "Weak Fit", "Score abaixo do mínimo.", "senior@outra.dev", ai_model="ollama-local"
+        )
+
+        def fake_triar(post):
+            return {
+                "classification": "banco_talentos",
+                "best_email": "talentos@pool.dev",
+                "score": 25,
+                "verdict": "Banco de talentos",
+                "summary": "Captação para banco sem vaga específica.",
+                "ai_model": "ollama-local",
+            }
+
+        with patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={"AI_CONSENT": "1"}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=True), \
+             patch("backend.tools.painel_ia.is_available", return_value=True), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", side_effect=fake_triar):
+            triage_res = self.service.triage_posts(post_ids=[p_pool["id"]], portal="linkedin_post")
+
+        self.assertEqual(triage_res["talent_pools_discarded"], 1)
+        self.assertEqual([p["id"] for p in triage_res["posts"]], [p_pool["id"]])
+        self.assertEqual(self.repo.get_recruiter_post(p_pool["id"])["dismissed"], 0)
+
+        all_li = self.service.list_posts(portal="linkedin_post")
+        by_id = {p["id"]: p for p in all_li}
+        self.assertEqual(set(by_id.keys()), {p_promoted["id"], p_low["id"], p_pool["id"]})
+        self.assertEqual(by_id[p_promoted["id"]]["auto_promoted"], 1)
+        self.assertEqual(by_id[p_promoted["id"]]["job_status"], "interested")
+        self.assertEqual(by_id[p_pool["id"]]["ai_classification"], "banco_talentos")
+        self.assertEqual(by_id[p_pool["id"]]["ai_score"], 25)
+
+        # only_cv=True respeita exclusivamente nota >= 60 da IA local após avaliação
+        cv_only = self.service.list_posts(only_cv=True, portal="linkedin_post")
+        self.assertEqual([p["id"] for p in cv_only], [p_promoted["id"]])
+
+        # Exclusão manual remove definitivamente da lista
+        self.service.dismiss_post(p_promoted["id"])
+        self.service.dismiss_post(p_pool["id"])
+        remaining_ids = [p["id"] for p in self.service.list_posts(portal="linkedin_post")]
+        self.assertEqual(remaining_ids, [p_low["id"]])
+
+    def test_dismiss_to_limbo_blocks_same_vacancy_without_blocking_other_jobs_same_email(self):
+        vaga_java = self.service.add_pasted_post(
+            raw_text="Vaga Desenvolvedor Java Sênior com Spring Boot e Kafka. Envie CV para rh@consultoria.dev",
+            title="Desenvolvedor Java Sênior",
+            company="Consultoria Dev",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000101/",
+        )
+        self.assertTrue(self.service.dismiss_post(vaga_java["id"]))
+
+        batch_res = self.service.add_pasted_posts_batch(
+            [
+                {
+                    "raw_text": "Vaga Desenvolvedor Java Sênior com Spring Boot e Kafka. Envie CV para rh@consultoria.dev",
+                    "title": "Desenvolvedor Java Sênior",
+                    "company": "Consultoria Dev",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000102/",
+                },
+                {
+                    "raw_text": "Nova vaga Engenheiro de Dados Pleno com Spark, Airflow e SQL. Contato: rh@consultoria.dev",
+                    "title": "Engenheiro de Dados Pleno",
+                    "company": "Consultoria Dev",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000103/",
+                },
+            ],
+            allow_without_email=False,
+        )
+
+        self.assertEqual(batch_res["skipped"], 1)
+        self.assertEqual(batch_res["imported"], 1)
+        listed = self.service.list_posts(portal="linkedin_post")
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(listed[0]["title"], "Engenheiro de Dados Pleno")
+        self.assertEqual(listed[0]["emails"], ["rh@consultoria.dev"])
+
+    def test_dismiss_posts_batch_preserves_limbo_reimport_block(self):
+        v1 = self.service.add_pasted_post(
+            raw_text="Vaga Node.js Sênior com TypeScript e PostgreSQL. Envie CV para jobs@nodecorp.dev",
+            title="Vaga Node.js Sênior",
+            company="NodeCorp",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000301/",
+        )
+        v2 = self.service.add_pasted_post(
+            raw_text="Vaga QA Automação Cypress/Playwright. Envie CV para qa@nodecorp.dev",
+            title="QA Automação",
+            company="NodeCorp",
+            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000302/",
+        )
+
+        dismissed = self.service.dismiss_posts([v1["id"], v2["id"]])
+        self.assertEqual(dismissed, [v1["id"], v2["id"]])
+        self.assertEqual(self.service.list_posts(portal="linkedin_post"), [])
+
+        # Reimportar a mesma vaga já descartada em lote continua bloqueado no Limbo
+        reimport = self.service.add_pasted_posts_batch(
+            [
+                {
+                    "raw_text": "Vaga Node.js Sênior com TypeScript e PostgreSQL. Envie CV para jobs@nodecorp.dev",
+                    "title": "Vaga Node.js Sênior",
+                    "company": "NodeCorp",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000399/",
+                }
+            ],
+            allow_without_email=False,
+        )
+        self.assertEqual(reimport["skipped"], 1)
+        self.assertEqual(reimport["imported"], 0)
 
 
 if __name__ == "__main__":

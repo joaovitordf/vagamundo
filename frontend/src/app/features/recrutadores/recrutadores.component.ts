@@ -4,10 +4,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, LinkedInWorkerStatus, SyncRecruiterPostsResponse } from '../../core/services/api.service';
 import { PortalBadgeComponent } from '../../shared/components/portal-badge.component';
+import { CvRandomControlComponent } from '../../shared/components/cv-random-control/cv-random-control.component';
+import { createCvPickerState, pickNextCvKeyword } from '../../shared/utils/cv-area-picker.util';
 import { AutoModeService } from '../../core/services/auto-mode.service';
 import { RecruiterSortMode, RecruiterStateService } from '../../core/services/recruiter-state.service';
 import { ToastService } from '../../core/services/toast.service';
-import { PreviouslyContactedEmail, RecruiterPost } from '../../core/models/vaga.model';
+import { CvAreaItem, CvAreasSource, PreviouslyContactedEmail, RecruiterPost } from '../../core/models/vaga.model';
 
 export function summarizeRecruiterSync(
   res?: SyncRecruiterPostsResponse | null
@@ -111,7 +113,7 @@ import {
 @Component({
   selector: 'app-recrutadores',
   standalone: true,
-  imports: [CommonModule, FormsModule, PortalBadgeComponent],
+  imports: [CommonModule, FormsModule, PortalBadgeComponent, CvRandomControlComponent],
   templateUrl: './recrutadores.component.html',
   styleUrl: './recrutadores.component.css'
 })
@@ -167,9 +169,13 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
   readonly statusMessage = this.state.statusMessage;
   readonly errorMessage = this.state.errorMessage;
   readonly copiedEmail = signal<string | null>(null);
-  readonly copiedPrompt = signal<{ postId: number; email: string } | null>(null);
+  readonly copiedPrompt = signal<{ postId: number; email: string; scope: 'current' | 'history' } | null>(null);
   readonly busyPostIds = signal<Set<number>>(new Set());
-  readonly multiEmailPickerPostId = signal<number | null>(null);
+  readonly bulkDismissing = signal<boolean>(false);
+  readonly multiEmailPickerTarget = signal<{ postId: number; scope: 'current' | 'history' } | null>(null);
+  readonly expandedHistoryPosts = signal<Set<number>>(new Set());
+  readonly selectedHistoryIds = signal<Set<number>>(new Set());
+  readonly historyLowScoreThreshold = 45;
   readonly linkedInStatus = signal<LinkedInWorkerStatus | null>(null);
   readonly linkedInBusy = signal<boolean>(false);
   readonly linkedInPostsCount = computed(() =>
@@ -194,6 +200,22 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     }
   });
   readonly filteredPosts = this.state.filteredPosts;
+  readonly relevantHistoryPosts = this.state.historyPosts;
+  readonly lowScoreHistoryPosts = computed(() =>
+    this.relevantHistoryPosts().filter(
+      p => typeof p.ai_score === 'number' && p.ai_score < this.historyLowScoreThreshold
+    )
+  );
+  readonly selectedHistoryIdList = computed(() => {
+    const selected = this.selectedHistoryIds();
+    return this.relevantHistoryPosts()
+      .filter(p => selected.has(p.id))
+      .map(p => p.id);
+  });
+  readonly allHistorySelected = computed(() => {
+    const history = this.relevantHistoryPosts();
+    return history.length > 0 && this.selectedHistoryIdList().length === history.length;
+  });
   readonly hasSecondaryFilters = this.state.hasSecondaryFilters;
   readonly triaging = signal<boolean>(false);
   readonly untriagedVisibleCount = computed(() =>
@@ -209,6 +231,7 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
 
   get filterText(): string { return this.state.filterText(); }
   set filterText(v: string) {
+    this.state.autoRunFilterApplied.set(false);
     this.state.filterText.set(v);
     if (!v.trim() && this.allPosts().length === 0) {
       this.state.hasSearched.set(false);
@@ -272,13 +295,14 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
   }
 
   // Sorteador de CV
-  private cvAreasList: any[] = [];
-  private cvAreaQueue: any[] = [];
-  private lastPickedAreaId: string | null = null;
+  readonly cvAreasList = signal<CvAreaItem[]>([]);
+  readonly cvAreasSource = signal<CvAreasSource>('fallback');
+  private cvPickerState = createCvPickerState();
 
   // Subconjunto que bate com as palavras-chave da busca (base antes dos filtros secundários)
   readonly keywordMatchedPosts = computed(() => {
     if (!this.hasSearched()) return [];
+    if (this.state.autoRunFilterApplied()) return this.allPosts();
     const query = this.state.filterText().trim();
     if (!query) return this.allPosts();
     return this.allPosts().filter(p => {
@@ -319,13 +343,10 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Mantém busca restaurada quando há termo + pesquisa ativa na sessão / localStorage
-    if (this.state.hasActiveKeywordSearch()) {
-      this.fetchPosts(this.allPosts().length === 0);
-    } else {
-      this.state.hasSearched.set(false);
-      this.state.persist();
-    }
+    // Mantém a lista de publicações do LinkedIn com e-mail sempre carregada até exclusão manual
+    this.state.hasSearched.set(true);
+    this.state.persist();
+    this.fetchPosts(this.allPosts().length === 0);
   }
 
   onOnlyCvMatchChange(checked: boolean): void {
@@ -404,10 +425,12 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     if (this.onlyCvMatch()) {
       const label = 'apenas compatíveis com CV';
       fallbackReasons.push(label);
+      const minScore = this.autoMinScore || 60;
       const hidden = base.filter(p => {
-        const matched =
-          (p.matched_keywords && p.matched_keywords.length > 0) ||
-          (p.ai_classification === 'vaga_ativa' && (p.ai_score || 0) > 0);
+        const aiMatch = p.ai_classification === 'vaga_ativa' && (p.ai_score ?? 0) >= minScore;
+        const matched = p.ai_evaluated_at
+          ? aiMatch
+          : ((p.matched_keywords && p.matched_keywords.length > 0) || aiMatch);
         return !matched;
       }).length;
       if (hidden > 0) reasons.push(`${label} (${hidden} ocultas)`);
@@ -438,7 +461,9 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     this.api.getCvAreas().subscribe({
       next: (res) => {
         if (res && Array.isArray(res.areas)) {
-          this.cvAreasList = res.areas;
+          this.cvAreasList.set(res.areas);
+          this.cvAreasSource.set(res.source === 'profile' ? 'profile' : 'fallback');
+          this.cvPickerState = { ...this.cvPickerState, queue: [] };
         }
       },
       error: (err) => console.warn('Falha ao carregar áreas do CV:', err)
@@ -491,10 +516,6 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     this.cvAreaBadge.set('');
     this.state.scoreFilter.set('');
     this.state.portalFilter.set('');
-    this.state.onlyCvMatch.set(false);
-    if (this.jobAgeFilter === '1' || this.jobAgeFilter === '2' || this.jobAgeFilter === '3') {
-      this.state.jobAgeFilter.set('');
-    }
     this.state.autoRunFilterApplied.set(true);
     const minScore = Math.max(45, Math.min(95, Math.round(Number(this.autoMinScore) || 60)));
     const cooldownSeconds = Math.max(15, Math.min(300, Math.round(Number(this.autoCooldownSeconds) || 30)));
@@ -595,9 +616,12 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     if (showSpinner) {
       this.loading.set(true);
     }
-    this.api.getRecruiterPosts().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+    this.api.getRecruiterPosts(undefined, false, 'linkedin_post').pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res) => {
-        this.allPosts.set(res.posts || []);
+        const posts = (res.posts || []).filter(
+          p => p.portal === 'linkedin_post' && Array.isArray(p.emails) && p.emails.length > 0
+        );
+        this.allPosts.set(posts);
         this.loading.set(false);
       },
       error: (err) => {
@@ -608,32 +632,17 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
   }
 
   pickRandomCvArea(): void {
-    if (!this.cvAreasList.length) return;
-    if (this.cvAreaQueue.length === 0) {
-      const copy = [...this.cvAreasList];
-      for (let i = copy.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [copy[i], copy[j]] = [copy[j], copy[i]];
-      }
-      if (copy.length > 1 && copy[0].id === this.lastPickedAreaId) {
-        const swapIdx = 1 + Math.floor(Math.random() * (copy.length - 1));
-        [copy[0], copy[swapIdx]] = [copy[swapIdx], copy[0]];
-      }
-      this.cvAreaQueue = copy;
-    }
-
-    const picked = this.cvAreaQueue.shift();
-    if (!picked) return;
-    this.lastPickedAreaId = picked.id;
-
-    const candidates: string[] = (picked.keywords || [])
-      .map((k: unknown) => String(k || '').trim())
-      .filter(Boolean);
-    const current = (this.filterText || '').trim().toLowerCase();
-    const pool = candidates.filter((k: string) => k.toLowerCase() !== current);
-    const chosen = (pool.length ? pool[Math.floor(Math.random() * pool.length)] : candidates[0]) || '';
+    const result = pickNextCvKeyword(
+      this.cvAreasList(),
+      this.cvPickerState,
+      this.filterText,
+      this.cvAreasSource(),
+    );
+    if (!result) return;
+    this.cvPickerState = result.state;
+    const chosen = result.keyword;
     this.filterText = chosen;
-    this.cvAreaBadge.set(`Área CV: ${picked.label || picked.title}`);
+    this.cvAreaBadge.set(result.badgeText);
     this.errorMessage.set('');
     this.statusMessage.set('');
     if (this.allPosts().length > 0) {
@@ -771,11 +780,94 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
         if (this.copiedPrompt()?.postId === postId) {
           this.copiedPrompt.set(null);
         }
+        if (this.multiEmailPickerTarget()?.postId === postId) {
+          this.multiEmailPickerTarget.set(null);
+        }
+        this.pruneHistorySelection([postId]);
         this.allPosts.update(posts => posts.filter(p => p.id !== postId));
       },
       error: (err) => {
         this.errorMessage.set('Erro ao remover publicação: ' + (err?.error?.detail || err?.message || 'Falha'));
       }
+    });
+  }
+
+  isHistorySelected(postId: number): boolean {
+    return this.selectedHistoryIds().has(postId);
+  }
+
+  toggleHistorySelection(postId: number, checked: boolean): void {
+    this.selectedHistoryIds.update(set => {
+      const next = new Set(set);
+      if (checked) {
+        next.add(postId);
+      } else {
+        next.delete(postId);
+      }
+      return next;
+    });
+  }
+
+  toggleSelectAllHistory(checked: boolean): void {
+    if (!checked) {
+      this.selectedHistoryIds.set(new Set());
+      return;
+    }
+    this.selectedHistoryIds.set(new Set(this.relevantHistoryPosts().map(p => p.id)));
+  }
+
+  dismissLowScoreHistory(): void {
+    const ids = this.lowScoreHistoryPosts().map(p => p.id);
+    if (!ids.length || this.bulkDismissing()) return;
+    const msg = `Enviar ${ids.length} ${ids.length === 1 ? 'vaga com nota menor que' : 'vagas com nota menor que'} ${this.historyLowScoreThreshold} para o Limbo?`;
+    if (!confirm(msg)) return;
+    this.executeBatchLimboDismiss(ids, `nota < ${this.historyLowScoreThreshold}`);
+  }
+
+  dismissSelectedHistory(): void {
+    const ids = this.selectedHistoryIdList();
+    if (!ids.length || this.bulkDismissing()) return;
+    const msg = `Apagar ${ids.length} ${ids.length === 1 ? 'vaga selecionada' : 'vagas selecionadas'} e enviar para o Limbo?`;
+    if (!confirm(msg)) return;
+    this.executeBatchLimboDismiss(ids, 'seleção');
+  }
+
+  private executeBatchLimboDismiss(ids: number[], reasonLabel: string): void {
+    this.errorMessage.set('');
+    this.bulkDismissing.set(true);
+
+    this.api.dismissRecruiterPostsBatch(ids).subscribe({
+      next: (res) => {
+        this.bulkDismissing.set(false);
+        const removed = res?.dismissed_ids?.length ? res.dismissed_ids : ids;
+        const removedSet = new Set<number>(removed);
+
+        if (this.copiedPrompt() && removedSet.has(this.copiedPrompt()!.postId)) {
+          this.copiedPrompt.set(null);
+        }
+        if (this.multiEmailPickerTarget() && removedSet.has(this.multiEmailPickerTarget()!.postId)) {
+          this.multiEmailPickerTarget.set(null);
+        }
+        this.pruneHistorySelection(removedSet);
+        this.allPosts.update(posts => posts.filter(p => !removedSet.has(p.id)));
+        const count = res?.dismissed_count ?? removedSet.size;
+        this.statusMessage.set(`${count} ${count === 1 ? 'vaga enviada' : 'vagas enviadas'} para o Limbo (${reasonLabel}).`);
+      },
+      error: (err) => {
+        this.bulkDismissing.set(false);
+        this.errorMessage.set('Erro ao excluir vagas em lote: ' + (err?.error?.detail || err?.message || 'Falha'));
+      }
+    });
+  }
+
+  private pruneHistorySelection(removedIds: Iterable<number>): void {
+    this.selectedHistoryIds.update(set => {
+      if (set.size === 0) return set;
+      const next = new Set(set);
+      for (const id of removedIds) {
+        next.delete(id);
+      }
+      return next;
     });
   }
 
@@ -819,10 +911,13 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
         if (this.copiedPrompt()?.postId === post.id) {
           this.copiedPrompt.set(null);
         }
-        if (this.multiEmailPickerPostId() === post.id) {
-          this.multiEmailPickerPostId.set(null);
+        if (this.multiEmailPickerTarget()?.postId === post.id) {
+          this.multiEmailPickerTarget.set(null);
         }
-        this.allPosts.update(posts => posts.filter(p => p.id !== post.id));
+        // Mantém a vaga visível no histórico com o status 'interested' alinhado ao banco
+        this.allPosts.update(posts =>
+          posts.map(p => p.id === post.id ? { ...p, job_status: 'interested' } : p)
+        );
         this.statusMessage.set(`"${post.company}" salva em Me Interessam!`);
       },
       error: (err) => {
@@ -832,14 +927,27 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     });
   }
 
-  onMarkContactedClick(post: RecruiterPost, explicitEmail?: string): void {
+  isCopiedPromptOpen(postId: number, scope: 'current' | 'history' = 'current'): boolean {
+    const prompt = this.copiedPrompt();
+    return Boolean(prompt && prompt.postId === postId && prompt.scope === scope);
+  }
+
+  isMultiEmailPickerOpen(postId: number, scope: 'current' | 'history' = 'current'): boolean {
+    const target = this.multiEmailPickerTarget();
+    return Boolean(target && target.postId === postId && target.scope === scope);
+  }
+
+  closeMultiEmailPicker(): void {
+    this.multiEmailPickerTarget.set(null);
+  }
+
+  onMarkContactedClick(post: RecruiterPost, explicitEmail?: string, scope: 'current' | 'history' = 'current'): void {
     if (this.isPostBusy(post.id)) return;
     const emails = post.emails || [];
 
     if (!explicitEmail && emails.length > 1) {
-      this.multiEmailPickerPostId.set(
-        this.multiEmailPickerPostId() === post.id ? null : post.id
-      );
+      const currentlyOpen = this.isMultiEmailPickerOpen(post.id, scope);
+      this.multiEmailPickerTarget.set(currentlyOpen ? null : { postId: post.id, scope });
       return;
     }
 
@@ -870,9 +978,10 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
         if (this.copiedPrompt()?.postId === post.id) {
           this.copiedPrompt.set(null);
         }
-        if (this.multiEmailPickerPostId() === post.id) {
-          this.multiEmailPickerPostId.set(null);
+        if (this.multiEmailPickerTarget()?.postId === post.id) {
+          this.multiEmailPickerTarget.set(null);
         }
+        this.pruneHistorySelection([post.id]);
         this.allPosts.update(posts =>
           removePostAndFlagEmail(posts, post.id, targetEmail, {
             company: post.company,
@@ -903,12 +1012,12 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     }
   }
 
-  copyEmail(email: string, post?: RecruiterPost): void {
+  copyEmail(email: string, post?: RecruiterPost, scope: 'current' | 'history' = 'current'): void {
     if (!email) return;
     const onCopied = () => {
       this.copiedEmail.set(email);
       if (post?.id) {
-        this.copiedPrompt.set({ postId: post.id, email });
+        this.copiedPrompt.set({ postId: post.id, email, scope });
       }
       if (this.copyEmailTimer) {
         clearTimeout(this.copyEmailTimer);
@@ -928,8 +1037,9 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     }
   }
 
-  toggleExpand(postId: number): void {
-    this.expandedPosts.update(set => {
+  toggleExpand(postId: number, scope: 'current' | 'history' = 'current'): void {
+    const target = scope === 'history' ? this.expandedHistoryPosts : this.expandedPosts;
+    target.update(set => {
       const next = new Set(set);
       if (next.has(postId)) {
         next.delete(postId);
@@ -940,8 +1050,9 @@ export class RecrutadoresComponent implements OnInit, OnDestroy {
     });
   }
 
-  isExpanded(postId: number): boolean {
-    return this.expandedPosts().has(postId);
+  isExpanded(postId: number, scope: 'current' | 'history' = 'current'): boolean {
+    const target = scope === 'history' ? this.expandedHistoryPosts : this.expandedPosts;
+    return target().has(postId);
   }
 
   getPortalLabel(portal: string): string {

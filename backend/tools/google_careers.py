@@ -90,20 +90,39 @@ def _is_brazil_location(location: str) -> bool:
     return any(k in loc_low for k in _BRAZIL_CITIES)
 
 
-def _default_brazil_locations() -> list[str]:
-    locs = ["Brazil"]
+def _load_profile_prefs() -> dict:
+    """Lê preferências do perfil local sem exigir dependências opcionais."""
     try:
         try:
             from backend.tools import painel_perfil
         except ImportError:
             import painel_perfil
-        ans = painel_perfil.load_answers()
-        cidade = str(ans.get("cidade") or "").strip()
-        city_name = re.split(r"[,/\-]+", cidade)[0].strip()
-        if city_name and city_name.lower() not in ("brazil", "brasil") and city_name not in locs:
-            locs.append(city_name)
-    except (ImportError, OSError, AttributeError):
-        pass
+        return painel_perfil.load_answers() or {}
+    except (ImportError, OSError, AttributeError, ValueError):
+        return {}
+
+
+def _profile_terms(ans: dict) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for field in ("cargos", "palavras_chave_sorteio"):
+        raw = ans.get(field)
+        if isinstance(raw, list):
+            for item in raw:
+                clean = str(item or "").strip()
+                if clean and clean.lower() not in seen:
+                    seen.add(clean.lower())
+                    terms.append(clean)
+    return terms
+
+
+def _default_brazil_locations() -> list[str]:
+    locs = ["Brazil"]
+    ans = _load_profile_prefs()
+    cidade = str(ans.get("cidade") or "").strip()
+    city_name = re.split(r"[,/\-]+", cidade)[0].strip()
+    if city_name and city_name.lower() not in ("brazil", "brasil") and city_name not in locs:
+        locs.append(city_name)
     return locs
 
 
@@ -115,12 +134,18 @@ def evaluate_google_job(
     responsibilities: str,
     about: str,
     notes: str,
+    accept_sen: set[str] | None = None,
+    profile_ans: dict | None = None,
 ) -> tuple[dict, list[str]]:
     """Analisa a descrição completa da vaga do Google e retorna (screening, warnings)."""
     t_low = title.lower()
     loc_low = location.lower()
     min_low = min_qual.lower()
     full_low = f"{title}\n{min_qual}\n{pref_qual}\n{responsibilities}\n{about}\n{notes}".lower()
+
+    ans = profile_ans if profile_ans is not None else _load_profile_prefs()
+    candidate_gender = str(ans.get("genero") or "").strip().lower()
+    custom_terms = [t.lower() for t in _profile_terms(ans)]
 
     warnings: list[str] = []
 
@@ -131,7 +156,10 @@ def evaluate_google_job(
     in_brazil = _is_brazil_location(location)
 
     if is_women_exclusive:
-        warnings.append("vaga exclusiva afirmativa (Women in Tech)")
+        if candidate_gender == "masculino":
+            warnings.append("vaga exclusiva afirmativa (Women in Tech)")
+        elif candidate_gender != "feminino":
+            warnings.append("vaga afirmativa para mulheres (Women in Tech — confirme elegibilidade)")
     if is_pcd_exclusive:
         warnings.append("vaga exclusiva afirmativa (PcD / People with Disabilities)")
     if is_foreign_citizenship:
@@ -143,7 +171,8 @@ def evaluate_google_job(
     years_matches = [int(y) for y in re.findall(r"(\d+)\+?\s*years?\s+of\s+experience", min_low)]
     min_years = max(years_matches) if years_matches else (posting_signals.extract_min_years_required(min_qual) or 0 if posting_signals else 0)
 
-    accept_sen = set(scrape_run.local_target_seniority() or ["junior", "pleno"])
+    if accept_sen is None:
+        accept_sen = set(scrape_run.local_target_seniority() or ["junior", "pleno"])
 
     # Detecta senioridade fora da faixa (Sênior, Staff, Tech Lead, Manager)
     is_manager = ("gestao" not in accept_sen) and any(k in t_low for k in ("manager", "director", "head of", "lead, americas"))
@@ -157,8 +186,9 @@ def evaluate_google_job(
     elif is_senior:
         warnings.append(f"senioridade fora da faixa (Sênior - {min_years}+ anos nas qualificações mínimas)")
 
-    # Detecta tecnologias e domínios citados na descrição
-    matched_techs = []
+    # Detecta competências citadas na descrição (termos do perfil + base geral)
+    matched_techs = [term for term in _profile_terms(ans) if term.lower() in full_low]
+    seen_labels = {m.lower() for m in matched_techs}
     for label, kw in [
         ("Python", "python"),
         ("Java", "java"),
@@ -171,9 +201,10 @@ def evaluate_google_job(
         ("Cloud", "cloud"),
         ("Estruturas de Dados e Algoritmos", "data structures"),
     ]:
-        if kw in full_low:
+        if kw in full_low and label.lower() not in seen_labels:
             matched_techs.append(label)
-    tech_str = ", ".join(matched_techs[:4]) if matched_techs else "fundamentos de Ciência da Computação"
+            seen_labels.add(label.lower())
+    tech_str = ", ".join(matched_techs[:4]) if matched_techs else "requisitos gerais da vaga"
 
     # Caso 1: Fora do Brasil sem remoto elegível ou cidadania estrangeira
     if not in_brazil or is_foreign_citizenship:
@@ -190,10 +221,11 @@ def evaluate_google_job(
             warnings,
         )
 
-    # Caso 2: Vagas exclusivas afirmativas (Women in Tech / PcD)
-    if is_women_exclusive or is_pcd_exclusive:
+    # Caso 2: Vagas exclusivas afirmativas incompatíveis (Women in Tech quando masculino / PcD)
+    women_blocked = is_women_exclusive and candidate_gender == "masculino"
+    if women_blocked or is_pcd_exclusive:
         score = 25
-        grupo = "mulheres (Women in Tech)" if is_women_exclusive else "pessoas com deficiência (PcD)"
+        grupo = "mulheres (Women in Tech)" if women_blocked else "pessoas com deficiência (PcD)"
         exp_info = f"{min_years} ano(s) de experiência" if min_years else "formação na área"
         return (
             {
@@ -207,7 +239,7 @@ def evaluate_google_job(
             warnings,
         )
 
-    # Caso 3: Áreas não técnicas (Jurídico, RH, Finanças, Vendas puras)
+    # Caso 3: Áreas não técnicas (só descartadas se não constarem nos interesses do perfil)
     non_tech = any(
         k in t_low
         for k in (
@@ -223,15 +255,16 @@ def evaluate_google_job(
             "performance specialist",
         )
     )
-    if non_tech:
+    matches_profile = any(term in t_low or term in full_low for term in custom_terms)
+    if non_tech and not matches_profile:
         score = 22
         return (
             {
                 "score": score,
                 "verdict": rank_state.band(score),
                 "summary": (
-                    f"Vaga fora de engenharia de software/computação ({title}) e que exige {min_years or 4}+ anos "
-                    "de experiência corporativa específica na área comercial, jurídica ou financeira."
+                    f"Vaga fora da área principal configurada no perfil ({title}), exigindo {min_years or 4}+ anos "
+                    "de atuação específica nessa frente corporativa."
                 ),
             },
             warnings,
@@ -267,23 +300,26 @@ def evaluate_google_job(
         )
 
     # Caso 6: Cargos Júnior / Early Career / Pleno (0 a 4 anos exigidos)
-    is_swe_or_ai = any(k in t_low for k in ("software engineer", "early career", "ai", "developer", "data scientist"))
-    if min_years <= 2 and is_swe_or_ai:
+    is_target_role = any(
+        k in t_low
+        for k in ("software engineer", "early career", "ai", "developer", "data scientist", *custom_terms)
+    )
+    if min_years <= 2 and is_target_role:
         score = 88
         summary = (
-            f"Encaixe direto: pede {min_years or 1} ano(s) de experiência em desenvolvimento "
+            f"Encaixe direto: pede {min_years or 1} ano(s) de experiência na área "
             f"({tech_str}) em {location}, alinhado à faixa de senioridade inicial/plena."
         )
     elif min_years <= 3:
         score = 74
         summary = (
-            f"Boa compatibilidade com base técnica em {tech_str} ({location}). "
+            f"Boa compatibilidade com o perfil ({tech_str}) em {location}. "
             f"As qualificações mínimas pedem {min_years} anos de experiência."
         )
     else:
         score = 58
         summary = (
-            f"Alinhada às tecnologias ({tech_str}) em {location}. "
+            f"Alinhada às competências ({tech_str}) em {location}. "
             f"Principal ponto de atenção é o requisito de {min_years} anos de experiência nas qualificações mínimas."
         )
 
@@ -298,17 +334,22 @@ def fetch_google_careers(
     max_workers: int = 5,
 ) -> list[dict]:
     """Busca vagas no Google Careers (Brasil), analisa a descrição completa e retorna lista pontuada."""
+    profile_ans = _load_profile_prefs()
+    accept_sen = set(scrape_run.local_target_seniority() or ["junior", "pleno"])
+    profile_kws = _profile_terms(profile_ans)
+
     if queries is None:
-        queries = [
-            "Software Engineer",
-            "Computer Science",
-            "Early Career",
-            "Developer",
-            "AI",
-            "Cloud",
-            "Technical Solutions",
-            "Data",
-        ]
+        if profile_kws:
+            queries = profile_kws[:8]
+        else:
+            queries = [
+                "Software Engineer",
+                "Project Manager",
+                "Data Analyst",
+                "Product",
+                "Cloud",
+                "Early Career",
+            ]
     if locations is None:
         locations = _default_brazil_locations()
 
@@ -357,19 +398,23 @@ def fetch_google_careers(
         if not (_is_brazil_location(loc_str) or "remote" in loc_lower):
             continue
 
-        # Ignora áreas puramente jurídicas, RH, contábeis ou vendas não técnicas
+        # Ignora áreas fora do perfil quando nenhum termo configurado casa com o título
         t_lower = title.lower()
-        if any(
-            k in t_lower
-            for k in (
-                "litigation counsel",
-                "employee relations",
-                "finance analyst",
-                "field sales representative",
-                "energy initiatives",
-                "commercials and incentives",
-                "performance specialist",
+        profile_lower = [t.lower() for t in profile_kws]
+        if (
+            any(
+                k in t_lower
+                for k in (
+                    "litigation counsel",
+                    "employee relations",
+                    "finance analyst",
+                    "field sales representative",
+                    "energy initiatives",
+                    "commercials and incentives",
+                    "performance specialist",
+                )
             )
+            and not any(pt in t_lower for pt in profile_lower)
         ):
             continue
 
@@ -430,6 +475,8 @@ def fetch_google_careers(
             responsibilities=resp_txt,
             about=about_txt,
             notes=notes_txt,
+            accept_sen=accept_sen,
+            profile_ans=profile_ans,
         )
 
         signals: dict = {}
@@ -438,7 +485,7 @@ def fetch_google_careers(
                 signals = posting_signals.analyse(
                     f"{title}\n{loc_str}\n{full_desc}",
                     title=title,
-                    accept={"junior", "pleno", "especialista"},
+                    accept=accept_sen,
                 )
             except Exception:
                 signals = {}

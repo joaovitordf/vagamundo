@@ -1,6 +1,6 @@
 # /html-report - Gerar o painel de candidaturas
 
-Gere um painel HTML autossuficiente a partir de `job_search_tracker.csv` e dos arquivos de candidatura em `documents/applications/`. A saída é um único arquivo `.html` — sem servidor, sem dependências — que abre direto no navegador. O painel é todo em português do Brasil.
+Gere um painel HTML autossuficiente a partir de `job_search_tracker.csv` e dos arquivos de candidatura em `backend/documents/applications/`. A saída é um único arquivo `.html` — sem servidor, sem dependências — que abre direto no navegador. O painel é todo em português do Brasil.
 
 ## Passo 0: Interpretar os argumentos
 
@@ -21,7 +21,7 @@ Leia em paralelo:
 
    Linhas gravadas antes de `deadline` existir têm treze campos e nenhum décimo quarto valor. Trate o campo ausente como vazio — nunca descarte a linha, e nunca deduza um prazo a partir da `date` dela.
 
-2. **`documents/applications/*/outcome.md`** — para cada candidatura resolvida, leia o arquivo de resultado para obter as etapas de entrevista exatas alcançadas (as caixas marcadas) e as observações. Junte isso à linha do tracker correspondente por empresa+cargo com correspondência aproximada (minúsculas, ignorando pontuação). Se houver um arquivo para uma linha sem correspondência, anexe-o como contexto extra mesmo assim.
+2. **`backend/documents/applications/*/outcome.md`** — para cada candidatura resolvida, leia o arquivo de resultado para obter as etapas de entrevista exatas alcançadas (as caixas marcadas) e as observações. Junte isso à linha do tracker correspondente por empresa+cargo com correspondência aproximada (minúsculas, ignorando pontuação). Se houver um arquivo para uma linha sem correspondência, anexe-o como contexto extra mesmo assim.
 
 Normalização de status — leve os valores do tracker a seis categorias canônicas antes de calcular as estatísticas:
 - `drafted` → **Rascunho** (documentos gravados pelo `/apply`, ainda não enviados)

@@ -40,10 +40,6 @@
   gap: 0.5rem;
 }
 
-.title-icon {
-  color: var(--vc-green, #10b981);
-}
-
 .badge-total {
   background: rgba(16, 185, 129, 0.15);
   border: 1px solid rgba(16, 185, 129, 0.3);
@@ -115,7 +111,7 @@
   border: 1px solid var(--vc-border, #334155);
   color: var(--vc-text, #f8fafc);
   padding: 0.65rem 0.85rem;
-  padding-right: 200px;
+  padding-right: 236px;
   border-radius: 8px;
   font-size: 0.9rem;
   outline: none;
@@ -166,26 +162,6 @@
 
 .btn-clear-input:hover {
   color: var(--vc-text, #f8fafc);
-}
-
-.btn-random-cv {
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: var(--vc-blue, #38bdf8);
-  border-radius: 6px;
-  padding: 0.35rem 0.7rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.btn-random-cv:hover {
-  background: rgba(56, 189, 248, 0.22);
 }
 
 .checkbox-field {
@@ -293,11 +269,206 @@
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
-/* LISTA DE POSTS */
-.posts-list-section {
+/* DUAS COLUNAS: ATUAIS ENCONTRADOS E HISTÓRICO */
+.recruiters-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.recruiter-column-card {
+  min-width: 0;
+  padding: 1.25rem;
+  background: var(--vc-surface, #1e293b);
+  border: 1px solid var(--vc-border, #334155);
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.column-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--vc-border, #334155);
+}
+
+.column-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.column-title-row h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--vc-text, #f8fafc);
+}
+
+.column-count-badge {
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #7dd3fc;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.column-count-badge--history {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+}
+
+.column-card-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--vc-muted, #94a3b8);
+}
+
+.history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid var(--vc-border, #334155);
+  border-radius: 9px;
+}
+
+.history-select-all,
+.history-post-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--vc-text, #f1f5f9);
+  cursor: pointer;
+  user-select: none;
+}
+
+.history-select-all input[type="checkbox"],
+.history-post-checkbox input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.history-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-bulk-warning,
+.btn-bulk-danger {
+  border-radius: 6px;
+  padding: 0.38rem 0.72rem;
+  font-size: 0.79rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s;
+}
+
+.btn-bulk-warning {
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  color: #fcd34d;
+}
+
+.btn-bulk-warning:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.26);
+  border-color: #f59e0b;
+}
+
+.btn-bulk-danger {
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.42);
+  color: #fca5a5;
+}
+
+.btn-bulk-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.26);
+  border-color: #ef4444;
+}
+
+.btn-bulk-warning:disabled,
+.btn-bulk-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.history-item-select-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.22);
+}
+
+.badge-low-score-hint {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+}
+
+.post-card--compact {
+  padding: 0.95rem 1.05rem;
+  gap: 0.7rem;
+}
+
+.post-card--compact .post-title {
+  font-size: 1rem;
+}
+
+.post-card--selected {
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3);
+}
+
+.btn-footer-interested--saved {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+  cursor: default;
+}
+
+/* LISTA DE POSTS */
+.posts-list-section,
+.history-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.recruiter-column-card .initial-search-prompt,
+.recruiter-column-card .loading-state,
+.recruiter-column-card .empty-state {
+  padding: 2.25rem 1.25rem;
+  background: rgba(15, 23, 42, 0.28);
+  border: 1px dashed var(--vc-border, #334155);
+  border-radius: 10px;
 }
 
 .initial-search-prompt,
@@ -1099,4 +1270,55 @@
 :host-context([data-theme="light"]) .linkedin-status-pill[data-status="checkpoint_required"],
 :host-context([data-theme="light"]) .linkedin-worker-alert {
   color: #b45309;
+}
+
+:host-context([data-theme="light"]) .column-count-badge {
+  color: #0369a1;
+}
+
+:host-context([data-theme="light"]) .column-count-badge--history,
+:host-context([data-theme="light"]) .btn-footer-interested--saved {
+  color: #047857;
+}
+
+:host-context([data-theme="light"]) .history-toolbar {
+  background: rgba(241, 245, 249, 0.9);
+}
+
+:host-context([data-theme="light"]) .btn-bulk-warning,
+:host-context([data-theme="light"]) .badge-low-score-hint {
+  color: #b45309;
+}
+
+:host-context([data-theme="light"]) .btn-bulk-danger {
+  color: #b91c1c;
+}
+
+:host-context([data-theme="light"]) .recruiter-column-card .initial-search-prompt,
+:host-context([data-theme="light"]) .recruiter-column-card .loading-state,
+:host-context([data-theme="light"]) .recruiter-column-card .empty-state {
+  background: rgba(248, 250, 252, 0.8);
+}
+
+@media (max-width: 1120px) {
+  .recruiters-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .input-with-action {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .vc-input {
+    padding-right: 0.85rem;
+  }
+
+  .input-actions-cluster {
+    position: static;
+    justify-content: flex-end;
+  }
 }

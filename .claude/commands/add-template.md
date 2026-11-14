@@ -166,7 +166,7 @@ Insira (ou substitua, se já existir) este bloco logo depois do título H1 do ar
 > - **Comando de compilação:** `<o comando completo declarado>` (não o comando citado nas orientações padrão abaixo — o passo de compilação do `/apply` precisa usar este). Rode a partir da pasta de saída. Se ele redirecionar para `build/`, o log fica em `build/`, e a limpeza do Passo 5e do `/apply` precisa apagar essa pasta `build/` também
 > - **Fontes tipográficas:** <resumo das fontes, com qualquer nota de caminho para fontes incluídas>
 > - **Limite de páginas:** exatamente <N> página(s)
-> - **Arquivo de saída:** `cv/main_<company>_<role><extensão>` / `cover_letters/cover_<company>_<role><extensão>`; copie para a pasta de saída os arquivos de classe/pacote/fonte de que o modelo precisa, ou referencie-os por caminho relativo
+> - **Arquivo de saída:** `backend/cv/main_<company>_<role><extensão>` / `backend/cover_letters/cover_<company>_<role><extensão>`; copie para a pasta de saída os arquivos de classe/pacote/fonte de que o modelo precisa, ou referencie-os por caminho relativo
 <!-- END ACTIVE-TEMPLATE -->
 ```
 

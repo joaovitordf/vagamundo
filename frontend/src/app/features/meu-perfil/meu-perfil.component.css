@@ -190,6 +190,30 @@ form.perfil .field > span {
   color: #f8fafc;
 }
 
+form.perfil .field-label-inline {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.field-count-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+}
+
+form.perfil .field.field-focused textarea,
+form.perfil .field.field-focused input[type=text] {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+}
+
 form.perfil input[type=text],
 form.perfil textarea {
   width: 100%;
@@ -258,6 +282,13 @@ form.perfil .help {
   color: #f8fafc;
   cursor: pointer;
   user-select: none;
+}
+
+.auto-organize-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-top: 10px;
 }
 
 .confirm-box input[type=checkbox] {
@@ -380,4 +411,10 @@ pre.summary {
   background: #fffbeb;
   color: #92400e;
   border-color: #fde68a;
+}
+
+:host-context([data-theme="light"]) .field-count-pill {
+  background: rgba(2, 132, 199, 0.1);
+  border-color: rgba(2, 132, 199, 0.3);
+  color: #0369a1;
 }

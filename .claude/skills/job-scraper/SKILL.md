@@ -8,7 +8,7 @@ description: >
   Deduplica entre execuções. Ativa com: buscar vagas, procurar vagas, vagas novas,
   tem vaga nova?, rodar a busca, varrer portais, /scrape. English: job scrape,
   find jobs, search jobs, new jobs.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(python tools/job_key.py:*), Bash(python3 tools/job_key.py:*), Bash(python tools/scrape_run.py:*), Bash(python3 tools/scrape_run.py:*), Bash(python tools/posting_signals.py:*), Bash(python3 tools/posting_signals.py:*), WebFetch, WebSearch, Agent, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(python backend/tools/job_key.py:*), Bash(python3 backend/tools/job_key.py:*), Bash(python backend/tools/scrape_run.py:*), Bash(python3 backend/tools/scrape_run.py:*), Bash(python backend/tools/posting_signals.py:*), Bash(python3 backend/tools/posting_signals.py:*), WebFetch, WebSearch, Agent, AskUserQuestion
 ---
 
 # Busca de vagas
@@ -39,14 +39,14 @@ Argumentos opcionais:
 
 ## Passos de execução
 
-### Atalho: `tools/scrape_run.py` faz a parte mecânica
+### Atalho: `backend/tools/scrape_run.py` faz a parte mecânica
 
 Os Passos 1b, 2 (deduplicação e sinais do texto, em lote) e 4 abaixo são a especificação; o
-`tools/scrape_run.py` os executa do mesmo jeito em toda rodada, sem scripts improvisados:
+`backend/tools/scrape_run.py` os executa do mesmo jeito em toda rodada, sem scripts improvisados:
 
 ```bash
-python3 tools/scrape_run.py search --out "$SCRATCHPAD/scrape.json"        # prioridades 1-3; --all para todas, --priority 1,2
-python3 tools/scrape_run.py record --in "$SCRATCHPAD/classificadas.json"   # Passo 4, depois de você dar o encaixe
+python3 backend/tools/scrape_run.py search --out "$SCRATCHPAD/scrape.json"        # prioridades 1-3; --all para todas, --priority 1,2
+python3 backend/tools/scrape_run.py record --in "$SCRATCHPAD/classificadas.json"   # Passo 4, depois de você dar o encaixe
 ```
 
 - `search` lê as linhas `<portal>-search: <args>` das seções "### Prioridade N" de
@@ -54,13 +54,13 @@ python3 tools/scrape_run.py record --in "$SCRATCHPAD/classificadas.json"   # Pas
   `--jobage 14` (ou o da própria linha) e `--format json`, descarta o que já foi visto (por URL
   ou empresa+título, no `job_scraper/seen_jobs.json` e no `job_search_tracker.csv`), junta a
   mesma vaga vista em dois portais (`also_on`) e anexa a cada vaga nova os `signals` do
-  `tools/posting_signals.py`, com a `Senioridade-alvo` do CLAUDE.md. O resumo impresso traz o
+  `backend/tools/posting_signals.py`, com a `Senioridade-alvo` do CLAUDE.md. O resumo impresso traz o
   que o Passo 4.75 e o Passo 5 precisam: buscas e resultados por portal, erros, portais com
   zero resultados, portais pulados (`enabled: false`) e linhas de portal não instalado.
 - Você continua fazendo o que exige julgamento: o `detail` com `posting_signals` no texto
   completo das vagas promissoras (Passo 2), o encaixe (Passo 3) e a apresentação (Passo 5).
 - `record` recebe a lista com `fit` (`high`/`medium`/`low`) e, se quiser, `status` em cada
-  vaga, e grava no `job_scraper/seen_jobs.json` com a chave do `tools/job_key.py` e os campos do
+  vaga, e grava no `job_scraper/seen_jobs.json` com a chave do `backend/tools/job_key.py` e os campos do
   esquema do Passo 4. Nunca sobrescreve uma entrada existente.
 - O arquivo do `search` é conteúdo de terceiros: fica fora do repositório (scratchpad ou pasta
   temporária); a ferramenta recusa um `--out` dentro dele.
@@ -128,7 +128,7 @@ trecho curto da descrição. Na Gupy, a própria busca já traz `contract` (o re
 candidatura da empresa, que o `scrape_run.py` deixa em `full_posting`:
 - `portal` preenchido (Gupy, Sólides, Greenhouse...): leia com o `detail` desse portal, passando
   o `url`;
-- `portal: null` (InHire, Workable, site próprio): tente `python3 tools/fetch_page.py` no `url`;
+- `portal: null` (InHire, Workable, site próprio): tente `python3 backend/tools/fetch_page.py` no `url`;
   se a página não trouxer o texto (a InHire monta a vaga no navegador), avalie pelo resumo do
   agregador e diga nos destaques que o texto completo não foi lido.
 
@@ -144,7 +144,7 @@ ausência daquele aviso, não prova de que a vaga está aberta; prazos e URLs mo
 sendo trabalho do `/rank`. Na Gupy, uma vaga encerrada faz o `detail` devolver `NOT_FOUND`.
 
 **De resultados do WebSearch:** use `WebFetch` na URL da vaga e extraia os mesmos campos à mão.
-Se devolver HTTP 403, tente de novo com cabeçalhos de navegador via `python3 tools/fetch_page.py`
+Se devolver HTTP 403, tente de novo com cabeçalhos de navegador via `python3 backend/tools/fetch_page.py`
 conforme `.claude/skills/job-application-assistant/09-web-research.md` antes de desistir — a
 maioria dos sites de bancos e empresas rejeita o user agent do WebFetch enquanto serve
 navegadores normalmente.
@@ -167,21 +167,21 @@ Para cada candidata:
 **O rótulo do portal não é prova.** Na Gupy, uma vaga marcada "Remoto" pode dizer no próprio
 texto "atuação híbrida (4x presenciais)" em outra cidade; no LinkedIn, o filtro `--remote` deixa
 passar vagas com "Híbrido" no título; uma vaga pode ser seleção interna, só para quem já é da
-empresa. O `tools/posting_signals.py` lê o texto e aponta esses casos, citando o trecho:
+empresa. O `backend/tools/posting_signals.py` lê o texto e aponta esses casos, citando o trecho:
 
 1. **Em lote, sobre os resultados da busca** (título, trecho de descrição e o campo de senioridade do portal), com a
    faixa de senioridade da pessoa (linha `Senioridade-alvo` do CLAUDE.md, em códigos
    `estagio,junior,pleno,senior,especialista,staff,lead,gestao`; omita `--accept` se a linha
    não existir):
    ```bash
-   python3 tools/posting_signals.py --batch "$SCRATCHPAD/resultados.json" --accept pleno,senior --json
+   python3 backend/tools/posting_signals.py --batch "$SCRATCHPAD/resultados.json" --accept pleno,senior --json
    ```
    O arquivo é o array `results` juntado no Passo 1b, gravado no scratchpad da sessão.
 2. **Sobre o texto completo** de toda vaga que chegaria ao Passo 5 com encaixe alto ou médio:
    o trecho da busca é curto e o modelo de trabalho costuma estar no fim da vaga
    ("Informações adicionais"). Passe a saída do `detail` por pipe:
    ```bash
-   bun run .agents/skills/<portal>/cli/src/cli.ts detail '<URL>' --format plain | python3 tools/posting_signals.py --title "<título>"
+   bun run .agents/skills/<portal>/cli/src/cli.ts detail '<URL>' --format plain | python3 backend/tools/posting_signals.py --title "<título>"
    ```
    Para resultados do WebSearch, passe o texto obtido pelo `WebFetch` por um heredoc entre aspas.
 
@@ -230,16 +230,16 @@ Para cada vaga nova, faça uma checagem rápida (NÃO a avaliação completa de 
 1. Derive a chave de cada entrada com o helper, nunca transformando em slug na hora:
 
 ```bash
-python3 tools/job_key.py --company "<company>" --title "<title>" --url "<url>"
+python3 backend/tools/job_key.py --company "<company>" --title "<title>" --url "<url>"
 ```
 
-Ele imprime uma linha: a chave canônica daquela vaga. A chave precisa ser uma função pura da vaga, porque duas execuções que geram slugs diferentes gravam a mesma vaga duas vezes e derrotam a deduplicação que este passo existe para garantir. O helper também limita o tamanho de títulos longos e desambigua o corte com um hash do slug completo, então um título cortado é estável entre execuções e dois títulos longos diferentes nunca colidem. `python3 tools/job_key.py --audit` informa as entradas de um arquivo de estado existente que são anteriores a esta regra; só informa, e nunca reescreve chaves, porque uma chave reescrita quebra a correspondência empresa+cargo do próprio tracker.
+Ele imprime uma linha: a chave canônica daquela vaga. A chave precisa ser uma função pura da vaga, porque duas execuções que geram slugs diferentes gravam a mesma vaga duas vezes e derrotam a deduplicação que este passo existe para garantir. O helper também limita o tamanho de títulos longos e desambigua o corte com um hash do slug completo, então um título cortado é estável entre execuções e dois títulos longos diferentes nunca colidem. `python3 backend/tools/job_key.py --audit` informa as entradas de um arquivo de estado existente que são anteriores a esta regra; só informa, e nunca reescreve chaves, porque uma chave reescrita quebra a correspondência empresa+cargo do próprio tracker.
 
 2. Acrescente TODAS as vagas coletadas (novas e puladas) em `job_scraper/seen_jobs.json` com a estrutura:
 ```json
 {
   "seen": {
-    "<key from tools/job_key.py>": {
+    "<key from backend/tools/job_key.py>": {
       "title": "...",
       "company": "...",
       "url": "...",

@@ -387,15 +387,17 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
             self.assertEqual(promoted_saved["auto_run_id"], run_id)
             self.assertEqual(promoted_saved["recruiter_emails"][0], "vagas@alfa.com")
 
-            # Recrutadores listing: promoted & talent pool removed; low-score active + nao_e_vaga kept (nao_e_vaga last)
+            # Recrutadores listing: non-LinkedIn promoted removed; LinkedIn talent pool & active posts remain visible until manual dismiss
             rec_all = client.get("/api/recruiters").json()["posts"]
             rec_ids = [p["id"] for p in rec_all]
             self.assertNotIn(p_promote["id"], rec_ids)
-            self.assertNotIn(p_pool["id"], rec_ids)
+            self.assertIn(p_pool["id"], rec_ids)
             self.assertIn(p_low["id"], rec_ids)
             self.assertIn(p_non_job["id"], rec_ids)
             self.assertGreater(rec_ids.index(p_non_job["id"]), rec_ids.index(p_low["id"]))
-            self.assertEqual(self.repo.get_recruiter_post(p_pool["id"])["dismissed"], 1)
+            pool_row = self.repo.get_recruiter_post(p_pool["id"])
+            self.assertEqual(pool_row["dismissed"], 0)
+            self.assertEqual(pool_row["ai_classification"], "banco_talentos")
 
             # Optional hide non-jobs toggle
             rec_only_jobs = client.get("/api/recruiters?include_non_jobs=false").json()["posts"]
@@ -880,6 +882,16 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         import time
         from types import SimpleNamespace
 
+        # Non-LinkedIn post must be skipped when linkedin_worker is active (linkedin_only=True)
+        other_portal_post = self.recruiter_service.add_pasted_post(
+            raw_text="Vaga Angular em outro portal. Envie CV para externo@freehire.dev",
+            url="https://freehire.me/jobs/angular-999",
+            title="Angular Externo",
+            company="FreeHire Corp",
+        )
+        with self.repo.conn:
+            self.repo.conn.execute("UPDATE recruiter_posts SET portal = 'freehire-search' WHERE id = ?", (other_portal_post["id"],))
+
         fake_li_worker = SimpleNamespace(
             search_content_posts=lambda q, force=False, should_stop=None: {
                 "ok": True,
@@ -903,19 +915,23 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
             evaluator=self.evaluator,
             recruiter_service=live_recruiter,
         )
+        from backend.api.deps import get_recruiter_service, get_repository
+
         app.dependency_overrides[get_auto_mode] = lambda: auto_live
         app.dependency_overrides[get_tracker] = lambda: self.tracker
+        app.dependency_overrides[get_recruiter_service] = lambda: live_recruiter
+        app.dependency_overrides[get_repository] = lambda: self.repo
         client = TestClient(app)
         token = get_token()
 
         with patch.object(auto_live, "validate_ready"), \
              patch("backend.tools.painel_ia.sortear_palavras_chave_busca", return_value={"keywords": ["Angular"], "rationale": "Front", "source": "ai"}), \
-             patch.object(live_recruiter, "sync_from_jobs", return_value={"scanned": 0, "posts_with_email": 0, "synced": 0}), \
-             patch.object(live_recruiter, "sync_from_hn", return_value=0), \
-             patch.object(live_recruiter, "sync_from_recent_scrapes", return_value=0), \
-             patch.object(live_recruiter, "sync_from_github_repos", return_value=0), \
-             patch.object(live_recruiter, "sync_from_remotive", return_value=0), \
-             patch.object(live_recruiter, "sync_from_live_portals", return_value=0), \
+             patch.object(live_recruiter, "sync_from_jobs", side_effect=AssertionError("sync_from_jobs should not run when linkedin_only=True")), \
+             patch.object(live_recruiter, "sync_from_hn", side_effect=AssertionError("sync_from_hn should not run when linkedin_only=True")), \
+             patch.object(live_recruiter, "sync_from_recent_scrapes", side_effect=AssertionError("sync_from_recent_scrapes should not run when linkedin_only=True")), \
+             patch.object(live_recruiter, "sync_from_github_repos", side_effect=AssertionError("sync_from_github_repos should not run when linkedin_only=True")), \
+             patch.object(live_recruiter, "sync_from_remotive", side_effect=AssertionError("sync_from_remotive should not run when linkedin_only=True")), \
+             patch.object(live_recruiter, "sync_from_live_portals", side_effect=AssertionError("sync_from_live_portals should not run when linkedin_only=True")), \
              patch("backend.tools.painel_ia.triar_post_recrutador", return_value={
                  "classification": "vaga_ativa",
                  "best_email": "rustjobs@nouri.dev",
@@ -944,6 +960,12 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         self.assertEqual(len(interested), 1)
         self.assertEqual(interested[0]["portal"], "linkedin_post")
         self.assertEqual(interested[0]["rank_score"], 81)
+
+        # Promoted LinkedIn post remains listed in Recrutadores with job_status='interested' and AI score
+        li_posts = client.get("/api/recruiters?portal=linkedin_post").json()["posts"]
+        self.assertEqual(len(li_posts), 1)
+        self.assertEqual(li_posts[0]["ai_score"], 81)
+        self.assertEqual(li_posts[0]["job_status"], "interested")
 
 
 if __name__ == "__main__":

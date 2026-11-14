@@ -1,5 +1,5 @@
 ---
-framework_version: 1.1.0
+framework_version: 1.1.1
 ---
 
 # Modelos de carta de apresentação e guia de personalização
@@ -8,14 +8,14 @@ framework_version: 1.1.0
 
 As cartas usam uma classe LaTeX própria (`cover.cls`) com as fontes Lato e Raleway.
 
-**Arquivo gerado:** `cover_letters/cover_<company>_<role>.tex`
+**Arquivo gerado:** `backend/cover_letters/cover_<company>_<role>.tex`
 **Compilar com:** XeLaTeX (o cover.cls exige fontspec)
-**Pasta de fontes:** `cover_letters/OpenFonts/fonts/`
+**Pasta de fontes:** `backend/cover_letters/OpenFonts/fonts/`
 
 ### Comando de compilação
 
 ```bash
-cd cover_letters && xelatex -interaction=nonstopmode cover_<company>_<role>.tex
+cd backend/cover_letters && xelatex -interaction=nonstopmode cover_<company>_<role>.tex
 ```
 
 Saída esperada: `Output written on cover_<company>_<role>.pdf (1 page, ...)`. Qualquer número de páginas diferente de 1 é uma falha a corrigir antes de mostrar à pessoa.

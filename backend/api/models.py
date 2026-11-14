@@ -99,6 +99,11 @@ class ProfileSaveRequest(BaseModel):
         return self.model_dump(exclude={"answers"})
 
 
+class ProfileOrganizeRequest(BaseModel):
+    overwrite: bool = False
+    confirm: bool = False
+
+
 class ClaudeStepRequest(BaseModel):
     step: Literal["perfil", "avaliar", "curriculo", "carta", "redigir", "entrevista"]
     url: Optional[str] = None
@@ -250,3 +255,7 @@ class RecruiterTriageRequest(BaseModel):
     q: Optional[str] = None
     portal: Optional[str] = None
     limit: int = 12
+
+
+class RecruiterDismissBatchRequest(BaseModel):
+    post_ids: List[int] = Field(default_factory=list)

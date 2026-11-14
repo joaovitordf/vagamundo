@@ -4,7 +4,11 @@ import { of } from 'rxjs';
 import { ApiService, LinkedInWorkerStatus } from '../../core/services/api.service';
 import { AutoModeService } from '../../core/services/auto-mode.service';
 import { RecruiterPost } from '../../core/models/vaga.model';
-import { filterAndSortRecruiterPosts } from '../../core/services/recruiter-state.service';
+import {
+  RECRUITER_STATE_STORAGE_KEY,
+  filterAndSortRecruiterPosts,
+  filterAndSortRelevantHistoryPosts,
+} from '../../core/services/recruiter-state.service';
 import { RecrutadoresComponent, removePostAndFlagEmail, summarizeRecruiterSync } from './recrutadores.component';
 import {
   filterApplicationsList,
@@ -453,8 +457,12 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     const fixture = TestBed.createComponent(RecrutadoresComponent);
     const comp = fixture.componentInstance;
     comp.resetSecondaryFilters();
-    comp.state.jobAgeFilter.set('');
+    expect(comp.jobAgeFilter).toBe('1');
     comp.filterText = 'Java';
+    comp.onSearch();
+    expect(syncSpy).toHaveBeenCalledWith('Java', { days: 1 });
+
+    comp.state.jobAgeFilter.set('');
     comp.state.hasSearched.set(true);
     fixture.detectChanges();
 
@@ -496,13 +504,15 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
         author_name: 'Ana Tech Recruiter',
         title: 'Dev Angular Pleno',
         location: 'Remoto / A Definir',
-        text: 'Estamos contratando Dev Angular Pleno 100% remoto. Inscreva-se pelo post.',
-        emails: [],
+        description: 'Estamos contratando Dev Angular Pleno 100% remoto. Envie CV para vagas@remotobr.dev.',
+        emails: ['vagas@remotobr.dev'],
+        matched_keywords: ['Angular'],
+        match_score: 85,
         url: 'https://www.linkedin.com/feed/update/urn:li:activity:7400000000000000202/',
         published_date: new Date().toISOString(),
-        status: 'new',
         ai_classification: 'vaga_ativa',
         ai_score: 85,
+        ai_evaluated_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
       } as any,
     ]);
@@ -510,8 +520,349 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     fixture.detectChanges();
 
     expect(comp.filteredPosts().length).toBe(1);
-    expect(el.textContent).toContain('Abrir publicação no LinkedIn');
-    expect(el.textContent).not.toContain('Já mandei e-mail');
+    expect(el.textContent).toContain('vagas@remotobr.dev');
+    expect(el.textContent).toContain('Ver post original');
+    expect(el.textContent).toContain('Já mandei e-mail');
+    expect(el.textContent).toContain('Excluir (Limbo)');
+    fixture.destroy();
+  });
+
+  it('keeps onlyCvMatch enabled on auto mode start, preserves posts across rounds, and filters by local AI score', () => {
+    const startAutoSpy = jasmine.createSpy('startRecruiters').and.returnValue(of({ ok: true }));
+    const postCompatible: RecruiterPost = {
+      id: 301,
+      portal: 'linkedin_post',
+      company: 'Alpha Tech',
+      title: 'Desenvolvedor Python Sênior',
+      description: 'Vaga Python Sênior 100% remoto. CV para rh@alpha.dev',
+      emails: ['rh@alpha.dev'],
+      matched_keywords: ['Python'],
+      match_score: 80,
+      ai_classification: 'vaga_ativa',
+      ai_score: 78,
+      ai_verdict: 'Strong Fit',
+      ai_evaluated_at: '2026-11-14T10:00:00Z',
+      auto_promoted: 1,
+      job_status: 'interested',
+      created_at: '2026-11-14T09:50:00Z',
+    };
+    const postLowAiScore: RecruiterPost = {
+      id: 302,
+      portal: 'linkedin_post',
+      company: 'Beta Corp',
+      title: 'Estágio Angular',
+      description: 'Vaga Angular júnior presencial. CV para rh@beta.dev',
+      emails: ['rh@beta.dev'],
+      matched_keywords: ['Angular'],
+      match_score: 45,
+      ai_classification: 'vaga_ativa',
+      ai_score: 42,
+      ai_verdict: 'Weak Fit',
+      ai_evaluated_at: '2026-11-14T10:05:00Z',
+      created_at: '2026-11-14T09:55:00Z',
+    };
+    const postTalentPool: RecruiterPost = {
+      id: 303,
+      portal: 'linkedin_post',
+      company: 'Pool RH',
+      title: 'Banco de Talentos Geral',
+      description: 'Cadastre seu currículo para futuras vagas em talentos@poolrh.dev',
+      emails: ['talentos@poolrh.dev'],
+      matched_keywords: [],
+      match_score: 10,
+      ai_classification: 'banco_talentos',
+      ai_score: 25,
+      ai_verdict: 'Banco de talentos',
+      ai_evaluated_at: '2026-11-14T10:10:00Z',
+      created_at: '2026-11-14T09:58:00Z',
+    };
+    const nonLinkedInPost: RecruiterPost = {
+      id: 304,
+      portal: 'freehire-search',
+      company: 'FreeHire Inc',
+      title: 'Dev Java',
+      description: 'Vaga externa com rh@freehire.dev',
+      emails: ['rh@freehire.dev'],
+      matched_keywords: ['Java'],
+      match_score: 90,
+      created_at: '2026-11-14T09:59:00Z',
+    };
+    const noEmailLinkedIn: RecruiterPost = {
+      id: 305,
+      portal: 'linkedin_post',
+      company: 'Sem Email',
+      title: 'Dev Go',
+      description: 'Vaga Go sem endereço de contato.',
+      emails: [],
+      matched_keywords: ['Go'],
+      match_score: 70,
+      created_at: '2026-11-14T09:59:30Z',
+    };
+
+    const getPostsSpy = jasmine.createSpy('getRecruiterPosts').and.returnValue(
+      of({ total: 5, posts: [postCompatible, postLowAiScore, postTalentPool, nonLinkedInPost, noEmailLinkedIn] })
+    );
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [RecrutadoresComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            getCvAreas: () => of({ areas: [] }),
+            getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
+            saveRecruiterAutoConfig: () => of({ ok: true }),
+            getRecruiterPosts: getPostsSpy,
+            getLinkedInWorkerStatus: () => of(baseWorkerStatus({
+              status: 'connected',
+              profile_initialized: true,
+              last_query: 'Ruby',
+              last_imported: 1,
+              last_cards_total: 4,
+            })),
+          },
+        },
+        {
+          provide: AutoModeService,
+          useValue: {
+            status: signal({
+              running: true,
+              mode: 'recruiters',
+              keywords: ['Ruby'],
+              phase: 'searching',
+            }),
+            isRunning: signal(false),
+            resultsRefreshTick: signal(0),
+            startRecruiters: startAutoSpy,
+            cancel: () => {},
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(RecrutadoresComponent);
+    const comp = fixture.componentInstance;
+    comp.resetSecondaryFilters();
+    expect(comp.jobAgeFilter).toBe('1');
+    comp.autoMinScore = 60;
+    comp.onOnlyCvMatchChange(true);
+    fixture.detectChanges();
+
+    expect(getPostsSpy).toHaveBeenCalledWith(undefined, false, 'linkedin_post');
+    // Apenas linkedin_post com e-mail deve ficar em allPosts
+    expect(comp.allPosts().map(p => p.id)).toEqual([301, 302, 303]);
+
+    // Trigger Auto Mode NÃO desmarca onlyCvMatch e mantém filtro inicial de 24h ('1')
+    comp.triggerAutoMode();
+    expect(startAutoSpy).toHaveBeenCalled();
+    expect(comp.onlyCvMatch()).toBeTrue();
+    expect(comp.jobAgeFilter).toBe('1');
+
+    // Mesmo com keyword 'Ruby' do modo automático ativa, onlyCvMatch usa a nota da IA local (>= 60)
+    // e mantém post de rodada anterior compatível (301) sem mostrar score baixo (302) nem banco de talentos (303)
+    expect(comp.filterText).toBe('Ruby');
+    expect(comp.filteredPosts().map(p => p.id)).toEqual([301]);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Em Me Interessam');
+
+    // Desmarcando onlyCvMatch, todos os posts do LinkedIn com e-mail permanecem visíveis
+    comp.onOnlyCvMatchChange(false);
+    fixture.detectChanges();
+    expect(comp.filteredPosts().map(p => p.id)).toEqual([301, 302, 303]);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Banco de talentos');
+    fixture.destroy();
+  });
+
+  it('renders two columns without card title envelope icon and supports batch Limbo cleanup in history', () => {
+    localStorage.removeItem(RECRUITER_STATE_STORAGE_KEY);
+
+    const postHighAngular: RecruiterPost = {
+      id: 401,
+      portal: 'linkedin_post',
+      company: 'Angular Labs',
+      title: 'Frontend Angular Sênior',
+      description: 'Vaga Angular com rx@angularlabs.dev',
+      emails: ['rx@angularlabs.dev'],
+      matched_keywords: ['Angular'],
+      match_score: 90,
+      ai_classification: 'vaga_ativa',
+      ai_score: 84,
+      ai_verdict: 'Forte aderência',
+      ai_evaluated_at: '2026-11-14T09:00:00Z',
+      published_date: '2026-11-14',
+      created_at: '2026-11-14T09:00:00Z',
+    };
+    const postLowScorePython: RecruiterPost = {
+      id: 402,
+      portal: 'linkedin_post',
+      company: 'Legacy Corp',
+      title: 'Dev Cobol / Python',
+      description: 'Vaga com nota baixa rh@legacy.dev',
+      emails: ['rh@legacy.dev'],
+      matched_keywords: ['Python'],
+      match_score: 40,
+      ai_classification: 'vaga_ativa',
+      ai_score: 32,
+      ai_verdict: 'Baixa compatibilidade',
+      ai_evaluated_at: '2026-11-14T09:10:00Z',
+      published_date: '2026-11-14',
+      created_at: '2026-11-14T09:10:00Z',
+    };
+    const postMidReact: RecruiterPost = {
+      id: 403,
+      portal: 'linkedin_post',
+      company: 'React House',
+      title: 'Engenheiro React Pleno',
+      description: 'Vaga de frontend moderno com Redux e Next.js jobs@reacthouse.dev',
+      emails: ['jobs@reacthouse.dev'],
+      matched_keywords: ['React'],
+      match_score: 70,
+      ai_classification: 'vaga_ativa',
+      ai_score: 52,
+      ai_verdict: 'Moderada',
+      ai_evaluated_at: '2026-11-10T15:00:00Z',
+      published_date: '2026-11-10',
+      created_at: '2026-11-10T15:00:00Z',
+    };
+    const postNonJob: RecruiterPost = {
+      id: 404,
+      portal: 'linkedin_post',
+      company: 'Blog Tech',
+      title: 'Dicas de carreira',
+      description: 'Artigo com contato@blogtech.dev',
+      emails: ['contato@blogtech.dev'],
+      matched_keywords: ['Angular'],
+      match_score: 20,
+      ai_classification: 'nao_e_vaga',
+      ai_score: 10,
+      ai_evaluated_at: '2026-11-14T08:00:00Z',
+      published_date: '2026-11-14',
+      created_at: '2026-11-14T08:00:00Z',
+    };
+    const postUntriaged: RecruiterPost = {
+      id: 405,
+      portal: 'linkedin_post',
+      company: 'Pendente Tech',
+      title: 'Dev Angular Pleno',
+      description: 'Ainda sem triagem dev@pendente.dev',
+      emails: ['dev@pendente.dev'],
+      matched_keywords: ['Angular'],
+      match_score: 80,
+      published_date: '2026-11-14',
+      created_at: '2026-11-14T09:20:00Z',
+    };
+
+    const dismissBatchSpy = jasmine
+      .createSpy('dismissRecruiterPostsBatch')
+      .and.callFake((ids: number[]) =>
+        of({ ok: true, dismissed_ids: ids, dismissed_count: ids.length })
+      );
+    const interestedSpy = jasmine
+      .createSpy('markRecruiterPostInterested')
+      .and.returnValue(of({ ok: true, post_id: 403, job_id: 'recruiter://post/403' }));
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [RecrutadoresComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            getCvAreas: () => of({ areas: [] }),
+            getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
+            saveRecruiterAutoConfig: () => of({ ok: true }),
+            getRecruiterPosts: () =>
+              of({
+                total: 5,
+                posts: [postHighAngular, postLowScorePython, postMidReact, postNonJob, postUntriaged],
+              }),
+            getLinkedInWorkerStatus: () => of(baseWorkerStatus({ status: 'connected', profile_initialized: true })),
+            dismissRecruiterPostsBatch: dismissBatchSpy,
+            markRecruiterPostInterested: interestedSpy,
+          },
+        },
+        {
+          provide: AutoModeService,
+          useValue: {
+            status: signal({ running: false, mode: 'recruiters', keywords: [] }),
+            isRunning: signal(false),
+            resultsRefreshTick: signal(0),
+            startRecruiters: () => {},
+            cancel: () => {},
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(RecrutadoresComponent);
+    const comp = fixture.componentInstance;
+    comp.filterText = 'Angular';
+    comp.state.hasSearched.set(true);
+    comp.state.jobAgeFilter.set('1');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+
+    // 1. Ícone bi-envelope-at removido do h2 do card (.filter-console)
+    expect(el.querySelector('.filter-console h2 .bi-envelope-at')).toBeNull();
+    expect(el.querySelector('.filter-console h2')?.textContent?.trim()).toBe('Recrutadores');
+
+    // 2. Grid de duas colunas: Atuais encontrados (esquerda) e Histórico de vagas relevantes (direita)
+    expect(el.querySelector('.recruiters-columns .posts-list-section')).not.toBeNull();
+    expect(el.querySelector('.recruiters-columns .history-list-section')).not.toBeNull();
+    expect(el.textContent).toContain('Atuais encontrados');
+    expect(el.textContent).toContain('Histórico de vagas relevantes');
+
+    // Esquerda obedece busca atual ('Angular' + 24h); direita acumula todas as vaga_ativa triadas
+    expect(comp.filteredPosts().map(p => p.id)).toEqual([401, 405, 404]);
+    expect(comp.relevantHistoryPosts().map(p => p.id)).toEqual([401, 403, 402]);
+    expect(filterAndSortRelevantHistoryPosts(comp.allPosts()).map(p => p.id)).toEqual([401, 403, 402]);
+
+    // Trocar keyword da busca altera apenas a esquerda e preserva o histórico à direita
+    comp.filterText = 'Cobol';
+    fixture.detectChanges();
+    expect(comp.filteredPosts().map(p => p.id)).toEqual([402]);
+    expect(comp.relevantHistoryPosts().map(p => p.id)).toEqual([401, 403, 402]);
+
+    // 3. Salvar no histórico ('Me interessa') mantém item na coluna direita com badge 'Em Me Interessam'
+    comp.saveAsInterested(postMidReact);
+    fixture.detectChanges();
+    expect(interestedSpy).toHaveBeenCalledWith(403);
+    expect(comp.relevantHistoryPosts().find(p => p.id === 403)?.job_status).toBe('interested');
+    expect(el.querySelector('.history-list-section')?.textContent).toContain('Em Me Interessam');
+
+    // 4. Botão Deletar nota < 45 no DOM envia apenas ID 402 ao Limbo
+    const confirmSpy = spyOn(window, 'confirm').and.returnValue(true);
+    const lowScoreBtn = el.querySelector('.history-list-section .btn-bulk-warning') as HTMLButtonElement;
+    expect(lowScoreBtn).not.toBeNull();
+    expect(lowScoreBtn.textContent).toContain('(1)');
+    lowScoreBtn.click();
+    fixture.detectChanges();
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(dismissBatchSpy).toHaveBeenCalledWith([402]);
+    expect(comp.relevantHistoryPosts().map(p => p.id)).toEqual([401, 403]);
+
+    // 5. Selecionar por checkbox / selecionar todas + clique no botão Apagar selecionadas no DOM
+    const itemCheckbox = el.querySelector('.history-list-section .history-post-checkbox input[type="checkbox"]') as HTMLInputElement;
+    expect(itemCheckbox).not.toBeNull();
+    itemCheckbox.click();
+    fixture.detectChanges();
+    expect(comp.selectedHistoryIdList()).toEqual([401]);
+
+    const selectAllCheckbox = el.querySelector('.history-list-section .history-select-all input[type="checkbox"]') as HTMLInputElement;
+    selectAllCheckbox.click();
+    fixture.detectChanges();
+    expect(comp.allHistorySelected()).toBeTrue();
+    expect(comp.selectedHistoryIdList()).toEqual([401, 403]);
+
+    const deleteSelectedBtn = el.querySelector('.history-list-section .btn-bulk-danger') as HTMLButtonElement;
+    expect(deleteSelectedBtn.textContent).toContain('(2)');
+    deleteSelectedBtn.click();
+    fixture.detectChanges();
+    expect(dismissBatchSpy).toHaveBeenCalledWith([401, 403]);
+    expect(comp.relevantHistoryPosts()).toEqual([]);
+    expect(comp.selectedHistoryIdList()).toEqual([]);
+
     fixture.destroy();
   });
 });

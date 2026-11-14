@@ -36,7 +36,10 @@ if _local_gemini.is_dir() and str(_local_gemini) not in os.environ.get("PATH", "
     os.environ["PATH"] = f"{_local_gemini}{os.pathsep}{os.environ.get('PATH', '')}"
 
 ROOT = Path(__file__).resolve().parent.parent
-ENV_PATH = ROOT / ".env"
+REPO_ROOT = ROOT.parent
+ENV_PATH = REPO_ROOT / ".env"
+LEGACY_ENV_PATH = ROOT / ".env"
+_DEFAULT_ENV_PATH = ENV_PATH
 
 AUTO = "auto"
 DEFAULT_PROVIDER = "openai"  # Codex CLI / OpenAI é o motor principal deste projeto.
@@ -100,19 +103,28 @@ def _cli_tempdir():
 # .env
 # ---------------------------------------------------------------------------
 
-def load_env_file(path: Path | None = None) -> dict[str, str]:
-    """Lê as variáveis do .env (sem tocar no ambiente do sistema)."""
-    path = path or ENV_PATH
+def _parse_env_file(path: Path) -> dict[str, str]:
+    """Extrai pares chave=valor de um arquivo .env sem alterar os.environ."""
     config: dict[str, str] = {}
-    if path.exists():
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            if line.startswith("export "):
-                line = line[7:]
-            k, v = line.split("=", 1)
-            config[k.strip()] = v.strip().strip("\"'")
+    if not path.exists():
+        return config
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[7:]
+        k, v = line.split("=", 1)
+        config[k.strip()] = v.strip().strip("\"'")
+    return config
+
+
+def load_env_file(path: Path | None = None) -> dict[str, str]:
+    """Lê as variáveis do .env (priorizando o .env da raiz, com fallback legado em backend/.env)."""
+    if path is not None or ENV_PATH != _DEFAULT_ENV_PATH:
+        return _parse_env_file(path or ENV_PATH)
+    config = _parse_env_file(LEGACY_ENV_PATH)
+    config.update(_parse_env_file(ENV_PATH))
     return config
 
 
@@ -225,8 +237,8 @@ class UnconfiguredProvider:
     def generate(self, prompt: str, system_instruction: str | None = None,
                  temperature: float = 0.2, timeout: int = 120) -> str:
         raise ProviderError(
-            "Nenhum provedor de IA configurado: copie .env.example para .env e informe suas credenciais, "
-            "ou configure o provedor na aba Configurações."
+            "Nenhum provedor de IA configurado: abra a aba Configurações na interface web para salvar sua chave "
+            "(ou, opcionalmente, copie .env.example para .env)."
         )
 
 
@@ -331,8 +343,8 @@ class Provider:
         mode = self.mode
         if mode == "none":
             raise ProviderError(
-                f"{self.spec['label']} não está configurado: copie .env.example para .env, abra a aba "
-                f"Configurações e informe a chave de API, ou instale e entre no {self.spec['cli']}.")
+                f"{self.spec['label']} não está configurado: abra a aba Configurações para informar a chave de API "
+                f"(ou copie .env.example para .env), ou instale e entre no {self.spec['cli']}.")
         if mode == "cli":
             return self._generate_cli(prompt, system_instruction, timeout)
         if not MODEL_RE.match(self.model):
@@ -528,6 +540,7 @@ def save_settings(data: dict, path: Path | None = None) -> dict:
              "providers": {"gemini": {"model": str, "api_key": str, "clear_key": bool, "base_url": str}}}
     Chave vazia mantém a que já está salva; `clear_key` apaga.
     """
+    used_default = path is None
     path = path or ENV_PATH
     updates: dict[str, str | None] = {}
     if "provider" in data:
@@ -563,7 +576,12 @@ def save_settings(data: dict, path: Path | None = None) -> dict:
             updates[spec["base_var"]] = base
     if updates:
         _write_env(updates, path)
-    return public_settings(load_env_file(path))
+        if used_default and ENV_PATH == _DEFAULT_ENV_PATH and LEGACY_ENV_PATH.exists() and LEGACY_ENV_PATH != path:
+            legacy_env = _parse_env_file(LEGACY_ENV_PATH)
+            legacy_updates = {k: v for k, v in updates.items() if k in legacy_env}
+            if legacy_updates:
+                _write_env(legacy_updates, LEGACY_ENV_PATH)
+    return public_settings(load_env_file() if used_default else load_env_file(path))
 
 
 def check_connection(provider_id: str | None = None, env: dict[str, str] | None = None) -> dict:

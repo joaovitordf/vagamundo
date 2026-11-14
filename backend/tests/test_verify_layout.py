@@ -4,7 +4,7 @@ _backend = Path(__file__).resolve().parent.parent
 for _p in (str(_backend), str(_backend / "tools"), str(Path(__file__).resolve().parent)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
-"""Offline tests for tools/verify_layout.py.
+"""Offline tests for backend/tools/verify_layout.py.
 
 Every case is built from synthetic Page/Line geometry rather than a compiled
 PDF, so the suite needs neither Poppler nor a LaTeX toolchain - matching the
@@ -12,7 +12,7 @@ repo's CI policy of keeping the Python tool tests self-contained.
 
 The cases marked SILENT FAILURE are the ones that motivated the tool: each
 describes a document that compiles cleanly, reports the expected page count,
-and passes tools/verify_pdf.py, while the rendered page is visibly broken.
+and passes backend/tools/verify_pdf.py, while the rendered page is visibly broken.
 """
 
 import io

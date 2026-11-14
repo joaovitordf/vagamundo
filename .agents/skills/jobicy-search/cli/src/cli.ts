@@ -84,7 +84,7 @@ async function fetchJobicyJobs(query?: string, geo?: string): Promise<JobicyJob[
 }
 
 function itemToJob(item: JobicyJob): JobResult {
-  const dateStr = item.pubDate ? item.pubDate.slice(0, 10) : undefined
+  const dateStr = item.pubDate ? item.pubDate.slice(0, 10) : null
 
   let salaryStr: string | undefined
   if (item.annualSalaryMin || item.annualSalaryMax) {
@@ -106,6 +106,7 @@ function itemToJob(item: JobicyJob): JobResult {
     company: item.companyName || "Empresa não informada",
     location: loc,
     date: dateStr,
+    deadline: null,
     url: item.url || (item.id ? `https://jobicy.com/jobs/${item.id}` : "https://jobicy.com"),
     apply_url: item.url,
     workplace_type: "remote",

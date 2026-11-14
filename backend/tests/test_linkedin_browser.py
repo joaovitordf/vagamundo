@@ -17,6 +17,7 @@ from backend.api.deps import get_linkedin_worker, get_recruiter_service, get_rep
 from backend.api.security import get_token
 from backend.core.constants import ROOT
 from backend.core.linkedin_browser import (
+    _EXTRACT_POSTS_JS,
     DEFAULT_LINKEDIN_COOLDOWN_MINUTES,
     DEFAULT_LINKEDIN_MAX_DAILY,
     DEFAULT_LINKEDIN_MAX_SCROLLS,
@@ -122,7 +123,7 @@ class LinkedInBrowserWorkerTests(unittest.TestCase):
         self.assertNotIn("OR", decoded)
         self.assertNotIn("TypeScript", decoded)
         self.assertIn('sortBy="date_posted"', decoded)
-        self.assertIn('datePosted="past-week"', decoded)
+        self.assertIn('datePosted="past-24h"', decoded)
 
     def test_default_state_uses_visible_browser_and_safe_limits(self):
         worker = self._make_worker()
@@ -487,9 +488,10 @@ class RecruiterLinkedInIntegrationTests(unittest.TestCase):
             res = svc.sync_all(query="Angular", days=1)
 
         self.assertEqual(captured["days"], 1)
-        self.assertEqual(res["linkedin_synced"], 2)
-        self.assertEqual(res["portal_breakdown"]["linkedin_post"]["matched"], 2)
-        self.assertIn(no_email_url, res["collected_urls"])
+        self.assertEqual(res["linkedin_synced"], 1)
+        self.assertEqual(res["portal_breakdown"]["linkedin_post"]["matched"], 1)
+        self.assertIn(email_url, res["collected_urls"])
+        self.assertNotIn(no_email_url, res["collected_urls"])
 
         with self.assertRaises(ValueError):
             svc.add_pasted_posts_batch(
@@ -559,7 +561,8 @@ class RecruiterLinkedInIntegrationTests(unittest.TestCase):
             }
         )
         svc = RecruiterService(self.repo, enable_live_feeds=False, linkedin_worker=fake_worker)
-        res = svc.sync_all(query="React")
+        with patch.object(svc, "sync_from_hn", side_effect=AssertionError("enable_live_feeds=False não deve chamar HN")):
+            res = svc.sync_all(query="React")
         self.assertEqual(res["linkedin_synced"], 0)
         self.assertEqual(res["errors"], 0)
 
@@ -579,10 +582,14 @@ class RecruiterLinkedInIntegrationTests(unittest.TestCase):
 
         svc = RecruiterService(
             self.repo,
-            enable_live_feeds=False,
+            enable_live_feeds=True,
             linkedin_worker=SimpleNamespace(search_content_posts=fake_linkedin),
         )
-        with patch.object(svc, "sync_from_hn", side_effect=fake_hn):
+        with patch.object(svc, "sync_from_hn", side_effect=fake_hn), \
+             patch.object(svc, "sync_from_github_repos", return_value=0), \
+             patch.object(svc, "sync_from_remotive", return_value=0), \
+             patch.object(svc, "sync_from_live_portals", return_value=0), \
+             patch.object(svc, "sync_from_recent_scrapes", return_value=0):
             res = svc.sync_all(query="Python")
 
         self.assertEqual(res["errors"], 0)
@@ -671,7 +678,7 @@ class LinkedInExtractionAndHydrationTests(unittest.TestCase):
         self.assertEqual(days_to_linkedin_date_posted(1), "past-24h")
         self.assertEqual(days_to_linkedin_date_posted(7), "past-week")
         self.assertEqual(days_to_linkedin_date_posted(30), "past-month")
-        self.assertEqual(days_to_linkedin_date_posted(None), "past-week")
+        self.assertEqual(days_to_linkedin_date_posted(None), "past-24h")
 
         decoded = unquote(
             build_linkedin_content_search_url(
@@ -903,4 +910,246 @@ class LinkedInExtractionAndHydrationTests(unittest.TestCase):
         self.assertIn("keywords=Angular", decoded_fallback)
         self.assertNotIn("keywords=Angular vaga", decoded_fallback)
         self.assertIn('datePosted="past-month"', decoded_fallback)
+
+    def test_extract_posts_requires_email_and_zero_posts_triggers_suffix_fallback(self):
+        from urllib.parse import unquote
+
+        self.assertIn("if (!hasEmail)", _EXTRACT_POSTS_JS)
+        self.assertNotIn("!isHiringPost", _EXTRACT_POSTS_JS)
+
+        url_email = unquote(
+            build_linkedin_content_search_url("Angular", date_posted="past-month", suffix_words="vaga email")
+        )
+        url_cv = unquote(
+            build_linkedin_content_search_url("Angular", date_posted="past-month", suffix_words="vaga curriculo")
+        )
+        self.assertIn("keywords=Angular vaga email", url_email)
+        self.assertIn('datePosted="past-month"', url_email)
+        self.assertIn("keywords=Angular vaga curriculo", url_cv)
+
+        worker = LinkedInBrowserWorker(
+            profile_dir=self.profile_dir,
+            state_dir=self.state_dir,
+            executable_finder=lambda: str(self.fake_chrome),
+        )
+        (self.profile_dir / "Default").mkdir(parents=True, exist_ok=True)
+        (self.profile_dir / "Default" / "Cookies").write_bytes(b"cookie")
+        with worker._state_lock:
+            worker._state["status"] = "connected"
+            worker._save_state_locked()
+
+        procs = []
+        navigated_urls: list[str] = []
+
+        def fake_popen(_cmd, **_kwargs):
+            p = _FakeProc()
+            procs.append(p)
+            (self.profile_dir / "DevToolsActivePort").write_text("9336\n/devtools/browser/11\n", encoding="utf-8")
+            return p
+
+        class _FallbackNavWs:
+            def __init__(self):
+                self._responses: list[str] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def send(self, raw: str):
+                msg = json.loads(raw)
+                msg_id = msg["id"]
+                method = msg["method"]
+                params = msg.get("params") or {}
+                if method == "Page.navigate":
+                    navigated_urls.append(params.get("url", ""))
+                    self._responses.append(json.dumps({"id": msg_id, "result": {}}))
+                    return
+                expr = params.get("expression", "")
+                if "document.readyState" in expr:
+                    val = {
+                        "href": "https://www.linkedin.com/search/results/content/",
+                        "ready": "complete",
+                        "isLogin": False,
+                        "isCheckpoint": False,
+                        "hasFeedUi": True,
+                        "hasResultContent": True,
+                        "hasEmptyState": False,
+                    }
+                elif "see-more" in expr or "window.scrollBy" in expr:
+                    val = None
+                else:
+                    # Initial URL returns 0 email posts; suffix fallback returns 1 email post
+                    if any("vaga%20email" in u or "vaga+email" in u for u in navigated_urls):
+                        val = {
+                            "cards_total": 1,
+                            "posts": [
+                                {
+                                    "raw_text": "Vaga Angular Pleno! Envie CV para selecao@angular-sp.dev",
+                                    "company": "AngularSP",
+                                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7400000000000000199/",
+                                    "posted_age_text": "2 d",
+                                }
+                            ],
+                        }
+                    else:
+                        val = {"cards_total": 3, "posts": []}
+                self._responses.append(json.dumps({"id": msg_id, "result": {"result": {"value": val}}}))
+
+            def recv(self, timeout: float | None = None) -> str:
+                return self._responses.pop(0)
+
+        page_tabs = json.dumps([
+            {"type": "page", "id": "TAB-FB", "url": "https://www.linkedin.com/search/results/content/", "webSocketDebuggerUrl": "ws://127.0.0.1:9336/devtools/page/TAB-FB"}
+        ]).encode("utf-8")
+
+        class _Resp:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_a):
+                return False
+            def read(self):
+                return page_tabs
+
+        def fake_urlopen(_url, timeout=1.0):
+            if not procs:
+                raise OSError("not running")
+            return _Resp()
+
+        with (
+            patch("backend.core.linkedin_browser.subprocess.Popen", side_effect=fake_popen),
+            patch("backend.core.linkedin_browser.urllib.request.urlopen", side_effect=fake_urlopen),
+            patch("websockets.sync.client.connect", return_value=_FallbackNavWs()),
+            patch("backend.core.linkedin_browser.time.sleep"),
+            patch("backend.core.linkedin_browser.random.uniform", return_value=0.01),
+        ):
+            res = worker.search_content_posts("Angular", force=True, days=7)
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(len(res["posts"]), 1)
+        self.assertTrue(any("keywords=Angular vaga email" in unquote(u) for u in navigated_urls))
+
+    def test_expand_mais_script_two_passes_and_past24h_to_past_week_fallback(self):
+        from urllib.parse import unquote
+        from backend.core.linkedin_browser import _EXPAND_SEE_MORE_JS
+
+        self.assertIn("expandable-text-button", _EXPAND_SEE_MORE_JS)
+        self.assertIn("see-more", _EXPAND_SEE_MORE_JS)
+        self.assertIn("getClientRects", _EXPAND_SEE_MORE_JS)
+        self.assertIn("querySelectorAll", _EXTRACT_POSTS_JS)
+        self.assertNotIn("else if (normDesc && hiringRe.test(normDesc))", _EXTRACT_POSTS_JS)
+
+        worker = LinkedInBrowserWorker(
+            profile_dir=self.profile_dir,
+            state_dir=self.state_dir,
+            executable_finder=lambda: str(self.fake_chrome),
+        )
+        (self.profile_dir / "Default").mkdir(parents=True, exist_ok=True)
+        (self.profile_dir / "Default" / "Cookies").write_bytes(b"cookie")
+        with worker._state_lock:
+            worker._state["status"] = "connected"
+            worker._save_state_locked()
+
+        procs = []
+        launched_urls: list[str] = []
+        navigated_urls: list[str] = []
+        expand_calls = {"count": 0}
+
+        def fake_popen(cmd, **_kwargs):
+            launched_urls.extend([str(a) for a in cmd if "linkedin.com" in str(a)])
+            p = _FakeProc()
+            procs.append(p)
+            (self.profile_dir / "DevToolsActivePort").write_text("9337\n/devtools/browser/12\n", encoding="utf-8")
+            return p
+
+        class _Past24FallbackWs:
+            def __init__(self):
+                self._responses: list[str] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+            def send(self, raw: str):
+                msg = json.loads(raw)
+                msg_id = msg["id"]
+                method = msg["method"]
+                params = msg.get("params") or {}
+                if method == "Page.navigate":
+                    navigated_urls.append(params.get("url", ""))
+                    self._responses.append(json.dumps({"id": msg_id, "result": {}}))
+                    return
+                expr = params.get("expression", "")
+                if "document.readyState" in expr:
+                    val = {
+                        "href": "https://www.linkedin.com/search/results/content/",
+                        "ready": "complete",
+                        "isLogin": False,
+                        "isCheckpoint": False,
+                        "hasFeedUi": True,
+                        "hasResultContent": True,
+                        "hasEmptyState": False,
+                    }
+                elif "window.scrollBy" in expr:
+                    val = None
+                elif "see-more" in expr:
+                    expand_calls["count"] += 1
+                    val = 1 if expand_calls["count"] == 1 else 0
+                else:
+                    if any('datePosted="past-week"' in unquote(u) for u in navigated_urls):
+                        val = {
+                            "cards_total": 1,
+                            "posts": [
+                                {
+                                    "raw_text": "Senior Backend Developer Remote ... Email id: hr@jobssniper.com",
+                                    "company": "Jobssniper",
+                                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7400000000000000399/",
+                                    "posted_age_text": "2 d",
+                                }
+                            ],
+                        }
+                    else:
+                        val = {"cards_total": 2, "posts": []}
+                self._responses.append(json.dumps({"id": msg_id, "result": {"result": {"value": val}}}))
+
+            def recv(self, timeout: float | None = None) -> str:
+                return self._responses.pop(0)
+
+        page_tabs = json.dumps([
+            {"type": "page", "id": "TAB-24H", "url": "https://www.linkedin.com/search/results/content/", "webSocketDebuggerUrl": "ws://127.0.0.1:9337/devtools/page/TAB-24H"}
+        ]).encode("utf-8")
+
+        class _Resp:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_a):
+                return False
+            def read(self):
+                return page_tabs
+
+        def fake_urlopen(_url, timeout=1.0):
+            if not procs:
+                raise OSError("not running")
+            return _Resp()
+
+        with (
+            patch("backend.core.linkedin_browser.subprocess.Popen", side_effect=fake_popen),
+            patch("backend.core.linkedin_browser.urllib.request.urlopen", side_effect=fake_urlopen),
+            patch("websockets.sync.client.connect", return_value=_Past24FallbackWs()),
+            patch("backend.core.linkedin_browser.time.sleep"),
+            patch("backend.core.linkedin_browser.random.uniform", return_value=0.01),
+        ):
+            res = worker.search_content_posts("Python", force=True)
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(len(res["posts"]), 1)
+        self.assertEqual(res["posts"][0]["company"], "Jobssniper")
+        self.assertGreaterEqual(expand_calls["count"], 2)
+        decoded_urls = [unquote(u) for u in navigated_urls]
+        self.assertTrue(launched_urls and 'datePosted="past-24h"' in unquote(launched_urls[0]))
+        self.assertTrue(any('datePosted="past-week"' in u for u in decoded_urls))
+
 

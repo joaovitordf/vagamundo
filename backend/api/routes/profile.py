@@ -1,13 +1,15 @@
 """Candidate profile, uploaded files, and evolution endpoints."""
 
 from __future__ import annotations
+import asyncio
 from typing import Any, Dict
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.api.deps import get_profile
-from backend.api.models import ProfileSaveRequest, RemoveUploadRequest, UploadFileRequest
+from backend.api.models import ProfileOrganizeRequest, ProfileSaveRequest, RemoveUploadRequest, UploadFileRequest
 from backend.api.security import verify_csrf_token
 from backend.core.profile import ProfileService
+from backend.tools import ai_providers
 
 router = APIRouter(tags=["Profile"])
 
@@ -28,6 +30,24 @@ def save_profile_answers(
 ) -> Dict[str, Any]:
     """Save answers from the candidate profile form."""
     return profile_svc.save_profile_answers(req.to_answers_dict())
+
+
+@router.post("/profile/organize")
+async def organize_profile_from_documents(
+    req: ProfileOrganizeRequest,
+    profile_svc: ProfileService = Depends(get_profile),
+    _csrf: str = Depends(verify_csrf_token),
+) -> Dict[str, Any]:
+    """Extract questionnaire fields from uploaded PDFs and consolidate the AI profile."""
+    try:
+        return await asyncio.to_thread(
+            profile_svc.organize_profile_from_documents,
+            overwrite=req.overwrite,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ai_providers.ProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 @router.get("/evolucao")

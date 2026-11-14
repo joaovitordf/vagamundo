@@ -106,7 +106,7 @@ function parseCommentToJob(c: HnComment): JobResult {
     workplaceType = "hybrid"
   }
 
-  const dateStr = c.created_at ? c.created_at.slice(0, 10) : undefined
+  const dateStr = c.created_at ? c.created_at.slice(0, 10) : null
 
   return {
     id: c.objectID,
@@ -114,6 +114,7 @@ function parseCommentToJob(c: HnComment): JobResult {
     company,
     location,
     date: dateStr,
+    deadline: null,
     url: `https://news.ycombinator.com/item?id=${c.objectID}`,
     apply_url: `https://news.ycombinator.com/item?id=${c.objectID}`,
     workplace_type: workplaceType,

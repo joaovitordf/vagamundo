@@ -76,21 +76,20 @@ vagamundo/
 git clone https://github.com/joaovitordf/vagamundo.git
 cd vagamundo
 
-# Instale as dependências do Python
-pip install -r requirements.txt
-
-# Instale as dependências do Frontend e dos Portais
+# Instale dependências Python, Frontend e todos os 24 portais em um único comando
 npm run install:all
 ```
 
-### 2. Configurar a Chave de Inteligência Artificial
-Copie o `.env.example` para `.env` e preencha sua chave (o **Google Gemini** possui plano gratuito):
+> **Instalação limpa:** **0 arquivos versionados** precisam ser alterados após o clone. Todo perfil, CV e busca funcionam direto pela interface web (salvos em `backend/documents/perfil/` e `data/`, já no `.gitignore`).
+
+### 2. Configurar a Chave de Inteligência Artificial *(Opcional)*
+Você pode cadastrar sua chave direto pela aba **Configurações** da interface web **ou**, se preferir usar arquivo, copiar `.env.example` para **1 único `.env` na raiz** (o **Google Gemini** possui plano gratuito):
 ```bash
 cp .env.example .env
 ```
-No arquivo `.env`:
+No arquivo `.env` (o `AI_PROVIDER=auto` já vem pronto no exemplo; basta preencher a chave desejada):
 ```env
-AI_PROVIDER=gemini
+AI_PROVIDER=auto
 AI_DATA_CONSENT=yes
 GEMINI_API_KEY=sua_chave_do_google_ai_studio
 ```

@@ -5,7 +5,7 @@
     <div class="filter-header">
       <div class="title-row">
         <div class="title-with-badge">
-          <h2><i class="bi bi-envelope-at title-icon"></i> Recrutadores</h2>
+          <h2>Recrutadores</h2>
           @if (hasSearched() && keywordMatchedCount() > 0) {
             <span class="badge-total">{{ filteredPosts().length }} de {{ keywordMatchedCount() }} {{ keywordMatchedCount() === 1 ? 'publicação' : 'publicações' }}</span>
           } @else if (hasSearched()) {
@@ -14,8 +14,8 @@
         </div>
       </div>
       <p class="panel-desc">
-        Oportunidades e contatos com <strong>e-mail direto (&#64;)</strong> do recrutador ou da empresa.
-        Ao buscar, o sistema minera em múltiplas fontes confiáveis (GitHub Vagas BR, Hacker News Who is Hiring, Remotive, Remotar, FreeHire, RemoteOK, base local e LinkedIn Automático).
+        Publicações e vagas identificadas no <strong>LinkedIn</strong> com <strong>e-mail direto (&#64;)</strong>.
+        A compatibilidade com seu CV é avaliada pela IA local e os itens permanecem listados com a nota de triagem até você excluí-los manualmente (Limbo).
       </p>
     </div>
 
@@ -34,7 +34,7 @@
           <input type="text"
                  id="f-recruiter-text"
                  class="vc-input"
-                 placeholder="Ex.: Angular, Python, Spring Boot, Computer Vision..."
+                 placeholder="Ex.: Python, Gestão de Projetos, Finanças, Dados..."
                  [(ngModel)]="filterText"
                  (keyup.enter)="onSearch()">
 
@@ -43,10 +43,10 @@
               <button type="button" class="btn-clear-input" (click)="clearTextFilter()" title="Limpar palavras-chave">×</button>
             }
 
-            <button type="button" class="btn-random-cv" (click)="pickRandomCvArea()" title="Sortear área do seu currículo">
-              <i class="bi bi-dice-5"></i>
-              <span>Sortear área CV</span>
-            </button>
+            <app-cv-random-control
+              [areasCount]="cvAreasList().length"
+              [source]="cvAreasSource()"
+              (pickRandom)="pickRandomCvArea()" />
           </div>
         </div>
       </div>
@@ -302,272 +302,386 @@
 
   </section>
 
-  <!-- LISTA DE PUBLICAÇÕES (APENAS EXIBE APÓS CLICAR EM BUSCAR) -->
-  <section class="posts-list-section">
+  <!-- DUAS COLUNAS ABAIXO DOS FILTROS: ATUAIS ENCONTRADOS (ESQUERDA) E HISTÓRICO PERSISTENTE (DIREITA) -->
+  <div class="recruiters-columns">
 
-    @if (hasSearched() && hasSecondaryFilters() && filteredPosts().length < keywordMatchedCount()) {
-      <div class="active-filters-banner recruiter-filters-banner">
-        <div class="active-filters-banner__text">
-          <i class="bi bi-funnel-fill"></i>
-          <div>
-            <span>Filtros ativos: exibindo <strong>{{ filteredPosts().length }}</strong> de <strong>{{ keywordMatchedCount() }}</strong> publicações encontradas.</span>
-            @if (filteredPosts().length === 0 && getHiddenFilterReasons()) {
-              <div class="active-filters-banner__reason">Motivo provável: {{ getHiddenFilterReasons() }}</div>
+    <!-- COLUNA ESQUERDA: ATUAIS ENCONTRADOS -->
+    <section class="recruiter-column-card posts-list-section" aria-label="Atuais encontrados">
+      <div class="column-card-header">
+        <div class="column-title-row">
+          <h3>Atuais encontrados</h3>
+          <span class="column-count-badge">{{ hasSearched() ? filteredPosts().length : 0 }}</span>
+        </div>
+        <p class="column-card-desc">
+          Resultados da busca ou rodada atual conforme os filtros aplicados acima.
+        </p>
+      </div>
+
+      @if (hasSearched() && hasSecondaryFilters() && filteredPosts().length < keywordMatchedCount()) {
+        <div class="active-filters-banner recruiter-filters-banner">
+          <div class="active-filters-banner__text">
+            <i class="bi bi-funnel-fill"></i>
+            <div>
+              <span>Filtros ativos: exibindo <strong>{{ filteredPosts().length }}</strong> de <strong>{{ keywordMatchedCount() }}</strong> publicações encontradas.</span>
+              @if (filteredPosts().length === 0 && getHiddenFilterReasons()) {
+                <div class="active-filters-banner__reason">Motivo provável: {{ getHiddenFilterReasons() }}</div>
+              }
+            </div>
+          </div>
+          <button type="button" class="btn-clear-all-filters" (click)="resetSecondaryFilters()">
+            <i class="bi bi-x-circle"></i> Limpar filtros
+          </button>
+        </div>
+      }
+
+      @if (!hasSearched()) {
+        <div class="initial-search-prompt">
+          <i class="bi bi-search prompt-icon"></i>
+          <h3>Buscar Oportunidades com E-mail Direto</h3>
+          <p>Informe palavras-chave no campo acima (ou clique em <strong>Sortear área CV</strong>) e clique no botão <strong>Buscar</strong> para encontrar publicações e vagas com o e-mail de contato de recrutadores.</p>
+        </div>
+      } @else if (loading()) {
+        <div class="loading-state">
+          <span class="vc-spinner large"></span>
+          <p>Buscando publicações com e-mail de recrutadores...</p>
+        </div>
+      } @else if (filteredPosts().length === 0) {
+        <div class="empty-state">
+          <i class="bi bi-inbox empty-icon"></i>
+          <h3>Nenhuma publicação encontrada</h3>
+          <p>Nenhuma oportunidade com e-mail correspondeu às palavras-chave e filtros informados. Tente outros termos ou limpe os filtros secundários.</p>
+          @if (hasSecondaryFilters()) {
+            <button type="button" class="btn-clear-all-filters mt-3" (click)="resetSecondaryFilters()">
+              <i class="bi bi-x-circle"></i> Limpar filtros
+            </button>
+          }
+        </div>
+      } @else {
+        <div class="posts-grid">
+          @for (post of filteredPosts(); track post.id) {
+            <ng-container *ngTemplateOutlet="postCardTpl; context: { post: post, scope: 'current' }" />
+          }
+        </div>
+      }
+    </section>
+
+    <!-- COLUNA DIREITA: HISTÓRICO DE VAGAS RELEVANTES -->
+    <section class="recruiter-column-card history-list-section" aria-label="Histórico de vagas relevantes">
+      <div class="column-card-header">
+        <div class="column-title-row">
+          <h3>Histórico de vagas relevantes</h3>
+          <span class="column-count-badge column-count-badge--history">{{ relevantHistoryPosts().length }}</span>
+        </div>
+        <p class="column-card-desc">
+          Vagas ativas já avaliadas pela IA local com nota de triagem. Acumula entre rodadas e só sai por exclusão manual (Limbo).
+        </p>
+      </div>
+
+      @if (relevantHistoryPosts().length > 0) {
+        <div class="history-toolbar">
+          <label class="history-select-all" title="Selecionar ou desmarcar todas as vagas do histórico">
+            <input type="checkbox"
+                   [checked]="allHistorySelected()"
+                   [disabled]="bulkDismissing()"
+                   (change)="toggleSelectAllHistory($any($event.target).checked)" />
+            <span>Selecionar todas ({{ selectedHistoryIdList().length }}/{{ relevantHistoryPosts().length }})</span>
+          </label>
+
+          <div class="history-toolbar-actions">
+            <button type="button"
+                    class="btn-bulk-warning"
+                    [disabled]="lowScoreHistoryPosts().length === 0 || bulkDismissing()"
+                    (click)="dismissLowScoreHistory()"
+                    title="Enviar para o Limbo todas as vagas do histórico com nota abaixo de {{ historyLowScoreThreshold }}">
+              <i class="bi bi-funnel"></i> Deletar nota &lt; {{ historyLowScoreThreshold }} ({{ lowScoreHistoryPosts().length }})
+            </button>
+
+            <button type="button"
+                    class="btn-bulk-danger"
+                    [disabled]="selectedHistoryIdList().length === 0 || bulkDismissing()"
+                    (click)="dismissSelectedHistory()"
+                    title="Apagar as vagas selecionadas e enviar para o Limbo">
+              <i class="bi bi-trash3"></i> Apagar selecionadas ({{ selectedHistoryIdList().length }})
+            </button>
+          </div>
+        </div>
+      }
+
+      @if (loading() && allPosts().length === 0) {
+        <div class="loading-state">
+          <span class="vc-spinner large"></span>
+          <p>Carregando histórico de vagas relevantes...</p>
+        </div>
+      } @else if (relevantHistoryPosts().length === 0) {
+        <div class="empty-state">
+          <i class="bi bi-journal-check empty-icon"></i>
+          <h3>Nenhuma vaga relevante triada ainda</h3>
+          <p>Assim que a IA local avaliar publicações do LinkedIn com e-mail como vaga ativa, elas ficarão salvas aqui com a nota de triagem até você excluí-las manualmente.</p>
+        </div>
+      } @else {
+        <div class="posts-grid history-grid">
+          @for (post of relevantHistoryPosts(); track post.id) {
+            <ng-container *ngTemplateOutlet="postCardTpl; context: { post: post, scope: 'history' }" />
+          }
+        </div>
+      }
+    </section>
+
+  </div>
+
+  <!-- TEMPLATE COMPARTILHADO DOS CARDS -->
+  <ng-template #postCardTpl let-post="post" let-scope="scope">
+    <article class="post-card"
+             [class.post-card--non-job]="post.ai_classification === 'nao_e_vaga'"
+             [class.post-card--compact]="scope === 'history'"
+             [class.post-card--selected]="scope === 'history' && isHistorySelected(post.id)">
+
+      @if (scope === 'history') {
+        <div class="history-item-select-row">
+          <label class="history-post-checkbox" title="Selecionar vaga para apagar em lote">
+            <input type="checkbox"
+                   [checked]="isHistorySelected(post.id)"
+                   [disabled]="bulkDismissing() || isPostBusy(post.id)"
+                   (change)="toggleHistorySelection(post.id, $any($event.target).checked)" />
+            <span>Selecionar vaga</span>
+          </label>
+          @if (post.ai_score !== null && post.ai_score !== undefined && post.ai_score < historyLowScoreThreshold) {
+            <span class="badge-low-score-hint" title="Vaga elegível para exclusão em lote por nota abaixo de {{ historyLowScoreThreshold }}">
+              Nota &lt; {{ historyLowScoreThreshold }}
+            </span>
+          }
+        </div>
+      }
+
+      <!-- BLOCO DE DESTAQUE: E-MAIL E CONTEXTO -->
+      @if (post.emails && post.emails.length > 0) {
+        <div class="email-highlight-banner">
+          @if (post.previously_contacted && post.previously_contacted.length > 0) {
+            <div class="duplicate-outreach-alert" title="Você já enviou e-mail para um destes endereços anteriormente">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              <span>
+                E-mail já contatado em <strong>{{ formatShortDate(post.previously_contacted[0].contacted_at) }}</strong>
+                ({{ post.previously_contacted[0].email }} — {{ post.previously_contacted[0].company }})
+              </span>
+            </div>
+          }
+
+          <div class="emails-row">
+            <span class="email-label"><i class="bi bi-envelope-check"></i> E-mail(s) para contato:</span>
+            <div class="emails-chips">
+              @for (email of post.emails; track email) {
+                <button type="button"
+                        class="email-chip"
+                        [class.email-chip--best]="post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()"
+                        [class.email-chip--contacted]="!!getPreviouslyContactedMatch(post, email)"
+                        (click)="copyEmail(email, post, scope)"
+                        [title]="getPreviouslyContactedMatch(post, email) ? 'Você já contatou este e-mail em ' + formatShortDate(getPreviouslyContactedMatch(post, email)?.contacted_at) + ' — clique para copiar' : 'Clique para copiar o e-mail'">
+                  <span class="email-text">{{ email }}</span>
+                  @if (getPreviouslyContactedMatch(post, email)) {
+                    <span class="copy-badge contacted-pill">Já contatado</span>
+                  } @else if (post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()) {
+                    <span class="copy-badge best-email-pill">Principal</span>
+                  }
+                  @if (copiedEmail() === email) {
+                    <span class="copy-badge copied"><i class="bi bi-check"></i> Copiado!</span>
+                  } @else {
+                    <span class="copy-badge"><i class="bi bi-clipboard"></i> Copiar</span>
+                  }
+                </button>
+              }
+            </div>
+          </div>
+
+          @if (isCopiedPromptOpen(post.id, scope)) {
+            <div class="post-copy-prompt">
+              <span class="post-copy-prompt__text">
+                <i class="bi bi-send-check"></i>
+                Copiou <strong>{{ copiedPrompt()!.email }}</strong> — já enviou o e-mail?
+              </span>
+              <div class="post-copy-prompt__actions">
+                <button type="button"
+                        class="btn-prompt-confirm"
+                        (click)="onMarkContactedClick(post, copiedPrompt()!.email, scope)"
+                        [disabled]="isPostBusy(post.id)">
+                  <i class="bi bi-check2-circle"></i> Já mandei e-mail
+                </button>
+                <button type="button"
+                        class="btn-prompt-dismiss"
+                        (click)="dismissCopyPrompt()"
+                        title="Fechar lembrete">
+                  <i class="bi bi-x"></i>
+                </button>
+              </div>
+            </div>
+          }
+
+          @if (post.email_context) {
+            <div class="context-snippet" title="Trecho da publicação onde o e-mail é citado">
+              <i class="bi bi-quote quote-icon"></i>
+              <span class="snippet-text">{{ post.email_context }}</span>
+            </div>
+          }
+        </div>
+      } @else if (post.url) {
+        <div class="email-highlight-banner email-highlight-banner--linkedin">
+          <div class="emails-row">
+            <span class="email-label"><i class="bi bi-linkedin"></i> Contato / candidatura direto na publicação do LinkedIn</span>
+            <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
+              <i class="bi bi-box-arrow-up-right"></i> Abrir publicação no LinkedIn
+            </a>
+          </div>
+        </div>
+      }
+
+      <!-- CABEÇALHO DO CARD -->
+      <div class="post-header">
+        <div class="post-title-group">
+          <h3 class="post-title">{{ post.title }}</h3>
+          <span class="post-company"><i class="bi bi-building"></i> {{ post.company }}</span>
+        </div>
+
+        <div class="post-badges">
+          @if (post.auto_promoted || post.job_status === 'interested') {
+            <span class="ai-score-badge ai-score-badge--high" title="Esta vaga também já foi enviada para Me Interessam">
+              <i class="bi bi-star-fill"></i> Em Me Interessam
+            </span>
+          }
+          @if (post.ai_classification === 'banco_talentos') {
+            <span class="badge-non-job" title="Classificado pela IA como banco de talentos">
+              <i class="bi bi-archive"></i> Banco de talentos
+            </span>
+          }
+          @if (post.ai_classification === 'nao_e_vaga') {
+            <span class="badge-non-job" title="Classificado pela IA como conteúdo que não representa uma vaga real">
+              <i class="bi bi-exclamation-octagon"></i> Não é vaga
+            </span>
+          }
+          @if (post.ai_model) {
+            <span class="vc-badge-model" title="Modelo de IA que gerou esta triagem">
+              <i class="bi bi-cpu"></i> {{ post.ai_model }}
+            </span>
+          }
+          @if (post.ai_score !== null && post.ai_score !== undefined) {
+            <span class="ai-score-badge"
+                  [class.ai-score-badge--high]="post.ai_score >= fitThresholds.high"
+                  [class.ai-score-badge--med]="post.ai_score >= fitThresholds.medium && post.ai_score < fitThresholds.high"
+                  [class.ai-score-badge--low]="post.ai_score < fitThresholds.medium"
+                  title="Nota calculada pela IA na rubrica 30/25/15/30 contra seu currículo">
+              <i class="bi bi-robot"></i> {{ post.ai_score }}/100 &bull; {{ post.ai_verdict || (post.ai_classification === 'banco_talentos' ? 'Banco de talentos' : (post.ai_classification === 'nao_e_vaga' ? 'Não é vaga' : 'Avaliada')) }}
+            </span>
+          }
+          <app-portal-badge [portal]="post.portal"></app-portal-badge>
+        </div>
+      </div>
+
+      @if (post.ai_summary) {
+        <p class="ai-summary-box">
+          <i class="bi bi-chat-square-text"></i> {{ post.ai_summary }}
+        </p>
+      }
+
+      <!-- METADADOS COMPLEMENTARES -->
+      <div class="post-meta-row">
+        <span class="meta-item origin-meta">
+          <i class="bi bi-diagram-3"></i> Origem: {{ getPortalOriginInfo(post) }}
+        </span>
+        @if (post.location) {
+          <span class="meta-item"><i class="bi bi-geo-alt"></i> {{ post.location }}</span>
+        }
+        @if (getPostWorkModelDisplay(post) !== 'Não informado') {
+          <span class="meta-item"><i class="bi bi-laptop"></i> {{ getPostWorkModelDisplay(post) }}</span>
+        }
+        @if (isUndated(post)) {
+          <span class="meta-item chip-undated" title="Publicação sem data informada pela origem">
+            <i class="bi bi-calendar-x"></i> Sem data
+          </span>
+        } @else if (post.published_date) {
+          <span class="meta-item"><i class="bi bi-calendar3"></i> {{ formatShortDate(post.published_date) }}</span>
+        }
+        @if (post.url) {
+          <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
+            <i class="bi bi-box-arrow-up-right"></i> Ver post original
+          </a>
+        }
+      </div>
+
+      <!-- TAGS DO CURRÍCULO ENCONTRADAS -->
+      @if (post.matched_keywords && post.matched_keywords.length > 0) {
+        <div class="matched-tags-row">
+          <span class="tags-label">Tags do CV:</span>
+          <div class="tags-list">
+            @for (tag of post.matched_keywords; track tag) {
+              <span class="kw-tag">{{ tag }}</span>
             }
           </div>
         </div>
-        <button type="button" class="btn-clear-all-filters" (click)="resetSecondaryFilters()">
-          <i class="bi bi-x-circle"></i> Limpar filtros
-        </button>
-      </div>
-    }
+      }
 
-    @if (!hasSearched()) {
-      <div class="initial-search-prompt">
-        <i class="bi bi-search prompt-icon"></i>
-        <h3>Buscar Oportunidades com E-mail Direto</h3>
-        <p>Informe palavras-chave no campo acima (ou clique em <strong>Sortear área CV</strong>) e clique no botão <strong>Buscar</strong> para encontrar publicações e vagas com o e-mail de contato de recrutadores.</p>
-      </div>
-    } @else if (loading()) {
-      <div class="loading-state">
-        <span class="vc-spinner large"></span>
-        <p>Buscando publicações com e-mail de recrutadores...</p>
-      </div>
-    } @else if (filteredPosts().length === 0) {
-      <div class="empty-state">
-        <i class="bi bi-inbox empty-icon"></i>
-        <h3>Nenhuma publicação encontrada</h3>
-        <p>Nenhuma oportunidade com e-mail correspondeu às palavras-chave e filtros informados. Tente outros termos ou limpe os filtros secundários.</p>
-        @if (hasSecondaryFilters()) {
-          <button type="button" class="btn-clear-all-filters mt-3" (click)="resetSecondaryFilters()">
-            <i class="bi bi-x-circle"></i> Limpar filtros
+      <!-- TEXTO COMPLETO EXPANSÍVEL -->
+      <div class="post-body">
+        <div class="post-description" [class.expanded]="isExpanded(post.id, scope)">
+          {{ post.description }}
+        </div>
+        <div class="post-footer-actions">
+          <button type="button" class="btn-toggle-expand" (click)="toggleExpand(post.id, scope)">
+            <i class="bi" [class.bi-chevron-down]="!isExpanded(post.id, scope)" [class.bi-chevron-up]="isExpanded(post.id, scope)"></i>
+            <span>{{ isExpanded(post.id, scope) ? 'Recolher texto' : 'Ver publicação completa' }}</span>
           </button>
-        }
-      </div>
-    } @else {
-      <div class="posts-grid">
-        @for (post of filteredPosts(); track post.id) {
-          <article class="post-card" [class.post-card--non-job]="post.ai_classification === 'nao_e_vaga'">
 
-            <!-- BLOCO DE DESTAQUE: E-MAIL E CONTEXTO -->
-            @if (post.emails && post.emails.length > 0) {
-              <div class="email-highlight-banner">
-                @if (post.previously_contacted && post.previously_contacted.length > 0) {
-                  <div class="duplicate-outreach-alert" title="Você já enviou e-mail para um destes endereços anteriormente">
-                    <i class="bi bi-exclamation-triangle-fill"></i>
-                    <span>
-                      E-mail já contatado em <strong>{{ formatShortDate(post.previously_contacted[0].contacted_at) }}</strong>
-                      ({{ post.previously_contacted[0].email }} — {{ post.previously_contacted[0].company }})
-                    </span>
-                  </div>
+          <div class="post-footer-buttons">
+            @if (isMultiEmailPickerOpen(post.id, scope)) {
+              <div class="multi-email-picker">
+                <span class="picker-label">Qual e-mail contatou?</span>
+                @for (em of post.emails; track em) {
+                  <button type="button"
+                          class="btn-pick-email"
+                          (click)="onMarkContactedClick(post, em, scope)"
+                          [disabled]="isPostBusy(post.id)">
+                    {{ em }}
+                  </button>
                 }
-
-                <div class="emails-row">
-                  <span class="email-label"><i class="bi bi-envelope-check"></i> E-mail(s) para contato:</span>
-                  <div class="emails-chips">
-                    @for (email of post.emails; track email) {
-                      <button type="button"
-                              class="email-chip"
-                              [class.email-chip--best]="post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()"
-                              [class.email-chip--contacted]="!!getPreviouslyContactedMatch(post, email)"
-                              (click)="copyEmail(email, post)"
-                              [title]="getPreviouslyContactedMatch(post, email) ? 'Você já contatou este e-mail em ' + formatShortDate(getPreviouslyContactedMatch(post, email)?.contacted_at) + ' — clique para copiar' : 'Clique para copiar o e-mail'">
-                        <span class="email-text">{{ email }}</span>
-                        @if (getPreviouslyContactedMatch(post, email)) {
-                          <span class="copy-badge contacted-pill">Já contatado</span>
-                        } @else if (post.ai_best_email && post.ai_best_email.toLowerCase() === email.toLowerCase()) {
-                          <span class="copy-badge best-email-pill">Principal</span>
-                        }
-                        @if (copiedEmail() === email) {
-                          <span class="copy-badge copied"><i class="bi bi-check"></i> Copiado!</span>
-                        } @else {
-                          <span class="copy-badge"><i class="bi bi-clipboard"></i> Copiar</span>
-                        }
-                      </button>
-                    }
-                  </div>
-                </div>
-
-                @if (copiedPrompt()?.postId === post.id) {
-                  <div class="post-copy-prompt">
-                    <span class="post-copy-prompt__text">
-                      <i class="bi bi-send-check"></i>
-                      Copiou <strong>{{ copiedPrompt()!.email }}</strong> — já enviou o e-mail?
-                    </span>
-                    <div class="post-copy-prompt__actions">
-                      <button type="button"
-                              class="btn-prompt-confirm"
-                              (click)="onMarkContactedClick(post, copiedPrompt()!.email)"
-                              [disabled]="isPostBusy(post.id)">
-                        <i class="bi bi-check2-circle"></i> Já mandei e-mail
-                      </button>
-                      <button type="button"
-                              class="btn-prompt-dismiss"
-                              (click)="dismissCopyPrompt()"
-                              title="Fechar lembrete">
-                        <i class="bi bi-x"></i>
-                      </button>
-                    </div>
-                  </div>
-                }
-
-                @if (post.email_context) {
-                  <div class="context-snippet" title="Trecho da publicação onde o e-mail é citado">
-                    <i class="bi bi-quote quote-icon"></i>
-                    <span class="snippet-text">{{ post.email_context }}</span>
-                  </div>
-                }
-              </div>
-            } @else if (post.url) {
-              <div class="email-highlight-banner email-highlight-banner--linkedin">
-                <div class="emails-row">
-                  <span class="email-label"><i class="bi bi-linkedin"></i> Contato / candidatura direto na publicação do LinkedIn</span>
-                  <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
-                    <i class="bi bi-box-arrow-up-right"></i> Abrir publicação no LinkedIn
-                  </a>
-                </div>
-              </div>
-            }
-
-            <!-- CABEÇALHO DO CARD -->
-            <div class="post-header">
-              <div class="post-title-group">
-                <h3 class="post-title">{{ post.title }}</h3>
-                <span class="post-company"><i class="bi bi-building"></i> {{ post.company }}</span>
-              </div>
-
-              <div class="post-badges">
-                @if (post.ai_classification === 'nao_e_vaga') {
-                  <span class="badge-non-job" title="Classificado pela IA como conteúdo que não representa uma vaga real">
-                    <i class="bi bi-exclamation-octagon"></i> Não é vaga
-                  </span>
-                }
-                @if (post.ai_model) {
-                  <span class="vc-badge-model" title="Modelo de IA que gerou esta triagem">
-                    <i class="bi bi-cpu"></i> {{ post.ai_model }}
-                  </span>
-                }
-                @if (post.ai_classification === 'vaga_ativa' && post.ai_score !== null && post.ai_score !== undefined) {
-                  <span class="ai-score-badge"
-                        [class.ai-score-badge--high]="post.ai_score >= fitThresholds.high"
-                        [class.ai-score-badge--med]="post.ai_score >= fitThresholds.medium && post.ai_score < fitThresholds.high"
-                        [class.ai-score-badge--low]="post.ai_score < fitThresholds.medium"
-                        title="Nota calculada pela IA na rubrica 30/25/15/30 contra seu currículo">
-                    <i class="bi bi-robot"></i> {{ post.ai_score }}/100 &bull; {{ post.ai_verdict || 'Avaliada' }}
-                  </span>
-                }
-                <app-portal-badge [portal]="post.portal"></app-portal-badge>
-              </div>
-            </div>
-
-            @if (post.ai_summary) {
-              <p class="ai-summary-box">
-                <i class="bi bi-chat-square-text"></i> {{ post.ai_summary }}
-              </p>
-            }
-
-            <!-- METADADOS COMPLEMENTARES -->
-            <div class="post-meta-row">
-              <span class="meta-item origin-meta">
-                <i class="bi bi-diagram-3"></i> Origem: {{ getPortalOriginInfo(post) }}
-              </span>
-              @if (post.location) {
-                <span class="meta-item"><i class="bi bi-geo-alt"></i> {{ post.location }}</span>
-              }
-              @if (getPostWorkModelDisplay(post) !== 'Não informado') {
-                <span class="meta-item"><i class="bi bi-laptop"></i> {{ getPostWorkModelDisplay(post) }}</span>
-              }
-              @if (isUndated(post)) {
-                <span class="meta-item chip-undated" title="Publicação sem data informada pela origem">
-                  <i class="bi bi-calendar-x"></i> Sem data
-                </span>
-              } @else if (post.published_date) {
-                <span class="meta-item"><i class="bi bi-calendar3"></i> {{ formatShortDate(post.published_date) }}</span>
-              }
-              @if (post.url) {
-                <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
-                  <i class="bi bi-box-arrow-up-right"></i> Ver post original
-                </a>
-              }
-            </div>
-
-            <!-- TAGS DO CURRÍCULO ENCONTRADAS -->
-            @if (post.matched_keywords && post.matched_keywords.length > 0) {
-              <div class="matched-tags-row">
-                <span class="tags-label">Tags do CV:</span>
-                <div class="tags-list">
-                  @for (tag of post.matched_keywords; track tag) {
-                    <span class="kw-tag">{{ tag }}</span>
-                  }
-                </div>
-              </div>
-            }
-
-            <!-- TEXTO COMPLETO EXPANSÍVEL -->
-            <div class="post-body">
-              <div class="post-description" [class.expanded]="isExpanded(post.id)">
-                {{ post.description }}
-              </div>
-              <div class="post-footer-actions">
-                <button type="button" class="btn-toggle-expand" (click)="toggleExpand(post.id)">
-                  <i class="bi" [class.bi-chevron-down]="!isExpanded(post.id)" [class.bi-chevron-up]="isExpanded(post.id)"></i>
-                  <span>{{ isExpanded(post.id) ? 'Recolher texto' : 'Ver publicação completa' }}</span>
+                <button type="button"
+                        class="btn-cancel-picker"
+                        (click)="closeMultiEmailPicker()">
+                  Cancelar
                 </button>
-
-                <div class="post-footer-buttons">
-                  @if (multiEmailPickerPostId() === post.id) {
-                    <div class="multi-email-picker">
-                      <span class="picker-label">Qual e-mail contatou?</span>
-                      @for (em of post.emails; track em) {
-                        <button type="button"
-                                class="btn-pick-email"
-                                (click)="onMarkContactedClick(post, em)"
-                                [disabled]="isPostBusy(post.id)">
-                          {{ em }}
-                        </button>
-                      }
-                      <button type="button"
-                              class="btn-cancel-picker"
-                              (click)="multiEmailPickerPostId.set(null)">
-                        Cancelar
-                      </button>
-                    </div>
-                  } @else {
-                    <button type="button"
-                            class="btn-footer-interested"
-                            (click)="saveAsInterested(post)"
-                            [disabled]="isPostBusy(post.id)"
-                            title="Mover para Me Interessam (para revisar e preparar CV/Carta manualmente antes de enviar)">
-                      <i class="bi bi-bookmark-plus"></i> Me interessa
-                    </button>
-
-                    @if (post.emails && post.emails.length > 0) {
-                      <button type="button"
-                              class="btn-footer-contacted"
-                              (click)="onMarkContactedClick(post)"
-                              [disabled]="isPostBusy(post.id)"
-                              title="Registrar que já enviou o e-mail e mover para Minhas Candidaturas">
-                        <i class="bi bi-send-check"></i> Já mandei e-mail
-                      </button>
-                    }
-
-                    <button type="button"
-                            class="btn-dismiss"
-                            (click)="dismissPost(post.id)"
-                            [disabled]="isPostBusy(post.id)"
-                            title="Ocultar esta publicação do radar">
-                      <i class="bi bi-eye-slash"></i> Ocultar
-                    </button>
-                  }
-                </div>
               </div>
-            </div>
+            } @else {
+              <button type="button"
+                      class="btn-footer-interested"
+                      [class.btn-footer-interested--saved]="!!post.auto_promoted || post.job_status === 'interested'"
+                      (click)="saveAsInterested(post)"
+                      [disabled]="isPostBusy(post.id) || !!post.auto_promoted || post.job_status === 'interested'"
+                      [title]="(post.auto_promoted || post.job_status === 'interested') ? 'Esta vaga já está salva em Me Interessam' : 'Mover para Me Interessam (para revisar e preparar CV/Carta manualmente antes de enviar)'">
+                <i class="bi"
+                   [class.bi-star-fill]="!!post.auto_promoted || post.job_status === 'interested'"
+                   [class.bi-bookmark-plus]="!post.auto_promoted && post.job_status !== 'interested'"></i>
+                {{ (post.auto_promoted || post.job_status === 'interested') ? 'Em Me Interessam' : 'Me interessa' }}
+              </button>
 
-          </article>
-        }
+              @if (post.emails && post.emails.length > 0) {
+                <button type="button"
+                        class="btn-footer-contacted"
+                        (click)="onMarkContactedClick(post, undefined, scope)"
+                        [disabled]="isPostBusy(post.id)"
+                        title="Registrar que já enviou o e-mail e mover para Minhas Candidaturas">
+                  <i class="bi bi-send-check"></i> Já mandei e-mail
+                </button>
+              }
+
+              <button type="button"
+                      class="btn-dismiss"
+                      (click)="dismissPost(post.id)"
+                      [disabled]="isPostBusy(post.id) || bulkDismissing()"
+                      title="Enviar esta vaga para o Limbo (remove da lista e impede que a mesma vaga volte sem bloquear futuras vagas deste e-mail)">
+                <i class="bi bi-trash3"></i> Excluir (Limbo)
+              </button>
+            }
+          </div>
+        </div>
       </div>
-    }
 
-  </section>
+    </article>
+  </ng-template>
 
 </div>

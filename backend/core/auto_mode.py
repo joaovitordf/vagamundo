@@ -978,8 +978,9 @@ class AutoModeService:
             promoted_jid = None
             with self._db_lock:
                 if cls == "banco_talentos":
+                    auto_dismiss = post.get("portal") != "linkedin_post"
                     self.repo.update_recruiter_post_ai(
-                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=True, ai_model=ai_model
+                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=auto_dismiss, ai_model=ai_model
                     )
                 elif cls == "nao_e_vaga":
                     self.repo.update_recruiter_post_ai(
@@ -1045,13 +1046,29 @@ class AutoModeService:
         def _execute_recruiters_round(
             _round_num: int, keywords: List[str]
         ) -> Optional[Tuple[int, int, int, int, int, bool]]:
+            linkedin_only = getattr(self.recruiter_service, "linkedin_worker", None) is not None
             try:
                 sync_res = self.recruiter_service.sync_all(
                     query=", ".join(keywords),
+                    days=1,
+                    linkedin_only=linkedin_only,
                     should_stop=self._should_stop,
                 )
             except TypeError:
-                sync_res = self.recruiter_service.sync_all(query=", ".join(keywords))
+                try:
+                    sync_res = self.recruiter_service.sync_all(
+                        query=", ".join(keywords),
+                        days=1,
+                        should_stop=self._should_stop,
+                    )
+                except TypeError:
+                    try:
+                        sync_res = self.recruiter_service.sync_all(
+                            query=", ".join(keywords),
+                            should_stop=self._should_stop,
+                        )
+                    except TypeError:
+                        sync_res = self.recruiter_service.sync_all(query=", ".join(keywords))
             if self._should_stop():
                 return None
 
@@ -1070,6 +1087,8 @@ class AutoModeService:
                     include_urls=collected_urls,
                     include_post_ids=collected_post_ids | queued_post_ids,
                 )
+            if linkedin_only:
+                candidates = [p for p in candidates if p.get("portal") == "linkedin_post"]
 
             if self._should_stop():
                 return None

@@ -95,9 +95,11 @@ cover_letters/cover_*.*
 cover_letters/Cover_*.*
 !cover_letters/cover_example.tex
 backend/cv/main_*.*
+!backend/cv/main_example.tex
 backend/cv/*.txt
 backend/cover_letters/cover_*.*
 backend/cover_letters/Cover_*.*
+!backend/cover_letters/cover_example.tex
 
 # documents/ subfolder contents are personal — only README and folder structure are tracked
 # Loose files dropped straight into documents/ (e.g. a CNPJ proof, an ID scan).

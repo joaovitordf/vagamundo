@@ -232,7 +232,7 @@ class ApplyArchivesThePosting(unittest.TestCase):
          "by Step 6b the model may hold only a summary, so the archive gets a "
          "paraphrase - what /outcome Step 3.2 forbids"),
         (APPLY, "### Passo 6b: Registrar a candidatura",
-         "`documents/applications/<company>_<role>/job_posting.md`",
+         "`backend/documents/applications/<company>_<role>/job_posting.md`",
          "the one moment /apply provably holds the posting is spent again, and "
          "a pasted posting has no recovery path at all"),
         (APPLY, "### Passo 6b: Registrar a candidatura",
@@ -379,7 +379,7 @@ class FallbackGlobFindsOneRolesDocuments(unittest.TestCase):
 
     CASES = [
         (OUTCOME, "## Passo 3: Arquivar os materiais da candidatura",
-         "pela regra de **nomes de subpasta** de `documents/README.md`",
+         "pela regra de **nomes de subpasta** de `backend/documents/README.md`",
          "the archive locator must derive the stem by the one documented rule, "
          "not invent a second derivation that drifts from it"),
         (OUTCOME, "## Passo 3: Arquivar os materiais da candidatura",
@@ -387,7 +387,7 @@ class FallbackGlobFindsOneRolesDocuments(unittest.TestCase):
          "without the prohibition the next edit relaxes the glob when it finds "
          "no match, which is exactly the wrong-file-recorded-as-submitted case"),
         (INTERVIEW, "## Passo 1: Carregar o contexto da candidatura",
-         "pela regra de **nomes de subpasta** de `documents/README.md`",
+         "pela regra de **nomes de subpasta** de `backend/documents/README.md`",
          "interview's fallback must resolve the same stem /apply wrote"),
         (INTERVIEW, "## Passo 1: Carregar o contexto da candidatura",
          "Nunca amplie esses globs só para a empresa",
@@ -403,7 +403,7 @@ class FallbackGlobFindsOneRolesDocuments(unittest.TestCase):
     def globs(path, heading):
         """The two fallback globs exactly as the spec writes them."""
         body = section(path, heading)
-        found = re.findall(r"`(cv/main_[^`]+|cover_letters/cover_[^`]+)`", body)
+        found = re.findall(r"`(backend/cv/main_[^`]+|backend/cover_letters/cover_[^`]+)`", body)
         return [g for g in found if "*" in g]
 
     def resolve(self, glob, role):
@@ -415,7 +415,7 @@ class FallbackGlobFindsOneRolesDocuments(unittest.TestCase):
     def drafted_files(self, ext=".tex"):
         """Exactly what /apply Step 5 leaves in cv/ for two roles at one company."""
         return [
-            "cv/main_%s%s" % (ArchiveNameIsOnePathComponent.derive(self.COMPANY, r), ext)
+            "backend/cv/main_%s%s" % (ArchiveNameIsOnePathComponent.derive(self.COMPANY, r), ext)
             for r in self.ROLES
         ]
 
@@ -423,7 +423,7 @@ class FallbackGlobFindsOneRolesDocuments(unittest.TestCase):
         on_disk = self.drafted_files()
         for path, heading in ((OUTCOME, "## Passo 3: Arquivar os materiais da candidatura"),
                               (INTERVIEW, "## Passo 1: Carregar o contexto da candidatura")):
-            cv_glob = next(g for g in self.globs(path, heading) if g.startswith("cv/"))
+            cv_glob = next(g for g in self.globs(path, heading) if g.startswith("backend/cv/"))
             for role, expected in zip(self.ROLES, on_disk):
                 with self.subTest(file=path.name, role=role):
                     hits = fnmatch.filter(on_disk, self.resolve(cv_glob, role))
@@ -440,7 +440,7 @@ class FallbackGlobFindsOneRolesDocuments(unittest.TestCase):
         on_disk = self.drafted_files(ext=".typ")
         cv_glob = next(
             g for g in self.globs(OUTCOME, "## Passo 3: Arquivar os materiais da candidatura")
-            if g.startswith("cv/")
+            if g.startswith("backend/cv/")
         )
         hits = fnmatch.filter(on_disk, self.resolve(cv_glob, self.ROLES[0]))
         self.assertEqual(
@@ -472,7 +472,7 @@ class ArchiveNameIsOnePathComponent(unittest.TestCase):
          "the sentence that says why the rule exists; without it the next "
          "edit simplifies the rule back to spaces-only"),
         (OUTCOME, "## Passo 1: Carregar o estado e identificar a candidatura",
-         "pela regra de **nomes de subpasta** de `documents/README.md`",
+         "pela regra de **nomes de subpasta** de `backend/documents/README.md`",
          "Step 1.4 is the derivation every other writer cites; paraphrasing "
          "the rule here is how the two copies drifted apart originally"),
         (APPLY, "### Cobertura dos requisitos (nos dois documentos)",
@@ -481,21 +481,21 @@ class ArchiveNameIsOnePathComponent(unittest.TestCase):
          "`/` there sends the draft to a path lualatex never writes a PDF "
          "back to, and the Step 4 compile check fails on a phantom path"),
         (SKILL, "### Passo 2: Personalizar o currículo",
-         "pela regra de **nomes de subpasta** de `documents/README.md`",
+         "pela regra de **nomes de subpasta** de `backend/documents/README.md`",
          "the /scrape path writes its documents before Step 3b consults /apply, "
          "so /apply's filename rule cannot protect it"),
         (GMAIL_SYNC, "## Passo 2: Carregar o estado",
-         "pela regra de **nomes de subpasta** de `documents/README.md`",
+         "pela regra de **nomes de subpasta** de `backend/documents/README.md`",
          "gmail-sync both locates and creates archives; its old spaces-only "
          "paraphrase would split state across two folders"),
         (INTERVIEW, "## Passo 1: Carregar o contexto da candidatura",
-         "pela regra de **nomes de subpasta** de `documents/README.md`",
+         "pela regra de **nomes de subpasta** de `backend/documents/README.md`",
          "interview must read the same archive /apply and /outcome wrote"),
         (INTERVIEW, "### 6. Logística",
          "pasta de arquivo derivada no Passo 1",
          "interview must reuse its canonical read path when writing the prep pack"),
         (NOTION_SYNC, "## Passo 5: Escrever a página de detalhe",
-         "pela regra de **nomes de subpasta** de `documents/README.md`",
+         "pela regra de **nomes de subpasta** de `backend/documents/README.md`",
          "notion-sync otherwise reports that the sanitized local archive is absent"),
         (DOCS_README, "## applications/",
          "Se o nome derivado ficar vazio",

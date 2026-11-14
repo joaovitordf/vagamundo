@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map, catchError, tap } from 'rxjs/operators';
-import { Vaga, ProfileResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, ApplicationRecord, GeneratedDoc, DashboardStats, RecruiterPost } from '../models/vaga.model';
+import { Vaga, ProfileResponse, ProfileOrganizeResponse, SettingsResponse, EvolutionResponse, ApplicationTimelineEvent, ApplicationRecord, GeneratedDoc, DashboardStats, RecruiterPost, CvAreasResponse } from '../models/vaga.model';
 import { SearchStateService } from './search-state.service';
 import { RecruiterStateService } from './recruiter-state.service';
 
@@ -106,6 +106,7 @@ export class ApiService {
   readonly savedCount = signal<number>(0);
   readonly applicationsCount = signal<number>(0);
   readonly discardedCount = signal<number>(0);
+  readonly cvAreasVersion = signal<number>(0);
   readonly recruiterPostsCount = computed(() =>
     this.recruiterState.hasActiveKeywordSearch() ? this.recruiterState.filteredPosts().length : 0
   );
@@ -209,8 +210,8 @@ export class ApiService {
     return this.http.post(`${this.baseUrl}/settings`, payload);
   }
 
-  getCvAreas(): Observable<{ areas: any[] }> {
-    return this.http.get<{ areas: any[] }>(`${this.baseUrl}/cv-areas`);
+  getCvAreas(): Observable<CvAreasResponse> {
+    return this.http.get<CvAreasResponse>(`${this.baseUrl}/cv-areas`);
   }
 
   getDocuments(): Observable<GeneratedDoc[]> {
@@ -234,7 +235,15 @@ export class ApiService {
   }
 
   saveProfileAnswers(answers: Record<string, any>): Observable<{ answers: any }> {
-    return this.http.post<{ answers: any }>(`${this.baseUrl}/profile`, answers);
+    return this.http.post<{ answers: any }>(`${this.baseUrl}/profile`, answers).pipe(
+      tap(() => this.cvAreasVersion.update(v => v + 1))
+    );
+  }
+
+  organizeProfile(payload: { overwrite?: boolean; confirm?: boolean } = {}): Observable<ProfileOrganizeResponse> {
+    return this.http.post<ProfileOrganizeResponse>(`${this.baseUrl}/profile/organize`, payload).pipe(
+      tap(() => this.cvAreasVersion.update(v => v + 1))
+    );
   }
 
   triggerClaude(payload: { step: string; url?: string; confirm?: boolean }): Observable<any> {
@@ -536,6 +545,17 @@ export class ApiService {
   dismissRecruiterPost(postId: number): Observable<{ ok: boolean; id: number }> {
     return this.http.delete<{ ok: boolean; id: number }>(
       `${this.baseUrl}/recruiters/${postId}`
+    ).pipe(
+      tap(() => this.refreshCounts())
+    );
+  }
+
+  dismissRecruiterPostsBatch(
+    postIds: number[]
+  ): Observable<{ ok: boolean; dismissed_ids: number[]; dismissed_count: number }> {
+    return this.http.post<{ ok: boolean; dismissed_ids: number[]; dismissed_count: number }>(
+      `${this.baseUrl}/recruiters/dismiss-batch`,
+      { post_ids: postIds }
     ).pipe(
       tap(() => this.refreshCounts())
     );

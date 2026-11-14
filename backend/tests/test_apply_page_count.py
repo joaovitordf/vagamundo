@@ -2,7 +2,7 @@
 
 The 2-page CV and 1-page cover letter limits are the hard rules of
 05-cv-templates.md and 06-cover-letter-templates.md, and two places defer
-their enforcement to `tools/verify_pdf.py --pages`: `verify_layout.py`'s
+their enforcement to `backend/tools/verify_pdf.py --pages`: `verify_layout.py`'s
 docstring ("page count is verify_pdf.py's job, and CI runs it") and Step 5b's
 own prose, which used to say "Step 5d already runs it". Step 5d's only
 invocation is `--dump-text`, and no other step passed `--pages` at all, so
@@ -35,7 +35,7 @@ def section(path, heading):
 def page_count_invocations(text):
     """(document path, page count) for every runnable verify_pdf --pages line."""
     return re.findall(
-        r"^python tools/verify_pdf\.py (\S+) --pages (\d+)\s*$", text, re.MULTILINE
+        r"^python (?:backend/)?tools/verify_pdf\.py (\S+) --pages (\d+)\s*$", text, re.MULTILINE
     )
 
 
@@ -46,13 +46,13 @@ class ApplyRunsThePageCountCheck(unittest.TestCase):
     def test_step_5b_checks_both_documents_with_the_guides_page_limits(self):
         invocations = dict(page_count_invocations(self.step_5b))
         self.assertEqual(
-            invocations.get("cv/main_<company>_<role>.pdf"),
+            invocations.get("backend/cv/main_<company>_<role>.pdf"),
             "2",
             "Step 5b must run verify_pdf.py --pages 2 on the CV - the hard "
             "2-page limit has no other mechanical check",
         )
         self.assertEqual(
-            invocations.get("cover_letters/cover_<company>_<role>.pdf"),
+            invocations.get("backend/cover_letters/cover_<company>_<role>.pdf"),
             "1",
             "Step 5b must run verify_pdf.py --pages 1 on the cover letter",
         )

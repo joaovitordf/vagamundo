@@ -315,13 +315,15 @@ def active_queries_path(path: Path | None = None) -> Path:
 
 
 
-def local_target_seniority(path: Path = LOCAL_ANSWERS):
+def local_target_seniority(path: Path | None = None):
 
     """Lê a senioridade do formulário local sem expor o perfil no Git."""
 
+    target = path or LOCAL_ANSWERS
+
     try:
 
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(target.read_text(encoding="utf-8"))
 
     except (OSError, json.JSONDecodeError):
 
@@ -1050,13 +1052,38 @@ def summary(result: dict) -> str:
 
 
 
+def _make_portal_call(portal: str, query: str, region: str | None = None) -> tuple[int, str, list[str]]:
+    extra_cargs = ["-q", query]
+    if portal == "linkedin-search":
+        extra_cargs.extend(["-l", REGION_LINKEDIN_LOCATION.get(region or "brasil", "Brazil")])
+    return (1, portal, extra_cargs)
+
+
+def _default_fallback_portals(installed: dict, region: str | None) -> list[str]:
+    if region and region != "all" and region in REGION_PORTALS:
+        return [p for p in sorted(REGION_PORTALS[region]) if p in installed]
+    preferred = (
+        "gupy-search",
+        "solides-search",
+        "vagas-search",
+        "infojobs-search",
+        "remotar-search",
+        "geekhunter-search",
+        "linkedin-search",
+        "freehire-search",
+    )
+    selected = [p for p in preferred if p in installed]
+    return selected or sorted(installed)
+
+
 def _default_search_query(fallback: str = "analista") -> str:
-    """Resolve fallback search query from candidate answers (cargos -> competencias_busca -> fallback)."""
+
+    """Resolve fallback search query from candidate answers (cargos -> palavras_chave_sorteio -> fallback)."""
     if LOCAL_ANSWERS.exists():
         try:
             ans = json.loads(LOCAL_ANSWERS.read_text(encoding="utf-8"))
             if isinstance(ans, dict):
-                for key in ("cargos", "competencias_busca"):
+                for key in ("cargos", "palavras_chave_sorteio", "competencias_busca"):
                     vals = ans.get(key)
                     if isinstance(vals, list):
                         first = next((str(v).strip() for v in vals if str(v).strip()), "")
@@ -1121,7 +1148,7 @@ def main(argv=None) -> int:
 
     s.add_argument("--accept", default=None, help="seniority codes; default: Senioridade-alvo in CLAUDE.md")
 
-    s.add_argument("--queries", type=Path, default=QUERIES, help="search plan file (default: public template)")
+    s.add_argument("--queries", type=Path, default=None, help="search plan file (default: local profile plan or template)")
 
     s.add_argument("--out", type=Path, default=None, help="results file (default: system temp dir; never inside the repo)")
 
@@ -1183,13 +1210,13 @@ def main(argv=None) -> int:
 
     else:
 
-        accept = target_seniority(PROFILE.read_text(encoding="utf-8")) if PROFILE.exists() else None
+        accept = local_target_seniority() or (target_seniority(PROFILE.read_text(encoding="utf-8")) if PROFILE.exists() else None)
 
 
 
     try:
 
-        queries_file = args.queries or QUERIES
+        queries_file = active_queries_path(args.queries)
 
         calls = parse_queries(queries_file.read_text(encoding="utf-8"))
 
@@ -1229,10 +1256,7 @@ def main(argv=None) -> int:
         for tp in target_portals:
             if not any(c[1] == tp for c in filtered_calls):
                 if tp in installed:
-                    extra_cargs = ["-q", default_q]
-                    if tp == "linkedin-search":
-                        extra_cargs.extend(["-l", REGION_LINKEDIN_LOCATION.get(getattr(args, "region", None) or "brasil", "Brazil")])
-                    filtered_calls.append((1, tp, extra_cargs))
+                    filtered_calls.append(_make_portal_call(tp, default_q, getattr(args, "region", None)))
 
         calls = filtered_calls
 
@@ -1247,8 +1271,18 @@ def main(argv=None) -> int:
             has_explicit_portal=has_explicit_portal,
         )
 
-    if getattr(args, "query", None) and args.query.strip():
-        calls = _apply_query_terms(calls, args.query.strip())
+    explicit_query = getattr(args, "query", None)
+    if explicit_query and explicit_query.strip():
+        if not calls and not has_explicit_portal:
+            installed = installed_portals()
+            first_term = next((t.strip() for t in explicit_query.split(",") if t.strip()), explicit_query.strip())
+            calls = [_make_portal_call(p, first_term, getattr(args, "region", None)) for p in _default_fallback_portals(installed, getattr(args, "region", None))]
+        calls = _apply_query_terms(calls, explicit_query.strip())
+    elif not calls and not has_explicit_portal and args.queries is None:
+        answers_query = _default_search_query(fallback="")
+        if answers_query:
+            installed = installed_portals()
+            calls = [_make_portal_call(p, answers_query, getattr(args, "region", None)) for p in _default_fallback_portals(installed, getattr(args, "region", None))]
 
     if not calls:
 

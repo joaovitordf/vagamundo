@@ -8,7 +8,7 @@ A ferramenta de consulta salarial (`salary_lookup.py`) compara os salários de u
 
 ## Como funciona
 
-A ferramenta lê um arquivo `salary_data.json` na raiz do repositório com referências salariais por empresa. Ela usa correspondência aproximada para achar empresas pelo nome, lidando com acentos (busque "Itau" e ela acha "Itaú"), sufixos societários brasileiros (Ltda., S.A., S/A, SA, ME, EPP, EIRELI, SLU), palavras como "Grupo", "Holding" e "Participações", e partes entre parênteses ou depois de vírgula ("Banco Santander (Brasil) S.A.", "Lojas Renner, Filial Recife"). "Brasil" **não** é removido do nome de propósito: senão "Banco do Brasil" viraria só "Banco".
+A ferramenta lê um arquivo `backend/salary_data.json` com referências salariais por empresa. Ela usa correspondência aproximada para achar empresas pelo nome, lidando com acentos (busque "Itau" e ela acha "Itaú"), sufixos societários brasileiros (Ltda., S.A., S/A, SA, ME, EPP, EIRELI, SLU), palavras como "Grupo", "Holding" e "Participações", e partes entre parênteses ou depois de vírgula ("Banco Santander (Brasil) S.A.", "Lojas Renner, Filial Recife"). "Brasil" **não** é removido do nome de propósito: senão "Banco do Brasil" viraria só "Banco".
 
 O formato aceita dados por índice ou valores absolutos. Por exemplo:
 - Index 100 = median salary (índice 100 = salário mediano; maior é melhor)
@@ -69,7 +69,7 @@ Se você tem os dados numa planilha Excel:
 
 ```bash
 pip install openpyxl
-python3 tools/convert_salary_excel.py caminho/para/salarios.xlsx \
+python3 backend/tools/convert_salary_excel.py caminho/para/salarios.xlsx \
   --source "Minha pesquisa salarial 2026" \
   --baseline 100 \
   --baseline-desc "Índice 100 = salário mediano"
@@ -115,11 +115,11 @@ Deixe claro no `index_label` se o valor é **bruto CLT** ou **valor PJ**: os doi
 ## Uso
 
 ```bash
-python3 salary_lookup.py "Mercado Livre"
-python3 salary_lookup.py "WEG" --city "Jaraguá do Sul"
-python3 salary_lookup.py "Itau" --json
-python3 salary_lookup.py --list-all
-python3 salary_lookup.py --validate      # confere o seu salary_data.json antes de usar
+python3 backend/salary_lookup.py "Mercado Livre"
+python3 backend/salary_lookup.py "WEG" --city "Jaraguá do Sul"
+python3 backend/salary_lookup.py "Itau" --json
+python3 backend/salary_lookup.py --list-all
+python3 backend/salary_lookup.py --validate      # confere o seu salary_data.json antes de usar
 ```
 
 ## Observações importantes

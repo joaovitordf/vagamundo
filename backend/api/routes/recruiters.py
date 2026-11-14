@@ -12,6 +12,7 @@ from backend.api.models import (
     RecruiterAutoConfigRequest,
     RecruiterAutoStartRequest,
     RecruiterContactedRequest,
+    RecruiterDismissBatchRequest,
     RecruiterTriageRequest,
 )
 from backend.api.security import verify_csrf_token
@@ -217,6 +218,21 @@ def paste_recruiter_posts_batch(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.post("/dismiss-batch")
+def dismiss_recruiter_posts_batch(
+    req: RecruiterDismissBatchRequest,
+    service: RecruiterService = Depends(get_recruiter_service),
+    _csrf: str = Depends(verify_csrf_token),
+) -> Dict[str, Any]:
+    """Dismiss multiple recruiter publications to Limbo in one batch."""
+    dismissed_ids = service.dismiss_posts(req.post_ids)
+    return {
+        "ok": True,
+        "dismissed_ids": dismissed_ids,
+        "dismissed_count": len(dismissed_ids),
+    }
 
 
 @router.post("/{post_id}/interested")

@@ -33,7 +33,7 @@ export class EvolucaoComponent implements OnInit, OnDestroy {
   readonly sourceLabels: Record<string, { name: string; description: string }> = {
     applications_tracker: { name: 'Rastreador de Candidaturas', description: 'Registro de vagas aplicadas (SQLite / CSV)' },
     candidate_profile: { name: 'Perfil da Pessoa Candidata', description: 'Metadados profissionais (01-candidate-profile.md)' },
-    linkedin: { name: 'LinkedIn Profissional', description: 'Perfil salvo em PDF na pasta documents/linkedin' },
+    linkedin: { name: 'LinkedIn Profissional', description: 'Perfil salvo em PDF na pasta backend/documents/linkedin' },
     projects: { name: 'Inventário de Projetos', description: 'Projetos e experiências comprovadas' },
     interviews: { name: 'Contexto de Entrevistas', description: 'Perguntas, respostas e feedbacks de processos' },
     application_notes: { name: 'Anotações de Candidatura', description: 'Cartas, versões de CV e notas de aplicação' },

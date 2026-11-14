@@ -100,7 +100,7 @@ function itemToJob(item: RemoteOkItem): JobResult {
     ? item.date.slice(0, 10)
     : item.epoch
     ? new Date(item.epoch * 1000).toISOString().slice(0, 10)
-    : undefined
+    : null
 
   const salaryStr = formatSalaryUSD(item.salary_min, item.salary_max)
   const loc = item.location && item.location.trim() ? item.location.trim() : "Remoto (Global)"
@@ -111,6 +111,7 @@ function itemToJob(item: RemoteOkItem): JobResult {
     company: item.company || "Empresa não informada",
     location: loc,
     date: dateStr,
+    deadline: null,
     url: item.url || (item.id ? `https://remoteok.com/remote-jobs/${item.id}` : "https://remoteok.com"),
     apply_url: item.apply_url || item.url,
     workplace_type: "remote",

@@ -3,7 +3,7 @@
 Você vai registrar o que aconteceu com uma candidatura: atualizações de andamento (convites para entrevista, etapas concluídas, propostas) e resoluções finais (contratação, recusa, falta de retorno). Os dados vão para dois lugares que o projeto já lê, mas que nada grava de forma sistemática:
 
 - `job_search_tracker.csv` - a coluna de status que o `/scrape` e o `/rank` usam para deduplicar e excluir
-- `documents/applications/<company>_<role>/` - o arquivo por candidatura (vaga, rascunhos enviados, `outcome.md`) que o Caminho A do `/setup` garimpa para calibrar o `04-job-evaluation.md` e revelar candidatos a STAR
+- `backend/documents/applications/<company>_<role>/` - o arquivo por candidatura (vaga, rascunhos enviados, `outcome.md`) que o Caminho A do `/setup` garimpa para calibrar o `04-job-evaluation.md` e revelar candidatos a STAR
 
 O `/outcome` grava os dados; o `/setup` os interpreta. Este comando nunca edita o método de avaliação nem os arquivos de perfil.
 
@@ -41,7 +41,7 @@ Siga estes passos **na ordem**.
 
    **Urgência de prazo é o único relógio que vale para uma linha rascunhada.** Mostre a coluna `deadline` quando a linha tiver um prazo e deixe em branco caso contrário. Marque um prazo nos próximos 7 dias com 🔥 e um já vencido com ⚠, com o mesmo limite de 7 dias que o Passo 3 do `/rank` usa, para os dois comandos nunca discordarem. Um prazo vencido numa linha `drafted` é exatamente a falha que esta coluna existe para pegar — documentos escritos, nunca enviados e agora impossíveis de enviar —, então cite-a numa linha abaixo da tabela, em vez de deixar a pessoa comparar datas. Isso não muda nada na oferta de follow-up: uma linha rascunhada nunca é cobrada, porque ninguém está atrasado para responder a algo que nunca foi enviado.
 
-4. Derive o nome da pasta de arquivo: `documents/applications/<company>_<role>/`, pela regra de **nomes de subpasta** de `documents/README.md`. Confira se a pasta e um `outcome.md` já existem — se existirem, você está atualizando, não criando.
+4. Derive o nome da pasta de arquivo: `backend/documents/applications/<company>_<role>/`, pela regra de **nomes de subpasta** de `backend/documents/README.md`. Confira se a pasta e um `outcome.md` já existem — se existirem, você está atualizando, não criando.
 
 ---
 
@@ -58,7 +58,7 @@ Grafias canônicas para a coluna `status` do CSV do tracker (sublinhado, nunca e
 
 Ao conversar, traduza à vontade: `applied` = candidatura enviada, `interview` = em entrevistas, `offer` = proposta recebida, `hired` = contratada(o), `rejected` = recusada, `no_response` = sem retorno, `offer_declined` = proposta recusada pela pessoa, `withdrawn` = desistência. Ao gravar, use sempre o código.
 
-> Diferente do enum `Status:` do arquivo em `documents/README.md`
+> Diferente do enum `Status:` do arquivo em `backend/documents/README.md`
 > (`in_progress` | `hired` | `offer_declined` | `rejected` | `no_response` | `interview_only`),
 > que descreve o arquivo `outcome.md` por candidatura, não esta coluna. Os dois enums
 > nunca são gravados no mesmo campo.
@@ -73,7 +73,7 @@ Pergunte à pessoa o que aconteceu e classifique:
 - Convite para entrevista / etapa marcada ou concluída (triagem com RH, testes online, entrevista técnica, case, dinâmica de grupo, entrevista final)
 - Proposta recebida (ainda não aceita nem recusada)
 
-**Resoluções** (candidatura encerrada) — correspondem ao enum `Status:` do arquivo em `documents/README.md`, que o `/setup` lê (diferente da coluna do CSV do tracker; veja o **Vocabulário de status do tracker** acima):
+**Resoluções** (candidatura encerrada) — correspondem ao enum `Status:` do arquivo em `backend/documents/README.md`, que o `/setup` lê (diferente da coluna do CSV do tracker; veja o **Vocabulário de status do tracker** acima):
 - `hired` - aceitou uma proposta
 - `offer_declined` - recebeu uma proposta e recusou
 - `rejected` - recusa explícita em qualquer etapa (inclui o e-mail automático de "seguimos com outros perfis" da Gupy)
@@ -106,7 +106,7 @@ Entre neste ramo pelo argumento `followup` (Passo 0) ou pela oferta abaixo da ta
 **Registro.** Quando a pessoa confirmar que vai enviar (ou que enviou), registre na mesma rodada — um follow-up não registrado quebra a conta de dias em silêncio da próxima execução:
 
 - Acrescente `followed up YYYY-MM-DD` à coluna `notes` da linha (vale a regra do Passo 4: acrescentar uma nota com data, nunca reestruturar o CSV).
-- Salve a mensagem final como `followup_YYYY-MM-DD.md` na pasta de arquivo da candidatura. Seguro por convenção documentada: o `/setup` só lê os quatro arquivos citados do arquivo e ignora os extras (a mesma regra que cobre os arquivos de preparação do `/interview`), e `documents/applications/**` é dado pessoal ignorado pelo git.
+- Salve a mensagem final como `followup_YYYY-MM-DD.md` na pasta de arquivo da candidatura. Seguro por convenção documentada: o `/setup` só lê os quatro arquivos citados do arquivo e ignora os extras (a mesma regra que cobre os arquivos de preparação do `/interview`), e `backend/documents/applications/**` é dado pessoal ignorado pelo git.
 
 Se a pessoa decidir não enviar, não registre nada.
 
@@ -150,7 +150,7 @@ Espere a resposta explícita da pessoa antes de gravar qualquer coisa.
 **Execução.** Para cada candidatura confirmada:
 
 1. **Atualizar o tracker:** mude a coluna `status` da linha para `no_response` (com a grafia canônica do **Vocabulário de status do tracker**). Acrescente `stale resolved no_response (YYYY-MM-DD)` em `notes`. Siga a regra do Passo 4: nunca reestruture o CSV, preserve todas as outras colunas intactas.
-2. **Atualizar o arquivo:** derive `documents/applications/<company>_<role>/` pela regra de **nomes de subpasta**. Se a pasta existir, atualize ou grave o `outcome.md` com:
+2. **Atualizar o arquivo:** derive `backend/documents/applications/<company>_<role>/` pela regra de **nomes de subpasta**. Se a pasta existir, atualize ou grave o `outcome.md` com:
    - `**Status:** no_response`
    - `**Data de resolução:** AAAA-MM-DD`
    - Acrescente em `## Observações`: `- Resolução por inatividade: marcada como no_response após [N] dias em silêncio (AAAA-MM-DD)`
@@ -161,11 +161,11 @@ Espere a resposta explícita da pessoa antes de gravar qualquer coisa.
 
 ## Passo 3: Arquivar os materiais da candidatura
 
-Crie ou atualize `documents/applications/<company>_<role>/`. Todo o conteúdo aqui é dado pessoal — a pasta já é ignorada pelo git (`documents/applications/**`), então nada precisa ser ocultado.
+Crie ou atualize `backend/documents/applications/<company>_<role>/`. Todo o conteúdo aqui é dado pessoal — a pasta já é ignorada pelo git (`backend/documents/applications/**`), então nada precisa ser ocultado.
 
-1. **`cv_draft.tex` e `cover_letter.tex`** - copie (nunca mova) os arquivos enviados. Localize-os pelas colunas `cv_file`/`cover_letter_file` da linha do tracker; se estiverem vazias, procure `cv/main_<company>_<role>.*` e `cover_letters/cover_<company>_<role>.*`, derivando `<company>_<role>` pela regra de **nomes de subpasta** de `documents/README.md`. **Nunca amplie esses globs só para a empresa** — dois cargos na mesma empresa casam com ele, e o primeiro resultado vence em silêncio. Se um arquivo já existir no arquivo, deixe como está — a versão arquivada é o que de fato foi enviado. Se nada casar (candidatura feita fora do `/apply`), pule com uma observação em vez de ampliar a busca: o currículo de outro cargo registrado como o que você enviou é pior que nenhum arquivo.
-2. **`job_posting.md`** - se já existir, deixe como está. Senão, tente o WebFetch na URL `source` da linha do tracker (para vagas da Gupy, o `detail` da CLI `gupy-search` é melhor), tentando de novo um 403 com cabeçalhos de navegador conforme `.claude/skills/job-application-assistant/09-web-research.md`, passe o resultado pelo `python3 tools/posting_guard.py` (`--html` numa página salva, `--text` nos demais casos) e salve o texto **limpo** mais uma seção `## posting_guard` só com o veredito e as contagens dos achados, exatamente como faz o Passo 6b do `/apply`. Se a URL estiver morta (vagas expiram rápido — é exatamente por isso que o arquivo importa), peça à pessoa para colar a vaga, ou grave um esboço dizendo que a vaga está indisponível. **Nunca reconstrua uma vaga de memória.**
-3. **`outcome.md`** - grave ou atualize exatamente no formato documentado em `documents/README.md`, para o Caminho A do `/setup` ler sem casos especiais:
+1. **`cv_draft.tex` e `cover_letter.tex`** - copie (nunca mova) os arquivos enviados. Localize-os pelas colunas `cv_file`/`cover_letter_file` da linha do tracker; se estiverem vazias, procure `backend/cv/main_<company>_<role>.*` e `backend/cover_letters/cover_<company>_<role>.*`, derivando `<company>_<role>` pela regra de **nomes de subpasta** de `backend/documents/README.md`. **Nunca amplie esses globs só para a empresa** — dois cargos na mesma empresa casam com ele, e o primeiro resultado vence em silêncio. Se um arquivo já existir no arquivo, deixe como está — a versão arquivada é o que de fato foi enviado. Se nada casar (candidatura feita fora do `/apply`), pule com uma observação em vez de ampliar a busca: o currículo de outro cargo registrado como o que você enviou é pior que nenhum arquivo.
+2. **`job_posting.md`** - se já existir, deixe como está. Senão, tente o WebFetch na URL `source` da linha do tracker (para vagas da Gupy, o `detail` da CLI `gupy-search` é melhor), tentando de novo um 403 com cabeçalhos de navegador conforme `.claude/skills/job-application-assistant/09-web-research.md`, passe o resultado pelo `python3 backend/tools/posting_guard.py` (`--html` numa página salva, `--text` nos demais casos) e salve o texto **limpo** mais uma seção `## posting_guard` só com o veredito e as contagens dos achados, exatamente como faz o Passo 6b do `/apply`. Se a URL estiver morta (vagas expiram rápido — é exatamente por isso que o arquivo importa), peça à pessoa para colar a vaga, ou grave um esboço dizendo que a vaga está indisponível. **Nunca reconstrua uma vaga de memória.**
+3. **`outcome.md`** - grave ou atualize exatamente no formato documentado em `backend/documents/README.md`, para o Caminho A do `/setup` ler sem casos especiais:
 
 ```markdown
 # Resultado: <Empresa> — <Cargo>
@@ -195,7 +195,7 @@ Regras de atualização: marque as caixas de etapa (stage checkboxes) conforme f
 
 ## Passo 4: Atualizar o tracker
 
-Atualize a coluna `status` da linha correspondente com as grafias canônicas do **Vocabulário de status do tracker** acima (ex.: `drafted` → `applied` → `interview` → `offer` → `hired` / `rejected` / `no_response` / `offer_declined` / `withdrawn`) e acrescente uma nota curta com data na coluna `notes`, **sem vírgulas, aspas duplas nem quebras de linha**. Nenhum gravador aqui emite um campo do tracker entre aspas, então uma vírgula na nota desloca `cv_file`, `cover_letter_file` e `source` uma coluna para a esquerda tanto para o `csv.DictReader` (`tools/rank_state.py`) quanto para uma divisão ingênua, e uma quebra de linha encerra a linha — `recusada, sem devolutiva` é exatamente a frase que corrompe; escreva `recusada - sem devolutiva`. O Passo 7a do `/gmail-sync` aplica a mesma regra aos assuntos de e-mail que acrescenta. Nunca reestruture o CSV, reordene linhas ou mexa em outras linhas. A regravação toca só as colunas `status` e `notes`: preserve todos os outros campos da linha, lidos ou não, para um valor que a linha carrega — o `deadline` gravado pelo Passo 6b do `/apply`, ou qualquer coluna acrescentada no futuro — nunca ser apagado por uma atualização de status.
+Atualize a coluna `status` da linha correspondente com as grafias canônicas do **Vocabulário de status do tracker** acima (ex.: `drafted` → `applied` → `interview` → `offer` → `hired` / `rejected` / `no_response` / `offer_declined` / `withdrawn`) e acrescente uma nota curta com data na coluna `notes`, **sem vírgulas, aspas duplas nem quebras de linha**. Nenhum gravador aqui emite um campo do tracker entre aspas, então uma vírgula na nota desloca `cv_file`, `cover_letter_file` e `source` uma coluna para a esquerda tanto para o `csv.DictReader` (`backend/tools/rank_state.py`) quanto para uma divisão ingênua, e uma quebra de linha encerra a linha — `recusada, sem devolutiva` é exatamente a frase que corrompe; escreva `recusada - sem devolutiva`. O Passo 7a do `/gmail-sync` aplica a mesma regra aos assuntos de e-mail que acrescenta. Nunca reestruture o CSV, reordene linhas ou mexa em outras linhas. A regravação toca só as colunas `status` e `notes`: preserve todos os outros campos da linha, lidos ou não, para um valor que a linha carrega — o `deadline` gravado pelo Passo 6b do `/apply`, ou qualquer coluna acrescentada no futuro — nunca ser apagado por uma atualização de status.
 
 **Tirando uma linha de `drafted`:** linhas gravadas pelo Passo 6b do `/apply` têm a data em que os documentos foram rascunhados, não a data em que foram enviados. Sempre que este passo levar uma linha dessas para qualquer outro status — `applied`, ou direto para `interview` ou `rejected` quando a pessoa informar um resultado de algo que enviou sem registrar —, sobrescreva a coluna `date` com a data real de envio. A coluna `date` é lida como "candidatou-se em" pelo `/notion-sync` e determina o agrupamento por ano e temporada do `/html-report` e a conta de dias em silêncio deste próprio comando, então deixar a data do rascunho no lugar informaria errado a candidatura.
 
@@ -203,7 +203,7 @@ Atualize a coluna `status` da linha correspondente com as grafias canônicas do 
 
 ## Passo 5: Passagem para a calibração
 
-Conte os arquivos `outcome.md` em `documents/applications/` com status **final** (diferente de `in_progress`).
+Conte os arquivos `outcome.md` em `backend/documents/applications/` com status **final** (diferente de `in_progress`).
 
 - Se 3 ou mais estiverem resolvidas (ou 2+ repetirem um padrão — mesmo tipo de vaga recusado duas vezes, mesmo setor em silêncio), sugira:
   > "Você agora tem <N> candidaturas resolvidas registradas. Rode o `/setup` (Caminho A) para incorporá-las ao seu método de avaliação — ele calibra a pontuação de encaixe pelo que de fato rendeu entrevistas e garimpa as devolutivas de entrevista atrás de exemplos STAR."
@@ -217,7 +217,7 @@ Resuma o que foi registrado:
 
 > **Resultado registrado para <Cargo> na <Empresa>.**
 >
-> - `documents/applications/<company>_<role>/outcome.md` - status: <status>, <o que mudou>
+> - `backend/documents/applications/<company>_<role>/outcome.md` - status: <status>, <o que mudou>
 > - Arquivado: <quais de cv_draft.tex / cover_letter.tex / job_posting.md foram copiados ou coletados, e quais foram pulados e por quê>
 > - Tracker: status → <novo status>
 >
@@ -238,7 +238,7 @@ Se o status registrado for `hired`, parabenize a pessoa com carinho primeiro —
 1. **Grave dados, não os interprete.** O arquivo e o tracker são as saídas; a calibração pertence ao `/setup`. Este comando nunca edita arquivos de perfil nem do método.
 2. **A versão arquivada é a versão enviada.** Arquivos existentes na pasta da candidatura nunca são sobrescritos por rascunhos mais novos.
 3. **Nunca invente.** Uma URL de vaga morta recebe uma cópia colada pela pessoa ou um esboço explícito de "indisponível", não uma reconstrução. A devolutiva é registrada como a pessoa contar.
-4. **Mantenha a compatibilidade de esquema.** O `outcome.md` segue exatamente o formato de `documents/README.md` (`in_progress` é o único acréscimo, para candidaturas abertas); o tracker mantém as colunas.
+4. **Mantenha a compatibilidade de esquema.** O `outcome.md` segue exatamente o formato de `backend/documents/README.md` (`in_progress` é o único acréscimo, para candidaturas abertas); o tracker mantém as colunas.
 5. **Atualizações idempotentes.** Rodar de novo na mesma candidatura acrescenta etapas e observações novas; nunca duplica pastas, linhas ou histórico.
 6. **Follow-ups: só rascunho, nunca envia.** O ramo de follow-up produz texto para a pessoa enviar ela mesma. Nunca manda e-mail, mensagem nem envia nada, e não pode ser ligado a ferramentas que façam isso.
 7. **Follow-ups: nenhuma afirmação nova.** Toda afirmação substantiva num follow-up ou numa mensagem de agradecimento vem dos materiais enviados e arquivados. A Regra 3 vale sem exceção.

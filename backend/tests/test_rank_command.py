@@ -62,7 +62,7 @@ class RankCommandSpec(unittest.TestCase):
         step1 = _sections(COMMAND.read_text(encoding="utf-8"))["Passo 1: Carregar o estado"]
         empty_branch = step1.partition("Se informar que não há candidatas")[2].partition("Then read")[0]
         self.assertIn(
-            "python3 tools/rank_state.py sweep --write",
+            "python3 backend/tools/rank_state.py sweep --write",
             empty_branch,
             "an empty candidate batch must still persist rule 6's expiry sweep",
         )
@@ -77,7 +77,7 @@ class RankCommandSpec(unittest.TestCase):
         return (`AGENT_STATUSES`), and Step 2's JSON contract must name exactly
         that set. A status the spec offers but the tool lacks is rejected at
         write-back; one the tool accepts but the spec omits is never produced."""
-        spec = importlib.util.spec_from_file_location("rank_state", REPO / "tools" / "rank_state.py")
+        spec = importlib.util.spec_from_file_location("rank_state", REPO / "backend" / "tools" / "rank_state.py")
         rank_state = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(rank_state)
 
@@ -530,7 +530,7 @@ class RankBatchLimitSpec(unittest.TestCase):
     def test_step1_applies_limit_via_the_state_tool(self):
         step1 = self.sections.get("Passo 1: Carregar o estado", "")
         self.assertIn(
-            "tools/rank_state.py candidates --limit 10",
+            "backend/tools/rank_state.py candidates --limit 10",
             step1,
             "Step 1 must select candidates with the CLI, passing --limit through to it",
         )
@@ -583,12 +583,12 @@ class RankStateToolSpec(unittest.TestCase):
             step1,
             "Step 1 must forbid the manual read this fix removes",
         )
-        self.assertIn("tools/rank_state.py candidates", step1)
+        self.assertIn("backend/tools/rank_state.py candidates", step1)
 
     def test_step4_writes_back_through_apply_not_by_hand(self):
         step4 = self.sections.get("Passo 4: Atualizar o estado", "")
         self.assertIn(
-            "tools/rank_state.py apply",
+            "backend/tools/rank_state.py apply",
             step4,
             "Step 4 must write results with the CLI; re-emitting seen_jobs.json by hand "
             "reproduces the exact cost this fix removes",
@@ -641,7 +641,7 @@ class RankStateToolSpec(unittest.TestCase):
     def test_step3_sweep_runs_through_the_tool(self):
         step3 = self.sections.get("Passo 3: Agregar e ordenar", "")
         self.assertIn(
-            "tools/rank_state.py sweep",
+            "backend/tools/rank_state.py sweep",
             step3,
             "rule 6's expiry sweep must run through the CLI, not a manual re-read",
         )
@@ -657,8 +657,8 @@ class RankStateToolSpec(unittest.TestCase):
     def test_settings_and_guards_allow_the_new_tool(self):
         settings = json.loads((REPO / ".claude" / "settings.json").read_text(encoding="utf-8"))
         allow = settings["permissions"]["allow"]
-        guards = (REPO / "tools" / "security_guards.py").read_text(encoding="utf-8")
-        for entry in ("Bash(python tools/rank_state.py:*)", "Bash(python3 tools/rank_state.py:*)"):
+        guards = (REPO / "backend" / "tools" / "security_guards.py").read_text(encoding="utf-8")
+        for entry in ("Bash(python backend/tools/rank_state.py:*)", "Bash(python3 backend/tools/rank_state.py:*)"):
             self.assertIn(entry, allow, f"{entry} missing from .claude/settings.json")
             self.assertIn(entry, guards, f"{entry} missing from security_guards.py's reviewed allowlist")
 

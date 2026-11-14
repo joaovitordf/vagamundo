@@ -61,6 +61,20 @@ export interface Vaga {
   pdf_entrevista?: string;
 }
 
+export interface CvAreaItem {
+  id: string;
+  label?: string;
+  title?: string;
+  keywords: string[];
+}
+
+export type CvAreasSource = 'profile' | 'fallback';
+
+export interface CvAreasResponse {
+  areas: CvAreaItem[];
+  source?: CvAreasSource;
+}
+
 export interface ProfileResponse {
   schema: Array<{ title: string; fields: any[] }>;
   answers: Record<string, any>;
@@ -75,6 +89,15 @@ export interface ProfileResponse {
   ready: boolean;
   profile: string;
   report?: string;
+}
+
+export interface ProfileOrganizeResponse {
+  ok: boolean;
+  organized: boolean;
+  reason?: string;
+  detail?: string;
+  updated_fields?: string[];
+  profile?: ProfileResponse;
 }
 
 export interface ActiveProviderInfo {
@@ -311,6 +334,7 @@ export interface RecruiterPost {
   matched_keywords: string[];
   match_score: number;
   job_id?: string;
+  job_status?: string | null;
   dismissed?: number;
   ai_classification?: 'vaga_ativa' | 'banco_talentos' | 'nao_e_vaga' | null;
   ai_score?: number | null;

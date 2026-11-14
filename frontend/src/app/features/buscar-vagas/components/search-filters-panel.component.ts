@@ -10,7 +10,9 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { CvAreasSource } from '../../../core/models/vaga.model';
 import { SearchStateService } from '../../../core/services/search-state.service';
+import { CvRandomControlComponent } from '../../../shared/components/cv-random-control/cv-random-control.component';
 import {
   AVAILABLE_PORTALS,
   PORTAL_CATEGORIES,
@@ -20,7 +22,7 @@ import {
 @Component({
   selector: 'app-search-filters-panel',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, CvRandomControlComponent],
   templateUrl: './search-filters-panel.component.html',
   styleUrl: './search-filters-panel.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -35,6 +37,8 @@ export class SearchFiltersPanelComponent {
   @Input() triagedCount = 0;
   @Input() searchStatus = '';
   @Input() showProgressPanel = false;
+  @Input() cvAreasCount = 0;
+  @Input() cvAreasSource: CvAreasSource = 'fallback';
 
   @Output() filterChange = new EventEmitter<void>();
   @Output() pickRandomCv = new EventEmitter<void>();

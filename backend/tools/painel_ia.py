@@ -217,6 +217,7 @@ redigir_curriculo = _doc_builder.redigir_curriculo
 _extract_plain_letter = _doc_builder._extract_plain_letter
 redigir_carta = _doc_builder.redigir_carta
 _profile_documents = _doc_builder._profile_documents
+extrair_respostas_de_documentos = _doc_builder.extrair_respostas_de_documentos
 montar_perfil = _doc_builder.montar_perfil
 _escape_latex = _doc_builder._escape_latex
 preparar_entrevista = _doc_builder.preparar_entrevista

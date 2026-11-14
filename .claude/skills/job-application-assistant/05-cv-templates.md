@@ -1,5 +1,5 @@
 ---
-framework_version: 1.5.0
+framework_version: 1.5.1
 ---
 
 # Modelos de currículo e guia de personalização
@@ -10,14 +10,14 @@ framework_version: 1.5.0
 
 Todos os currículos usam o pacote LaTeX moderncv com o estilo "banking" e o esquema de cores "blue".
 
-**Arquivo gerado:** `cv/main_<company>_<role>.tex`
+**Arquivo gerado:** `backend/cv/main_<company>_<role>.tex`
 **Compilar com:** **lualatex** no MiKTeX/TeX Live. O pdflatex costuma falhar em instalações recentes do MiKTeX com erros de expansão de fonte do `fontawesome5`; o lualatex compila os mesmos arquivos sem problema.
-**Referência principal:** `cv/main_example.tex` (currículo completo, com todas as competências, experiências e conquistas — use como fonte para montar os currículos direcionados)
+**Referência principal:** `backend/cv/main_example.tex` (currículo completo, com todas as competências, experiências e conquistas — use como fonte para montar os currículos direcionados)
 
 ### Comando de compilação
 
 ```bash
-cd cv && lualatex -interaction=nonstopmode main_<company>_<role>.tex
+cd backend/cv && lualatex -interaction=nonstopmode main_<company>_<role>.tex
 ```
 
 Saída esperada: `Output written on main_<company>_<role>.pdf (2 pages, ...)`. Qualquer número de páginas diferente de 2 é uma falha a corrigir antes de mostrar à pessoa.
@@ -329,7 +329,7 @@ Recoloque o item mais relevante que tinha sido cortado — um currículo que ter
 A maioria das empresas passa os currículos por um ATS (no Brasil, Gupy, Solides, InHire, Kenoby e outros) antes de uma pessoa ver, e o ATS lê a **camada de texto** embutida no PDF, não a página desenhada. Um currículo pode passar na inspeção visual e ainda assim ser extraído como lixo. Depois que o layout passar no ciclo de compilar e inspecionar, verifique a camada de texto:
 
 ```bash
-python tools/verify_pdf.py cv/main_<company>_<role>.pdf --dump-text cv/main_<company>_<role>.txt
+python backend/tools/verify_pdf.py backend/cv/main_<company>_<role>.pdf --dump-text backend/cv/main_<company>_<role>.txt
 ```
 
 A extração tenta primeiro o **pypdf** (`pip install pypdf`, licença BSD), depois o `pdftotext` do Poppler. Se um plano B ainda usar `pdftotext -layout`, ele precisa passar também `-enc UTF-8`: versões baseadas no Xpdf usam Latin-1 por padrão, o que faz cada caractere não ASCII de um currículo perfeito voltar como caractere de substituição — um desastre para o português. Se nenhum extrator estiver disponível, pule a checagem mecânica com um aviso e confie na leitura visual do PDF para a cobertura de palavras-chave.
@@ -365,7 +365,7 @@ Duas causas independentes, ambas fáceis de evitar:
 
    Quando houver um intervalo real, use-o mesmo que um ano solto seja verdadeiro — um diploma escrito `1995` é verdade, mas importa pior que `1992-1995`. Não invente uma data de início que você não tem; um ano de formatura sozinho tudo bem, só espere ter de digitá-lo à mão.
 
-**A causa 1 é verificada mecanicamente no passo 5d**: `python tools/verify_pdf.py cv/main_<company>_<role>.pdf --ascii-dates` varre a camada de texto crua atrás de um ano grudado num travessão Unicode e termina com código 1 citando cada ocorrência com o ponto de código (`U+2013 in 'Cargo 2016–2024'`). Lê a camada crua de propósito: a normalização que deixa `--contains "2016-2024"` bater com o que o modelo desenha converte essa mesma meia-risca de volta em `-`, então o `--contains` nunca vê isso. Basta um ano de qualquer lado do travessão, então `03/2016 – 07/2016` e `2016 – atual` também são pegos; um intervalo numérico sem ano (`R$ 600 mil–1 milhão`) fica de fora. **A causa 2 continua sendo uma leitura atenta**: depois de extrair a camada de texto, confirme que toda entrada de experiência tem início *e* fim. Como as duas falhas são silenciosas e invisíveis no PDF, de outro modo a pessoa só descobre ao preencher o formulário da candidatura.
+**A causa 1 é verificada mecanicamente no passo 5d**: `python backend/tools/verify_pdf.py backend/cv/main_<company>_<role>.pdf --ascii-dates` varre a camada de texto crua atrás de um ano grudado num travessão Unicode e termina com código 1 citando cada ocorrência com o ponto de código (`U+2013 in 'Cargo 2016–2024'`). Lê a camada crua de propósito: a normalização que deixa `--contains "2016-2024"` bater com o que o modelo desenha converte essa mesma meia-risca de volta em `-`, então o `--contains` nunca vê isso. Basta um ano de qualquer lado do travessão, então `03/2016 – 07/2016` e `2016 – atual` também são pegos; um intervalo numérico sem ano (`R$ 600 mil–1 milhão`) fica de fora. **A causa 2 continua sendo uma leitura atenta**: depois de extrair a camada de texto, confirme que toda entrada de experiência tem início *e* fim. Como as duas falhas são silenciosas e invisíveis no PDF, de outro modo a pessoa só descobre ao preencher o formulário da candidatura.
 
 ## Orçamento de páginas — limite rígido de 2 páginas
 

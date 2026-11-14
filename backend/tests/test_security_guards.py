@@ -208,8 +208,8 @@ class AskDenyRuleTests(GuardRepoFixture):
         self.assertIn("Edit(.claude/commands/*.md)", security_guards.REQUIRED_ASK_RULES)
         self.assertIn("Bash(git push:*)", security_guards.REQUIRED_ASK_RULES)
         # The posting integrity gate runs inside fetch agents with no prompt.
-        self.assertIn("Bash(python tools/posting_guard.py:*)", security_guards.ALLOWED_PERMISSIONS)
-        self.assertIn("Bash(python3 tools/posting_guard.py:*)", security_guards.ALLOWED_PERMISSIONS)
+        self.assertIn("Bash(python backend/tools/posting_guard.py:*)", security_guards.ALLOWED_PERMISSIONS)
+        self.assertIn("Bash(python3 backend/tools/posting_guard.py:*)", security_guards.ALLOWED_PERMISSIONS)
 
     def test_malformed_ask_or_deny_shape_fails_cleanly(self):
         for permissions, message in [
@@ -331,7 +331,7 @@ class SkillGrantGuardTests(GuardRepoFixture):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_entry_with_mid_pattern_wildcard_fails(self):
-        self.write_skill(self.core_skill, "Read, Bash(python tools/*.py:*)")
+        self.write_skill(self.core_skill, "Read, Bash(python backend/tools/*.py:*)")
         result = run_guards(self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("wildcard", result.stdout)
@@ -339,8 +339,8 @@ class SkillGrantGuardTests(GuardRepoFixture):
     def test_allowlisted_shipped_entries_pass(self):
         self.write_skill(
             self.core_skill,
-            "Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(python tools/job_key.py:*), "
-            "Bash(python3 tools/job_key.py:*), WebFetch, WebSearch, Agent, AskUserQuestion",
+            "Read, Write, Edit, Glob, Grep, Bash(bun --version), Bash(python backend/tools/job_key.py:*), "
+            "Bash(python3 backend/tools/job_key.py:*), WebFetch, WebSearch, Agent, AskUserQuestion",
         )
         result = run_guards(self.root)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -381,7 +381,7 @@ class AgentGrantGuardTests(GuardRepoFixture):
                 self.assertIn(f"'{tool}'", result.stdout)
 
     def test_agent_with_bash_pattern_fails(self):
-        self.write_agent("Read, Bash(python tools/fetch_page.py *)")
+        self.write_agent("Read, Bash(python backend/tools/fetch_page.py *)")
         result = run_guards(self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("name granularity", result.stdout)
@@ -611,7 +611,7 @@ class GitignorePatternBehaviorTests(unittest.TestCase):
         # Two fragments, not one literal: #329 split the path across Step 1
         # (which derives the archive folder) and Step 3 (which names the file),
         # so either half can move independently and each must be pinned.
-        folder = "documents/applications/<company>_<role>/"
+        folder = "backend/documents/applications/<company>_<role>/"
         filename = "interview_prep_<stage>.md"
         spec = (REPO_ROOT / ".claude" / "commands" / "interview.md").read_text(encoding="utf-8")
         for fragment in (folder, filename):
@@ -631,7 +631,7 @@ class GitignorePatternBehaviorTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, f"{path}: not ignored by the shipped .gitignore")
-        self.assertIn("documents/applications/**", result.stdout)
+        self.assertIn("backend/documents/applications/**", result.stdout)
 
 
 class GitignoreNegationTests(GuardRepoFixture):

@@ -515,12 +515,24 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
     projects_file = WORK_CONTEXT_DIR / "fontes.md"
     application_notes_file = WORK_CONTEXT_DIR / "vagas.md"
 
-    if not projects_file.is_file() and painel_ia.PROFILE_MD.is_file():
-        projects_file = painel_ia.PROFILE_MD
+    profile_src = painel_ia.PROFILE_MD
+    if not (
+        profile_src.is_file()
+        and painel_perfil.is_customized_md(profile_src.read_text(encoding="utf-8"))
+    ):
+        local_prof = painel_perfil.local_profile_path()
+        cached_prof = claude_file(PERFIL_KEY, "perfil")
+        if local_prof.is_file():
+            profile_src = local_prof
+        elif cached_prof.is_file():
+            profile_src = cached_prof
+
+    if not projects_file.is_file() and profile_src.is_file():
+        projects_file = profile_src
 
     source_strengths, source_gaps, source_actions = _context_summary(context_file)
-    if not source_strengths and painel_ia.PROFILE_MD.is_file():
-        p_str, p_gap, p_act = _profile_skills_summary(painel_ia.PROFILE_MD)
+    if not source_strengths and profile_src.is_file():
+        p_str, p_gap, p_act = _profile_skills_summary(profile_src)
         source_strengths = p_str
         if not source_gaps:
             source_gaps = p_gap
@@ -537,12 +549,12 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
     # Audited sources (workspace local primary, legacy fallback)
     agents_file = painel_ia.REPO_ROOT / "AGENTS.md" if (painel_ia.REPO_ROOT / "AGENTS.md").is_file() else WORK_CONTEXT_DIR / "AGENTS.md"
     usage_file = painel_ia.REPO_ROOT / "CLAUDE.md" if (painel_ia.REPO_ROOT / "CLAUDE.md").is_file() else WORK_CONTEXT_DIR / "usage.md"
-    interviews_src = context_file if context_file.is_file() else (documents_path / "interview" if (documents_path / "interview").exists() else painel_ia.PROFILE_MD)
+    interviews_src = context_file if context_file.is_file() else (documents_path / "interview" if (documents_path / "interview").exists() else profile_src)
     notes_src = application_notes_file if application_notes_file.is_file() else (documents_path / "applications")
 
     sources = {
         "applications_tracker": _source_info(tracker_path),
-        "candidate_profile": _source_info(painel_ia.PROFILE_MD),
+        "candidate_profile": _source_info(profile_src),
         "linkedin": _source_info(documents_path / "linkedin"),
         "projects": _source_info(projects_file),
         "interviews": _source_info(interviews_src),
@@ -552,7 +564,7 @@ def update_evolution(evolution_path: Path = EVOLUTION_PATH,
     }
 
     if not sources["linkedin"]["exists"] or not sources["linkedin"].get("files"):
-        warnings.append("Nenhum arquivo do LinkedIn foi encontrado em documents/linkedin.")
+        warnings.append("Nenhum arquivo do LinkedIn foi encontrado em backend/documents/linkedin.")
     if not sources["projects"]["exists"]:
         warnings.append("O inventário de projetos não foi encontrado.")
 

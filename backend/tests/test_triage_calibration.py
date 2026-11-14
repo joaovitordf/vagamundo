@@ -125,7 +125,7 @@ class TestTriageCalibration(unittest.TestCase):
         with patch.object(
             painel_ia,
             "_load_candidate_triage_rules",
-            return_value={"accept_seniority": ["junior", "pleno"], "locais": "Remoto, São Paulo, Belo Horizonte, Formiga", "regimes": ["CLT"], "modelo": ["remoto"], "idiomas": ["PT", "EN"]},
+            return_value={"accept_seniority": ["junior", "pleno"], "locais": "Remoto, São Paulo, Belo Horizonte, Cidade Exemplo", "regimes": ["CLT"], "modelo": ["remoto"], "idiomas": ["PT", "EN"]},
         ):
             g_int = painel_ia._apply_deterministic_gates(
                 title="Dev Python", signals={"internal": ["Seleção interna"]}, score=88, verdict="Strong Fit"

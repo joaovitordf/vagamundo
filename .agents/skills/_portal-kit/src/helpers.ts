@@ -94,7 +94,7 @@ export function withinJobAge(rows: JobResult[], jobage: number, now = new Date()
   return rows.filter((r) => r.date === null || r.date >= cutoff)
 }
 
-function cell(text: string | null, width: number): string {
+function cell(text: string | null | undefined, width: number): string {
   return (text ?? "—").slice(0, width).padEnd(width)
 }
 
@@ -147,7 +147,7 @@ export function renderSearch(rows: JobResult[], format: string, page: number, to
 
 export function renderDetailPlain(job: JobResult): string {
   const lines: string[] = [job.title, `${job.company ?? "—"} · ${job.location ?? "—"}`]
-  const field = (label: string, value: string | null) => {
+  const field = (label: string, value: string | null | undefined) => {
     if (value) lines.push(`${label}: ${value}`)
   }
   field("Publicada em", job.date)

@@ -39,9 +39,22 @@ class Context(Tmp):
     def test_candidate_name_has_no_markdown_stars(self):
         profile = self.dir / "01.md"
         profile.write_text(PROFILE, encoding="utf-8")
-        with mock.patch.object(painel_ia, "PROFILE_MD", profile), mock.patch.object(painel_ia, "CLAUDE_MD", self.dir / "x"):
+        with mock.patch.object(painel_ia, "PROFILE_MD", profile), \
+             mock.patch.object(painel_ia, "CLAUDE_MD", self.dir / "x"), \
+             mock.patch.object(painel_ia, "DOCUMENTS", self.dir / "docs"), \
+             mock.patch.object(painel_ia, "PAINEL_DIR", self.dir / "painel"):
             self.assertEqual(painel_ia.get_candidate_name(), "Maria Teste")
-        with mock.patch.object(painel_ia, "PROFILE_MD", self.dir / "n"), mock.patch.object(painel_ia, "CLAUDE_MD", self.dir / "x"):
+        annotated = self.dir / "02.md"
+        annotated.write_text("- **Nome:** Maria Teste *(referência no feminino)*\n", encoding="utf-8")
+        with mock.patch.object(painel_ia, "PROFILE_MD", annotated), \
+             mock.patch.object(painel_ia, "CLAUDE_MD", self.dir / "x"), \
+             mock.patch.object(painel_ia, "DOCUMENTS", self.dir / "docs"), \
+             mock.patch.object(painel_ia, "PAINEL_DIR", self.dir / "painel"):
+            self.assertEqual(painel_ia.get_candidate_name(), "Maria Teste")
+        with mock.patch.object(painel_ia, "PROFILE_MD", self.dir / "n"), \
+             mock.patch.object(painel_ia, "CLAUDE_MD", self.dir / "x"), \
+             mock.patch.object(painel_ia, "DOCUMENTS", self.dir / "docs"), \
+             mock.patch.object(painel_ia, "PAINEL_DIR", self.dir / "painel"):
             self.assertEqual(painel_ia.get_candidate_name(), "a pessoa candidata")
 
     def test_profile_documents_skip_loose_files_in_the_documents_root(self):

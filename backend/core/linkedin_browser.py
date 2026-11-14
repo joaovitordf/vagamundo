@@ -82,26 +82,73 @@ _CHECK_BLOCK_JS = """
 _EXPAND_SEE_MORE_JS = """
 (() => {
   const seen = new Set();
-  const candidates = Array.from(document.querySelectorAll(
+  const root = document.querySelector('main') || document.body;
+  if (!root) return 0;
+  const candidates = Array.from(root.querySelectorAll(
     'button.feed-shared-inline-show-more-text__see-more-less-toggle,'
     + 'button[data-testid="expandable-text-button"],'
-    + 'button[aria-label*="ver mais" i],button[aria-label*="see more" i],button[aria-label*="expand" i],'
-    + 'main button,main [role="button"]'
+    + '[data-testid="expandable-text-button"],'
+    + '[data-testid="expandable-text-box"] button,'
+    + '[data-testid="expandable-text-box"] [role="button"],'
+    + '[data-testid="expandable-text-box"] a,'
+    + '[data-view-name="feed-commentary"] button,'
+    + '[data-view-name="feed-commentary"] [role="button"],'
+    + '[data-testid="expandable-text-box"] span,'
+    + '[data-view-name="feed-commentary"] a,'
+    + '[data-view-name="feed-commentary"] span,'
+    + '.feed-shared-inline-show-more-text button,'
+    + '.feed-shared-inline-show-more-text [role="button"],'
+    + '.feed-shared-inline-show-more-text a,'
+    + '.feed-shared-inline-show-more-text span,'
+    + '.update-components-text button,'
+    + '.update-components-text a,'
+    + '.update-components-text span,'
+    + '[class*="see-more"],'
+    + '[class*="show-more"],'
+    + 'button[aria-label*="ver mais" i],button[aria-label*="see more" i],button[aria-label*="mais" i],button[aria-label*="expand" i],'
+    + 'button,[role="button"]'
   ));
-  const textMatchRe = /^[….\\s]*(?:ver mais|mais|see more|more)[….\\s]*$/i;
+  const textMatchRe = /^[…\\.\u2026\\s]*(?:ver mais|mais|see more|more)[…\\.\u2026\\s]*$/i;
+  const getVisibleLabel = (el) => {
+    try {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('.visually-hidden,.a11y-text,[aria-hidden="true"]').forEach((n) => n.remove());
+      const cleaned = String(clone.innerText || clone.textContent || '')
+        .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+        .replace(/\\s+/g, ' ')
+        .trim();
+      if (cleaned) return cleaned;
+    } catch (_e) {}
+    return String(el.innerText || el.textContent || '')
+      .replace(/[\\u200B-\\u200D\\uFEFF]/g, '')
+      .replace(/\\s+/g, ' ')
+      .trim();
+  };
   let clicked = 0;
   for (const btn of candidates) {
     if (!btn || seen.has(btn)) continue;
     seen.add(btn);
-    if (clicked >= 20) break;
+    if (clicked >= 40) break;
     if (btn.closest('nav, header')) continue;
-    if (btn.offsetParent === null || btn.getAttribute('aria-expanded') === 'true') continue;
+    if (btn.getAttribute('aria-expanded') === 'true') continue;
+    if (btn.querySelector && btn.querySelector('button,[role="button"],a')) continue;
+    const rects = typeof btn.getClientRects === 'function' ? btn.getClientRects() : null;
+    if (rects && rects.length === 0) continue;
+    if (!rects && btn.offsetParent === null) continue;
+    const cls = String(btn.className || '');
     const isKnown = btn.matches(
-      'button.feed-shared-inline-show-more-text__see-more-less-toggle,button[data-testid="expandable-text-button"],button[aria-label*="ver mais" i],button[aria-label*="see more" i]'
-    );
-    const labelTxt = String(btn.innerText || btn.textContent || '').replace(/\\s+/g, ' ').trim();
-    if (!isKnown && !textMatchRe.test(labelTxt)) continue;
-    btn.click();
+      'button.feed-shared-inline-show-more-text__see-more-less-toggle,button[data-testid="expandable-text-button"],[data-testid="expandable-text-button"],button[aria-label*="ver mais" i],button[aria-label*="see more" i]'
+    ) || /see-more|show-more/i.test(cls);
+    const labelTxt = getVisibleLabel(btn);
+    const matchesText = textMatchRe.test(labelTxt) || /(?:^|\\s)[…\\.\\u2026]*(?:ver mais|mais|see more)[…\\.\\u2026]*$/i.test(labelTxt);
+    if (!isKnown && !matchesText) continue;
+    if (isKnown && /(?:ver menos|see less|mostrar menos|less)/i.test(labelTxt)) continue;
+    try {
+      btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    } catch (_e) {}
+    try {
+      if (typeof btn.click === 'function') btn.click();
+    } catch (_e) {}
     clicked++;
   }
   return clicked;
@@ -111,7 +158,8 @@ _EXPAND_SEE_MORE_JS = """
 _EXTRACT_POSTS_JS = """
 (() => {
   const normalizeObfuscated = (s) => {
-    let out = String(s || '').replace(/([A-Za-z0-9._%+-]+)\\s*[\\[\\(\\{]\\s*(?:at|arroba|@)\\s*[\\]\\)\\}]\\s*([A-Za-z0-9-]+)/gi, '$1@$2');
+    let out = String(s || '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '');
+    out = out.replace(/([A-Za-z0-9._%+-]+)\\s*[\\[\\(\\{]\\s*(?:at|arroba|@)\\s*[\\]\\)\\}]\\s*([A-Za-z0-9-]+)/gi, '$1@$2');
     for (let i = 0; i < 4; i++) {
       const next = out.replace(/(@[A-Za-z0-9.-]+)\\s*[\\[\\(\\{]\\s*(?:dot|ponto)\\s*[\\]\\)\\}]\\s*([A-Za-z0-9-]+)/gi, '$1.$2');
       if (next === out) break;
@@ -140,23 +188,43 @@ _EXTRACT_POSTS_JS = """
   const posts = [];
   const seen = new Set();
   for (const card of cards) {
-    const descEl = card.querySelector(
+    const descEls = Array.from(card.querySelectorAll(
       '.feed-shared-update-v2__description,.update-components-text,.update-components-update-v2__commentary,'
       + '[data-test-id="main-feed-activity-card__commentary"],[data-testid="expandable-text-box"],[data-view-name="feed-commentary"]'
-    );
-    const descText = (descEl ? (descEl.innerText || '') : '').trim();
+    ));
+    const descInnerParts = descEls.map((el) => String(el.innerText || '').trim()).filter(Boolean);
+    const descTcParts = descEls.map((el) => String(el.textContent || '').trim()).filter(Boolean);
+    const descText = descInnerParts.join('\\n').trim();
+    const descTcText = descTcParts.join('\\n').trim();
     const fullCardText = (card.innerText || '').trim();
+    const fullCardTcText = (card.textContent || '').trim();
     const normDesc = normalizeObfuscated(descText);
+    const normDescTc = normalizeObfuscated(descTcText);
     const normCard = normalizeObfuscated(fullCardText);
+    const normCardTc = normalizeObfuscated(fullCardTcText);
+    const hasValidEmail = (candidate) => {
+      if (!candidate) return false;
+      emailRe.lastIndex = 0;
+      const matched = emailRe.test(candidate);
+      emailRe.lastIndex = 0;
+      return matched;
+    };
+    const emailCandidates = [normDesc, normCard, normDescTc, normCardTc].filter(hasValidEmail);
     let text = '';
-    if (normDesc && emailRe.test(normDesc)) {
-      text = normDesc;
-    } else if (normDesc && hiringRe.test(normDesc)) {
+    if (emailCandidates.length > 0) {
+      const descWithEmail = [normDesc, normDescTc].find(hasValidEmail);
+      const cardWithEmail = [normCard, normCardTc].find(hasValidEmail);
+      if (descWithEmail && cardWithEmail) {
+        text = cardWithEmail.length > descWithEmail.length * 1.15 ? cardWithEmail : descWithEmail;
+      } else {
+        text = descWithEmail || cardWithEmail || emailCandidates[0];
+      }
+    } else if (normDesc) {
       text = normDesc;
     } else if (normCard) {
       text = normCard;
     } else {
-      text = normDesc;
+      text = normDescTc || normCardTc;
     }
     emailRe.lastIndex = 0;
     const mailtos = Array.from(card.querySelectorAll('a[href^="mailto:"]'))
@@ -185,8 +253,7 @@ _EXTRACT_POSTS_JS = """
     }
     const hasEmail = Boolean(text && emailRe.test(text));
     emailRe.lastIndex = 0;
-    const isHiringPost = Boolean(text && text.length >= 40 && url && hiringRe.test(text));
-    if (!hasEmail && !isHiringPost) {
+    if (!hasEmail) {
       continue;
     }
     const authorEl = card.querySelector(
@@ -245,12 +312,11 @@ _VALID_DATE_POSTED = ("past-24h", "past-week", "past-month")
 
 def days_to_linkedin_date_posted(days: Optional[int]) -> str:
     """Map day lookback window to LinkedIn content search datePosted filter."""
-    if days is not None:
-        if int(days) <= 1:
-            return "past-24h"
-        if int(days) > 7:
-            return "past-month"
-    return "past-week"
+    if days is None or int(days) <= 1:
+        return "past-24h"
+    if int(days) <= 7:
+        return "past-week"
+    return "past-month"
 
 
 def _clean_linkedin_term(raw_term: str) -> str:
@@ -266,14 +332,17 @@ def _clean_linkedin_term(raw_term: str) -> str:
 def build_linkedin_content_search_url(
     query: str,
     *,
-    date_posted: Optional[str] = "past-week",
+    date_posted: Optional[str] = "past-24h",
     include_vaga_suffix: bool = True,
+    suffix_words: Optional[str] = None,
 ) -> str:
     """Build a clean LinkedIn content search URL using only keywords, datePosted and sortBy."""
     raw_terms = [t.strip() for t in (query or "").split(",") if t.strip()]
     clean_term = _clean_linkedin_term(raw_terms[0]) if raw_terms else ""
     if not clean_term:
-        full_keywords = "vaga"
+        full_keywords = suffix_words.strip() if suffix_words and suffix_words.strip() else "vaga"
+    elif suffix_words and suffix_words.strip():
+        full_keywords = f"{clean_term} {suffix_words.strip()}"
     elif include_vaga_suffix and not _HIRING_WORD_RE.search(clean_term):
         full_keywords = f"{clean_term} vaga"
     else:
@@ -808,7 +877,11 @@ class LinkedInBrowserWorker:
         req_id += 1
         expanded = _cdp_eval(ws, req_id, _EXPAND_SEE_MORE_JS, timeout=6.0)
         if isinstance(expanded, (int, float)) and expanded > 0:
-            time.sleep(0.35)
+            time.sleep(0.55)
+            req_id += 1
+            expanded_2 = _cdp_eval(ws, req_id, _EXPAND_SEE_MORE_JS, timeout=6.0)
+            if isinstance(expanded_2, (int, float)) and expanded_2 > 0:
+                time.sleep(0.35)
         req_id += 1
         extracted = _cdp_eval(ws, req_id, _EXTRACT_POSTS_JS, timeout=10.0)
         if isinstance(extracted, dict):
@@ -950,13 +1023,22 @@ class LinkedInBrowserWorker:
                     (page_info.get("hasEmptyState") or page_info.get("hasResultContent") is False)
                     and not (should_stop and should_stop())
                 ):
-                    fallback_urls: List[str] = [
+                    fallback_urls: List[str] = []
+                    if date_posted == "past-24h":
+                        fallback_urls.append(
+                            build_linkedin_content_search_url(
+                                terms[0],
+                                date_posted="past-week",
+                                include_vaga_suffix=True,
+                            )
+                        )
+                    fallback_urls.append(
                         build_linkedin_content_search_url(
                             terms[0],
                             date_posted="past-month",
                             include_vaga_suffix=False,
                         )
-                    ]
+                    )
                     if len(terms) > 1:
                         fallback_urls.append(
                             build_linkedin_content_search_url(
@@ -996,6 +1078,60 @@ class LinkedInBrowserWorker:
 
                 if not (should_stop and should_stop()):
                     req_id, max_cards_total = self._collect_visible_posts(ws, req_id, posts_by_key, max_cards_total)
+
+                if len(posts_by_key) == 0 and not (should_stop and should_stop()):
+                    email_query_urls = []
+                    if date_posted == "past-24h":
+                        email_query_urls.append(
+                            build_linkedin_content_search_url(
+                                terms[0],
+                                date_posted="past-week",
+                                include_vaga_suffix=True,
+                            )
+                        )
+                    email_query_urls.extend(
+                        [
+                            build_linkedin_content_search_url(
+                                terms[0],
+                                date_posted="past-month",
+                                suffix_words="vaga email",
+                            ),
+                            build_linkedin_content_search_url(
+                                terms[0],
+                                date_posted="past-month",
+                                suffix_words="vaga curriculo",
+                            ),
+                        ]
+                    )
+                    for eq_url in email_query_urls:
+                        if should_stop and should_stop():
+                            break
+                        if eq_url == search_url:
+                            continue
+                        req_id += 1
+                        _cdp_call(ws, req_id, "Page.navigate", {"url": eq_url}, timeout=10.0)
+                        time.sleep(0.4)
+                        page_info = self._wait_and_inspect_page(ws, timeout=15.0, wait_for_results=True)
+                        blocked = self._handle_block_state(page_info)
+                        if blocked:
+                            return blocked
+                        if page_info.get("hasEmptyState") or page_info.get("hasResultContent") is False:
+                            continue
+                        search_url = eq_url
+                        for _step in range(max(1, min(2, max_scrolls))):
+                            if should_stop and should_stop():
+                                break
+                            req_id, max_cards_total = self._collect_visible_posts(
+                                ws, req_id, posts_by_key, max_cards_total
+                            )
+                            if posts_by_key:
+                                break
+                            req_id += 1
+                            _cdp_eval(ws, req_id, "window.scrollBy(0, Math.round(window.innerHeight * 0.85))", timeout=5.0)
+                            time.sleep(0.5)
+                        if posts_by_key:
+                            break
+
                 posts = list(posts_by_key.values())
                 max_cards_total = max(max_cards_total, len(posts))
 

@@ -1,4 +1,4 @@
-"""tools/compile_doc.py: só documentos do /apply e de entrevista, sempre sem execução de comandos pelo LaTeX."""
+"""backend/tools/compile_doc.py: só documentos do /apply e de entrevista, sempre sem execução de comandos pelo LaTeX."""
 
 import sys
 import tempfile

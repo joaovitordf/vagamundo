@@ -62,7 +62,7 @@
   border: 1px solid var(--vc-border);
   color: var(--vc-text);
   padding: 0.65rem 0.85rem;
-  padding-right: 200px;
+  padding-right: 236px;
   border-radius: 8px;
   font-size: 0.9rem;
   outline: none;
@@ -113,26 +113,6 @@
 
 .btn-clear-input:hover {
   color: var(--vc-text);
-}
-
-.btn-random-cv {
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: var(--vc-blue);
-  border-radius: 6px;
-  padding: 0.35rem 0.7rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.btn-random-cv:hover {
-  background: rgba(56, 189, 248, 0.2);
 }
 
 .search-actions-bar {

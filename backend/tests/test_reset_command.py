@@ -102,14 +102,14 @@ class TestResetCoversEveryDocumentsSubfolder(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             for folder in self.folders:
-                path = root / "documents" / folder
+                path = root / "backend" / "documents" / folder
                 path.mkdir(parents=True)
                 (path / ".gitkeep").write_text("Keep scaffold.\n")
                 (path / "user.txt").write_text("Remove document.\n")
             result = subprocess.run([BASH, "-c", script], cwd=root, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             for folder in self.folders:
-                path = root / "documents" / folder
+                path = root / "backend" / "documents" / folder
                 self.assertEqual([entry.name for entry in path.iterdir()], [".gitkeep"])
                 self.assertEqual((path / ".gitkeep").read_text(), "Keep scaffold.\n")
 

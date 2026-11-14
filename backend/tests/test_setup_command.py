@@ -2,7 +2,7 @@
 
 The command is a markdown spec (the spec IS the implementation). These tests pin
 one invariant that broke silently: Step 3 must personalise every contact block
-that `/apply` later compiles into a document. `cv/main_example.tex` was covered;
+that `/apply` later compiles into a document. `backend/cv/main_example.tex` was covered;
 the LaTeX blocks embedded in `05-cv-templates.md` and `06-cover-letter-templates.md`
 were not, so a full Path B/C run left `[YOUR_NAME]`, `[YOUR_EMAIL]` and
 `[YOUR_PHONE]` in both, and whether they reached a compiled cover letter depended
@@ -98,7 +98,7 @@ class SetupPathAWritesIntoSectionsTheShippedFilesHave(unittest.TestCase):
 
 
 class SetupPathAProjectsIngestion(unittest.TestCase):
-    """Guards for /setup Path A document ingestion of documents/projects/."""
+    """Guards for /setup Path A document ingestion of backend/documents/projects/."""
 
     def setUp(self):
         self.text = COMMAND.read_text(encoding="utf-8")

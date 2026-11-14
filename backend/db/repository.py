@@ -1250,6 +1250,10 @@ class Repository:
         row = cur.fetchone()
         return dict(row) if row else None
 
+    @staticmethod
+    def _norm_dedup_text(value: str | None) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"[^\w\s]+", " ", (value or "").lower())).strip()
+
     def find_recruiter_post_for_dedup(
         self,
         *,
@@ -1257,8 +1261,9 @@ class Repository:
         linkedin_activity_id: str | None = None,
         primary_email: str | None = None,
         description: str = "",
+        title: str | None = None,
     ) -> dict | None:
-        """Find an existing recruiter_posts row by URL, LinkedIn activity ID, or email+text signature."""
+        """Find an existing recruiter_posts row by URL, LinkedIn activity ID, or email+vacancy signature."""
         base_select = """
             SELECT rp.*, j.status AS job_status
             FROM recruiter_posts rp
@@ -1282,16 +1287,68 @@ class Repository:
 
         norm_email = (primary_email or "").strip().lower()
         norm_prefix = " ".join((description or "").split())[:160].lower()
-        if norm_email and norm_prefix:
+        cand_desc = self._norm_dedup_text(description)
+        cand_title = self._norm_dedup_text(title)
+        generic_titles = {"", "oportunidade", "vaga"}
+        meaningful_cand_title = cand_title if cand_title not in generic_titles else ""
+        if norm_email and (norm_prefix or meaningful_cand_title):
             cur = self.conn.execute(
-                f"{base_select} WHERE LOWER(rp.emails) LIKE ? ORDER BY rp.id DESC LIMIT 20",
+                f"{base_select} WHERE LOWER(rp.emails) LIKE ? ORDER BY rp.id DESC LIMIT 50",
                 (f"%{norm_email}%",),
             )
             for r in cur.fetchall():
                 d = dict(r)
+                row_emails = [
+                    str(e).strip().lower()
+                    for e in (_deserialize(d.get("emails")) or [])
+                    if str(e).strip()
+                ]
+                if row_emails and norm_email not in row_emails:
+                    continue
+
                 existing_prefix = " ".join((d.get("description") or "").split())[:160].lower()
-                if existing_prefix == norm_prefix:
-                    return d
+                existing_desc = self._norm_dedup_text(d.get("description"))
+                existing_title = self._norm_dedup_text(d.get("title"))
+                meaningful_existing_title = (
+                    existing_title if existing_title not in generic_titles else ""
+                )
+                titles_conflict = bool(
+                    meaningful_cand_title
+                    and meaningful_existing_title
+                    and meaningful_cand_title not in meaningful_existing_title
+                    and meaningful_existing_title not in meaningful_cand_title
+                )
+
+                if norm_prefix and existing_prefix == norm_prefix and not titles_conflict:
+                    if (
+                        not cand_desc
+                        or not existing_desc
+                        or cand_desc == existing_desc
+                        or cand_desc.startswith(existing_desc)
+                        or existing_desc.startswith(cand_desc)
+                        or cand_desc[:240] == existing_desc[:240]
+                    ):
+                        return d
+
+                if cand_desc and existing_desc and not titles_conflict:
+                    if len(cand_desc) >= 40 and len(existing_desc) >= 40 and (
+                        cand_desc == existing_desc
+                        or cand_desc.startswith(existing_desc)
+                        or existing_desc.startswith(cand_desc)
+                    ):
+                        return d
+
+                if (
+                    meaningful_cand_title
+                    and len(meaningful_cand_title) >= 12
+                    and meaningful_cand_title == meaningful_existing_title
+                ):
+                    if not cand_desc or not existing_desc:
+                        return d
+                    if cand_desc[:80] == existing_desc[:80]:
+                        return d
+                    if len(set(cand_desc.split()) & set(existing_desc.split())) >= 6:
+                        return d
         return None
 
     def list_recruiter_posts(
@@ -1304,17 +1361,28 @@ class Repository:
     ) -> list[dict]:
         """List active recruiter posts with optional keyword, CV match, portal and AI filters."""
         sql = """
-            SELECT rp.*
+            SELECT rp.*, j.status AS job_status
             FROM recruiter_posts rp
             LEFT JOIN jobs j ON rp.job_id = j.id
             WHERE rp.dismissed = 0
-              AND COALESCE(rp.auto_promoted, 0) = 0
-              AND (rp.job_id IS NULL OR j.status IS NULL OR j.status NOT IN ('interested', 'applied', 'discarded', 'skipped'))
+              AND TRIM(COALESCE(rp.emails, '')) NOT IN ('', '[]', 'null')
+              AND (
+                    rp.portal = 'linkedin_post'
+                    OR (
+                        COALESCE(rp.auto_promoted, 0) = 0
+                        AND (rp.job_id IS NULL OR j.status IS NULL OR j.status NOT IN ('interested', 'applied', 'discarded', 'skipped'))
+                    )
+              )
+              AND (rp.job_id IS NULL OR j.status IS NULL OR j.status NOT IN ('applied', 'discarded', 'skipped'))
         """
         params: list[Any] = []
 
         if only_cv:
-            sql += " AND (rp.match_score > 0 OR (rp.ai_classification = 'vaga_ativa' AND COALESCE(rp.ai_score, 0) > 0))"
+            sql += """ AND (
+                (rp.ai_evaluated_at IS NOT NULL AND rp.ai_classification = 'vaga_ativa' AND COALESCE(rp.ai_score, 0) >= 60)
+                OR (rp.ai_evaluated_at IS NULL AND rp.ai_classification = 'vaga_ativa' AND COALESCE(rp.ai_score, 0) >= 60)
+                OR (rp.ai_evaluated_at IS NULL AND rp.ai_classification IS NULL AND rp.match_score > 0)
+            )"""
 
         if portal:
             sql += " AND rp.portal = ?"
@@ -1793,6 +1861,41 @@ class Repository:
                 (post_id,)
             )
         return cur.rowcount > 0
+
+    def dismiss_recruiter_posts(self, post_ids: list[int]) -> list[int]:
+        """Soft delete multiple recruiter posts by setting dismissed = 1 in safe chunks."""
+        clean_ids: list[int] = []
+        seen: set[int] = set()
+        for raw_id in post_ids or []:
+            try:
+                pid = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if pid > 0 and pid not in seen:
+                seen.add(pid)
+                clean_ids.append(pid)
+
+        if not clean_ids:
+            return []
+
+        dismissed_ids: list[int] = []
+        with self.conn:
+            for idx in range(0, len(clean_ids), 500):
+                chunk = clean_ids[idx:idx + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = self.conn.execute(
+                    f"SELECT id FROM recruiter_posts WHERE id IN ({placeholders}) AND COALESCE(dismissed, 0) = 0",
+                    chunk,
+                ).fetchall()
+                existing = {int(row["id"]) for row in rows}
+                if not existing:
+                    continue
+                self.conn.execute(
+                    f"UPDATE recruiter_posts SET dismissed = 1 WHERE id IN ({placeholders}) AND COALESCE(dismissed, 0) = 0",
+                    chunk,
+                )
+                dismissed_ids.extend(pid for pid in chunk if pid in existing)
+        return dismissed_ids
 
     def get_jobs_with_potential_emails(self) -> list[dict]:
         """Fetch active/pending jobs from DB whose description mentions an email symbol (@)."""

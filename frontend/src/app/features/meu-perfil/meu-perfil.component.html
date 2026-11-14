@@ -26,11 +26,42 @@
       <button type="button" class="btn secondary" (click)="triggerUpload('linkedin')">
         Enviar LinkedIn (PDF)
       </button>
+      <button
+        type="button"
+        class="btn"
+        [disabled]="isOrganizeDisabled()"
+        (click)="organizeFromDocuments()">
+        @if (isOrganizing()) {
+          Organizando tudo...
+        } @else {
+          Organizar tudo do PDF com a IA
+        }
+      </button>
       <input type="file" id="upload-input" (change)="onFileSelected($event)" accept=".pdf,application/pdf" hidden>
+    </div>
+
+    <div class="auto-organize-bar">
+      <label class="confirm-box">
+        <input type="checkbox" [(ngModel)]="autoOrganizeOnUpload" name="autoOrganizeOnUpload">
+        Organizar formulário e perfil automaticamente com a IA ao enviar PDF
+      </label>
+      <label class="confirm-box">
+        <input type="checkbox" [(ngModel)]="overwriteExistingFields" name="overwriteExistingFields">
+        Sobrescrever campos já preenchidos
+      </label>
     </div>
 
     @if (uploadStatus()) {
       <p class="upload-status" aria-live="polite">{{ uploadStatus() }}</p>
+    }
+
+    @if (organizeStatus()) {
+      <p class="claude-status" aria-live="polite">
+        @if (isOrganizing()) {
+          <span class="spinner" aria-hidden="true"></span>
+        }
+        {{ organizeStatus() }}
+      </p>
     }
 
     <div class="files-container">
@@ -49,11 +80,11 @@
     </div>
   </div>
 
-  <!-- 2. O que o currículo não diz -->
+  <!-- 2. Perfil, palavras-chave e condições -->
   <div class="panel">
-    <h2>2. O que o currículo não diz</h2>
+    <h2>2. Perfil, palavras-chave e condições</h2>
     <p class="muted">
-      Tudo é opcional, mas cada resposta deixa a busca e a avaliação das vagas mais certeiras.
+      Campos essenciais usados nas buscas, no botão <strong>Sortear área CV</strong> e nas travas da triagem por IA.
     </p>
 
     <form class="perfil" (submit)="$event.preventDefault()">
@@ -77,14 +108,19 @@
             }
 
             @if (field.type === 'textarea' || field.type === 'lines') {
-              <label class="field" [for]="'pf-' + field.key">
-                <span>{{ field.label }}</span>
+              <label class="field" [class.field-focused]="highlightedFieldKey() === field.key" [for]="'pf-' + field.key">
+                <span class="field-label-inline">
+                  {{ field.label }}
+                  @if (field.key === 'palavras_chave_sorteio') {
+                    <span class="field-count-pill">{{ countLines(formValues[field.key]) }} termo(s)</span>
+                  }
+                </span>
                 <textarea
                   [id]="'pf-' + field.key"
                   [name]="field.key"
                   [(ngModel)]="formValues[field.key]"
                   [placeholder]="field.placeholder || ''"
-                  rows="3"></textarea>
+                  [rows]="field.key === 'palavras_chave_sorteio' ? 6 : 3"></textarea>
                 @if (field.help) {
                   <div class="help">{{ field.help }}</div>
                 }

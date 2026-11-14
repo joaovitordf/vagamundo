@@ -1,6 +1,6 @@
 # Weekly upstream triage. Reports only - it NEVER merges, pushes, or edits code.
 #
-# It fetches the upstream template, runs tools/upstream_triage.py to sort the
+# It fetches the upstream template, runs backend/tools/upstream_triage.py to sort the
 # commits this fork lacks into "worth reviewing" vs "probably skip" (dropping
 # cherry-picks already applied and changes that only touch files this fork
 # removed), and writes the result into a single rolling issue. You read it and
@@ -13,7 +13,7 @@
 # is worse than a conflict. Merges stay a human decision, the same posture
 # /apply keeps (it drafts, never submits). Keep it that way.
 #
-# This is the commit-level companion to tools/check_upstream_updates.py, which
+# This is the commit-level companion to backend/tools/check_upstream_updates.py, which
 # tracks personalized-file version stamps. Two tools, two questions.
 #
 # Runs only on forks (guarded below), so the upstream template never triggers
@@ -65,7 +65,7 @@ jobs:
           {
             echo "_Last checked: $(date -u '+%Y-%m-%d %H:%M UTC') · [run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_"
             echo
-            python tools/upstream_triage.py --remote upstream --branch master
+            python backend/tools/upstream_triage.py --remote upstream --branch master
           } > report.md
           cat report.md
 

@@ -6,7 +6,8 @@ import { ApiService } from '../../core/services/api.service';
 import { AutoModeService } from '../../core/services/auto-mode.service';
 import { SearchStateService } from '../../core/services/search-state.service';
 import { ToastService } from '../../core/services/toast.service';
-import { Vaga } from '../../core/models/vaga.model';
+import { CvAreaItem, CvAreasSource, Vaga } from '../../core/models/vaga.model';
+import { createCvPickerState, pickNextCvKeyword } from '../../shared/utils/cv-area-picker.util';
 import {
   AVAILABLE_PORTALS,
   ActiveGeoFilter,
@@ -171,9 +172,9 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   readonly selectedPortalIds = this.state.selectedPortalIds;
 
   readonly cvAreaBadge = this.state.cvAreaBadge;
-  private cvAreasList: any[] = [];
-  private cvAreaQueue: any[] = [];
-  private lastPickedAreaId: string | null = null;
+  readonly cvAreasList = signal<CvAreaItem[]>([]);
+  readonly cvAreasSource = signal<CvAreasSource>('fallback');
+  private cvPickerState = createCvPickerState();
 
   // Mapa & Dados Geográficos
   readonly geoData = signal<any>(null);
@@ -336,7 +337,9 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
     this.api.getCvAreas().subscribe({
       next: (res) => {
         if (res && Array.isArray(res.areas)) {
-          this.cvAreasList = res.areas;
+          this.cvAreasList.set(res.areas);
+          this.cvAreasSource.set(res.source === 'profile' ? 'profile' : 'fallback');
+          this.cvPickerState = { ...this.cvPickerState, queue: [] };
         }
       },
       error: (err) => console.warn('Falha ao carregar áreas do CV:', err)
@@ -344,31 +347,16 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   }
 
   pickRandomCvArea(): void {
-    if (!this.cvAreasList.length) return;
-    if (this.cvAreaQueue.length === 0) {
-      const copy = [...this.cvAreasList];
-      for (let i = copy.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [copy[i], copy[j]] = [copy[j], copy[i]];
-      }
-      if (copy.length > 1 && copy[0].id === this.lastPickedAreaId) {
-        const swapIdx = 1 + Math.floor(Math.random() * (copy.length - 1));
-        [copy[0], copy[swapIdx]] = [copy[swapIdx], copy[0]];
-      }
-      this.cvAreaQueue = copy;
-    }
-    const picked = this.cvAreaQueue.shift();
-    if (!picked) return;
-    this.lastPickedAreaId = picked.id;
-
-    const candidates: string[] = (picked.keywords || [])
-      .map((k: unknown) => String(k || '').trim())
-      .filter(Boolean);
-    const current = (this.filterText || '').trim().toLowerCase();
-    const pool = candidates.filter((k: string) => k.toLowerCase() !== current);
-    const chosen = (pool.length ? pool[Math.floor(Math.random() * pool.length)] : candidates[0]) || '';
-    this.filterText = chosen;
-    this.cvAreaBadge.set(`Área CV: ${picked.label || picked.title}`);
+    const result = pickNextCvKeyword(
+      this.cvAreasList(),
+      this.cvPickerState,
+      this.filterText,
+      this.cvAreasSource(),
+    );
+    if (!result) return;
+    this.cvPickerState = result.state;
+    this.filterText = result.keyword;
+    this.cvAreaBadge.set(result.badgeText);
     this.state.persist();
     this.onFilterChange();
   }

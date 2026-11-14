@@ -11,7 +11,7 @@ Você vai devolver partes do projeto a um estado em branco, para a pessoa recome
 Procure em `$ARGUMENTS` uma palavra de escopo:
 
 - `profile` — apaga os dados do perfil só dos arquivos de skill
-- `documents` — apaga só os arquivos que a pessoa colocou na pasta `documents/`
+- `documents` — apaga só os arquivos que a pessoa colocou na pasta `backend/documents/`
 - `all` — as duas coisas acima
 
 Se `$ARGUMENTS` estiver vazio ou não tiver uma palavra de escopo reconhecida, pergunte:
@@ -20,7 +20,7 @@ Se `$ARGUMENTS` estiver vazio ou não tiver uma palavra de escopo reconhecida, p
 >
 > - **`profile`** — Apaga os dados da pessoa dos arquivos de skill (perfil, perfil comportamental, exemplos STAR, resumos profissionais, critérios de avaliação personalizados, buscas de vagas). A estrutura do projeto, o método de pontuação e as regras de escrita são preservados. Use para rodar o `/setup` do zero.
 >
-> - **`documents`** — Apaga todos os arquivos que você colocou na pasta `documents/` (currículos em PDF, exportação do LinkedIn, diplomas, cartas de recomendação, resumos de projetos, vagas coladas, candidaturas anteriores). A estrutura de pastas e o `README.md` são preservados.
+> - **`documents`** — Apaga todos os arquivos que você colocou na pasta `backend/documents/` (currículos em PDF, exportação do LinkedIn, diplomas, cartas de recomendação, resumos de projetos, vagas coladas, candidaturas anteriores). A estrutura de pastas e o `README.md` são preservados.
 >
 > - **`all`** — As duas coisas acima.
 >
@@ -82,12 +82,12 @@ The following files are NOT touched (they contain framework rules, not candidate
 (Estes arquivos NÃO são alterados: têm regras do projeto, não dados da pessoa.)
 
 Fora do escopo do perfil, ainda com os seus dados pessoais: CLAUDE.md e
-cv/main_example.tex. Este escopo cobre só os arquivos de skill.
+backend/cv/main_example.tex. Este escopo cobre só os arquivos de skill.
 ```
 
 ### If scope includes `documents`:
 
-(Se o escopo inclui `documents`.) Use o Glob para listar todos os arquivos em `documents/cv/`, `documents/linkedin/`, `documents/diplomas/`, `documents/references/`, `documents/projects/`, `documents/postings/` e `documents/applications/`.
+(Se o escopo inclui `documents`.) Use o Glob para listar todos os arquivos em `backend/documents/cv/`, `backend/documents/linkedin/`, `backend/documents/diplomas/`, `backend/documents/references/`, `backend/documents/projects/`, `backend/documents/postings/` e `backend/documents/applications/`.
 
 Inclua no inventário as entradas aninhadas e ocultas da pessoa. O `.gitkeep` rastreado de cada subpasta é um marcador de estrutura: tire-o da lista de exclusão e da decisão de vazio/não vazio, e preserve-o.
 
@@ -96,28 +96,28 @@ Apresente assim:
 ```
 ## O reset de documentos vai apagar:
 
-documents/cv/
+backend/documents/cv/
   - [arquivo] ou "(vazia)"
 
-documents/linkedin/
+backend/documents/linkedin/
   - [arquivo] ou "(vazia)"
 
-documents/diplomas/
+backend/documents/diplomas/
   - [arquivo] ou "(vazia)"
 
-documents/references/
+backend/documents/references/
   - [arquivo] ou "(vazia)"
 
-documents/projects/
+backend/documents/projects/
   - [arquivo] ou "(vazia)"
 
-documents/postings/
+backend/documents/postings/
   - [arquivo] ou "(vazia)"
 
-documents/applications/
+backend/documents/applications/
   - [subpasta/arquivo] ou "(vazia)"
 
-documents/README.md — NÃO é apagado (arquivo de instruções)
+backend/documents/README.md — NÃO é apagado (arquivo de instruções)
 ```
 
 Se todas as subpastas de documentos já estiverem vazias, diga "Todas as subpastas de documentos já estão vazias — nada a apagar." e pule a confirmação para este escopo.
@@ -143,7 +143,7 @@ Espere a resposta.
 
 ### Profile reset
 
-(Reset do perfil.) Todo arquivo de skill em `.claude/skills/job-application-assistant/` começa com um bloco de frontmatter `---` que traz o marcador `framework_version`. Esse marcador é dado do projeto, não da pessoa: `tools/check_framework_version.py` reprova um arquivo sem ele, e `tools/check_upstream_updates.py` não consegue comparar o arquivo com o upstream. Nunca o remova nem reescreva — as duas trocas de arquivo inteiro abaixo o mantêm e trocam só o que vem depois.
+(Reset do perfil.) Todo arquivo de skill em `.claude/skills/job-application-assistant/` começa com um bloco de frontmatter `---` que traz o marcador `framework_version`. Esse marcador é dado do projeto, não da pessoa: `backend/tools/check_framework_version.py` reprova um arquivo sem ele, e `backend/tools/check_upstream_updates.py` não consegue comparar o arquivo com o upstream. Nunca o remova nem reescreva — as duas trocas de arquivo inteiro abaixo o mantêm e trocam só o que vem depois.
 
 **For `01-candidate-profile.md`** (para o `01-candidate-profile.md`), mantenha o bloco de frontmatter `---` exatamente como está e troque tudo abaixo dele por:
 
@@ -256,12 +256,12 @@ Deixe intacto o resto do arquivo: a explicação das CLIs de portal e do plano B
 
 ### Documents reset
 
-(Reset de documentos.) Para cada subpasta de documentos não vazia, apague todas as entradas da pessoa, incluindo pastas aninhadas e arquivos ocultos. Preserve as sete subpastas de primeiro nível, os marcadores `.gitkeep` delas e o `documents/README.md`. Rode o bloco Bash abaixo só depois da confirmação acima; as configurações de glob ficam dentro do subshell. Se `documents/` ou alguma das sete raízes for um link simbólico (symbolic link), pare antes de apagar qualquer coisa e peça à pessoa para trocar essa raiz por uma pasta local de documentos.
+(Reset de documentos.) Para cada subpasta de documentos não vazia, apague todas as entradas da pessoa, incluindo pastas aninhadas e arquivos ocultos. Preserve as sete subpastas de primeiro nível, os marcadores `.gitkeep` delas e o `backend/documents/README.md`. Rode o bloco Bash abaixo só depois da confirmação acima; as configurações de glob ficam dentro do subshell. Se `backend/documents/` ou alguma das sete raízes for um link simbólico (symbolic link), pare antes de apagar qualquer coisa e peça à pessoa para trocar essa raiz por uma pasta local de documentos.
 
 ```bash
 (
   set -e
-  for directory in documents documents/{cv,linkedin,diplomas,references,projects,postings,applications}; do
+  for directory in backend/documents backend/documents/{cv,linkedin,diplomas,references,projects,postings,applications}; do
     if [ -L "$directory" ]; then
       printf 'Reset interrompido: %s é um link simbólico (symbolic link).\n' "$directory" >&2
       exit 1
@@ -269,7 +269,7 @@ Deixe intacto o resto do arquivo: a explicação das CLIs de portal e do plano B
   done
   unset GLOBIGNORE
   shopt -s dotglob nullglob
-  for directory in documents/cv documents/linkedin documents/diplomas documents/references documents/projects documents/postings documents/applications; do
+  for directory in backend/documents/cv backend/documents/linkedin backend/documents/diplomas backend/documents/references backend/documents/projects backend/documents/postings backend/documents/applications; do
     for entry in "$directory"/*; do
       if [ "${entry##*/}" != ".gitkeep" ]; then
         rm -rf -- "$entry"
@@ -298,12 +298,12 @@ Depois do reset, informe:
 Depois diga à pessoa o que fazer conforme o que foi apagado:
 
 **Se o perfil foi apagado:**
-> Os arquivos de skill agora estão em branco. Rode o `/setup` para preenchê-los de novo. O comando detecta sozinho os arquivos na sua pasta `documents/` e oferece ler de lá; senão, conduz uma importação de currículo ou uma entrevista.
+> Os arquivos de skill agora estão em branco. Rode o `/setup` para preenchê-los de novo. O comando detecta sozinho os arquivos na sua pasta `backend/documents/` e oferece ler de lá; senão, conduz uma importação de currículo ou uma entrevista.
 >
-> Lembre que o `CLAUDE.md` e o `cv/main_example.tex` ficam fora do escopo `profile` e ainda guardam os seus dados pessoais. Se for passar este fork adiante ou torná-lo público, apague-os à mão.
+> Lembre que o `CLAUDE.md` e o `backend/cv/main_example.tex` ficam fora do escopo `profile` e ainda guardam os seus dados pessoais. Se for passar este fork adiante ou torná-lo público, apague-os à mão.
 
 **Se os documentos foram apagados:**
-> Os seus documentos foram apagados. A estrutura de pastas, os marcadores `.gitkeep` e o `documents/README.md` foram preservados. Acrescente os seus documentos de carreira e rode o `/setup` para preencher o perfil.
+> Os seus documentos foram apagados. A estrutura de pastas, os marcadores `.gitkeep` e o `backend/documents/README.md` foram preservados. Acrescente os seus documentos de carreira e rode o `/setup` para preencher o perfil.
 
 **Se os dois foram apagados:**
-> Os dados do perfil e os seus documentos foram apagados; as pastas de documentos, os marcadores `.gitkeep` e o `documents/README.md` foram preservados. Acrescente documentos em `documents/` (ou pule e use a importação de currículo ou a entrevista) e rode o `/setup`.
+> Os dados do perfil e os seus documentos foram apagados; as pastas de documentos, os marcadores `.gitkeep` e o `backend/documents/README.md` foram preservados. Acrescente documentos em `backend/documents/` (ou pule e use a importação de currículo ou a entrevista) e rode o `/setup`.

@@ -1381,7 +1381,7 @@ class RecruiterService:
                 entry["fetched"] = int(entry.get("fetched", 0)) + len(posts)
 
         try:
-            batch_res = self.add_pasted_posts_batch(posts, allow_without_email=True)
+            batch_res = self.add_pasted_posts_batch(posts, allow_without_email=False)
         except ValueError:
             return 0
 
@@ -1425,11 +1425,12 @@ class RecruiterService:
         *,
         include_linkedin: bool = True,
         force_linkedin: bool = False,
+        linkedin_only: bool = False,
         should_stop: Optional[Callable[[], bool]] = None,
         days: Optional[int] = None,
     ) -> dict:
         """Scan local jobs, recent caches, BR GitHub boards, Remotive, live portals, HN and LinkedIn in parallel."""
-        res = self.sync_from_jobs()
+        res = {"scanned": 0, "posts_with_email": 0, "synced": 0} if linkedin_only else self.sync_from_jobs()
         hn_urls: Set[str] = set()
         extra_urls: Set[str] = set()
         collected_post_ids: Set[int] = set()
@@ -1452,30 +1453,30 @@ class RecruiterService:
             return len(hn_urls)
 
         tasks: List[Tuple[str, Callable[[], int]]] = []
-        if terms[:2]:
-            tasks.append(("hn", _run_hn))
-
-        if self.enable_live_feeds:
-            tasks.append(("scrapes", lambda: self.sync_from_recent_scrapes(query=query, _collected_urls=extra_urls)))
-            tasks.append((
-                "github",
-                lambda: self._call_sync_source(
-                    self.sync_from_github_repos, query=query, _collected_urls=extra_urls, status_out=health
-                ),
-            ))
-            tasks.append((
-                "remotive",
-                lambda: self._call_sync_source(
-                    self.sync_from_remotive, query=query, _collected_urls=extra_urls, status_out=health
-                ),
-            ))
-            if terms:
+        if not linkedin_only:
+            if self.enable_live_feeds:
+                if terms[:2]:
+                    tasks.append(("hn", _run_hn))
+                tasks.append(("scrapes", lambda: self.sync_from_recent_scrapes(query=query, _collected_urls=extra_urls)))
                 tasks.append((
-                    "portals",
+                    "github",
                     lambda: self._call_sync_source(
-                        self.sync_from_live_portals, terms, _collected_urls=extra_urls, status_out=health
+                        self.sync_from_github_repos, query=query, _collected_urls=extra_urls, status_out=health
                     ),
                 ))
+                tasks.append((
+                    "remotive",
+                    lambda: self._call_sync_source(
+                        self.sync_from_remotive, query=query, _collected_urls=extra_urls, status_out=health
+                    ),
+                ))
+                if terms:
+                    tasks.append((
+                        "portals",
+                        lambda: self._call_sync_source(
+                            self.sync_from_live_portals, terms, _collected_urls=extra_urls, status_out=health
+                        ),
+                    ))
 
         if include_linkedin and self.linkedin_worker is not None:
             tasks.append((
@@ -1691,6 +1692,7 @@ class RecruiterService:
                     linkedin_activity_id=act_id,
                     primary_email=post_data["emails"][0] if post_data.get("emails") else None,
                     description=post_data["description"],
+                    title=post_data.get("title"),
                 )
                 if existing:
                     is_closed = bool(existing.get("dismissed")) or bool(existing.get("auto_promoted")) or (
@@ -2263,6 +2265,8 @@ class RecruiterService:
         not_a_job = 0
         updated_posts: List[dict] = []
 
+        batch_by_id = {int(p["id"]): p for p in batch if p.get("id") is not None}
+
         for pid, res in results:
             cls = res["classification"]
             score = int(res["score"])
@@ -2270,7 +2274,10 @@ class RecruiterService:
             summary = res["summary"]
             best_email = res["best_email"]
             ai_model = res.get("ai_model")
+            post_obj = batch_by_id.get(int(pid)) or {}
+            is_linkedin_post = post_obj.get("portal") == "linkedin_post"
             is_talent_pool = cls == "banco_talentos"
+            auto_dismiss = is_talent_pool and not is_linkedin_post
 
             self.repo.update_recruiter_post_ai(
                 pid,
@@ -2279,7 +2286,7 @@ class RecruiterService:
                 verdict,
                 summary,
                 best_email,
-                auto_dismissed=is_talent_pool,
+                auto_dismissed=auto_dismiss,
                 ai_model=ai_model,
             )
             if is_talent_pool:
@@ -2290,7 +2297,7 @@ class RecruiterService:
                 active_jobs += 1
 
             refreshed = self.repo.get_recruiter_post(pid)
-            if refreshed and not is_talent_pool:
+            if refreshed and (not auto_dismiss):
                 updated_posts.append(refreshed)
 
         return {
@@ -2306,3 +2313,7 @@ class RecruiterService:
     def dismiss_post(self, post_id: int) -> bool:
         """Dismiss a recruiter post."""
         return self.repo.dismiss_recruiter_post(post_id)
+
+    def dismiss_posts(self, post_ids: list[int]) -> list[int]:
+        """Dismiss multiple recruiter posts to Limbo."""
+        return self.repo.dismiss_recruiter_posts(post_ids)

@@ -43,7 +43,7 @@
         </button>
 
         <a routerLink="/buscar-vagas" class="btn-new-job">
-          <i class="bi bi-plus-lg"></i> Nova vaga
+          <i class="bi bi-search"></i> Buscar vagas
         </a>
       </div>
     </div>
@@ -110,7 +110,7 @@
       </div>
 
       <!-- Entrevistas -->
-      <div class="kpi-card kpi-interviews" title="Processos que avançaram para fase de entrevista ou coding">
+      <div class="kpi-card kpi-interviews" title="Processos que avançaram para fase de entrevista, etapa técnica ou case">
         <div class="kpi-card__top">
           <span class="kpi-label">Entrevistas</span>
           <span class="kpi-icon-wrap"><i class="bi bi-person-video3"></i></span>
@@ -279,7 +279,7 @@
             @for (p of stats()?.portal_distribution; track p.portal) {
               <div class="portal-item">
                 <div class="portal-info">
-                  <app-portal-badge [portal]="p.portal" [compact]="true" [labelOverride]="p.label"></app-portal-badge>
+                  <app-portal-badge [portal]="p.portal" [compact]="true" [labelOverride]="getPortalLabelOverride(p)"></app-portal-badge>
                 </div>
                 <span class="portal-badge-count">{{ p.count }} {{ p.count === 1 ? 'vaga' : 'vagas' }}</span>
               </div>

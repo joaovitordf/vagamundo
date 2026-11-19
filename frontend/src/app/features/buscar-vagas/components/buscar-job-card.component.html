@@ -29,13 +29,13 @@
     @if (vaga.location || !showExtendedChips) {
       <span class="chip"><i class="bi bi-geo-alt"></i> {{ vaga.location || 'Localidade não informada' }}</span>
     }
-    <span class="chip"><i class="bi bi-briefcase"></i> {{ getModelLabel(vaga.workplace_type) }}</span>
+    <span class="chip"><i class="bi bi-briefcase"></i> {{ getEffectiveModelLabel(vaga) }}</span>
     @if (vaga.portal || !showExtendedChips) {
       <app-portal-badge [portal]="vaga.portal || 'portal'" [compact]="true"></app-portal-badge>
     }
     @if (showExtendedChips) {
       @if (!isUndated(vaga)) {
-        <span class="chip"><i class="bi bi-calendar3"></i> {{ vaga.date }}</span>
+        <span class="chip"><i class="bi bi-calendar3"></i> {{ formatJobDate(vaga) }}</span>
       } @else {
         <span class="chip chip-undated" title="O portal não informou a data de publicação: a vaga pode ser antiga ou já ter sido candidatada por você.">
           <i class="bi bi-calendar-x"></i> Sem data

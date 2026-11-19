@@ -202,11 +202,11 @@
           }
         </button>
 
-        <label class="auto-score-field" title="Nota mínima para enviar automaticamente para Me Interessam (padrão 60: evita vagas presenciais fora da região com teto 50 e stack ausente com teto 55)">
+        <label class="auto-score-field" title="Nota mínima para enviar automaticamente para Me Interessam (padrão 60: evita vagas presenciais fora da região com teto 35 e requisitos ausentes com teto 55)">
           <span>Nota ≥</span>
           <input type="number" min="45" max="95" step="5"
-            [(ngModel)]="autoMinScore"
-            (ngModelChange)="autoConfigChange.emit()"
+            [ngModel]="autoMinScore"
+            (change)="onAutoMinScoreChange($event)"
             [disabled]="autoRunning">
         </label>
 

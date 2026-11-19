@@ -18,6 +18,7 @@ from backend.core.constants import (
     AUTO_SCORE_DEFAULT,
     AUTO_SCORE_MAX,
     AUTO_SCORE_MIN,
+    EXCLUDED_RADAR_JOB_STATUSES,
     LOW_SCORE_AUTO_DISCARD_THRESHOLD,
     atomic_write_json,
 )
@@ -182,6 +183,8 @@ class AutoModeService:
             "round_jobs_found": 0,
             "round_eligible_count": 0,
             "round_post_ids": [],
+            "round_portal_breakdown": {},
+            "round_warnings": [],
             "round_screened": 0,
             "round_promoted": 0,
             "round_discarded": 0,
@@ -637,7 +640,7 @@ class AutoModeService:
             if not url or url in fresh_urls:
                 continue
             row = self.repo.get_job_by_url(url)
-            if row and row.get("status") in ("interested", "discarded", "applied", "skipped"):
+            if row and row.get("status") in ("interested", *EXCLUDED_RADAR_JOB_STATUSES):
                 continue
             if row and row.get("rank_score") is not None and row["rank_score"] < LOW_SCORE_AUTO_DISCARD_THRESHOLD:
                 continue
@@ -685,6 +688,8 @@ class AutoModeService:
                     self.state["round_jobs_found"] = 0
                     self.state["round_eligible_count"] = 0
                     self.state["round_post_ids"] = []
+                    self.state["round_portal_breakdown"] = {}
+                    self.state["round_warnings"] = []
                     self.state["round_screened"] = 0
                     self.state["round_promoted"] = 0
                     self.state["round_discarded"] = 0
@@ -735,6 +740,11 @@ class AutoModeService:
                     consecutive_empty = 0 if round_eligible > 0 else (consecutive_empty + 1)
                     consecutive_rate_limits = (consecutive_rate_limits + 1) if rate_limited else 0
 
+                    with self._lock:
+                        portal_bd_copy = {
+                            k: dict(v)
+                            for k, v in (self.state.get("round_portal_breakdown") or {}).items()
+                        }
                     self._record_round_summary({
                         "round": round_num,
                         "keywords": list(keywords),
@@ -744,6 +754,7 @@ class AutoModeService:
                         "discarded": round_discarded,
                         "errors": round_errors,
                         "rate_limited": rate_limited,
+                        "portal_breakdown": portal_bd_copy,
                         "finished_at": _now_iso(),
                     })
 
@@ -976,39 +987,50 @@ class AutoModeService:
             summary = res["summary"]
             best_email = res["best_email"]
             ai_model = res.get("ai_model")
+            ai_details = {
+                k: res.get(k)
+                for k in (
+                    "subscores",
+                    "strengths",
+                    "gaps",
+                    "location_verdict",
+                    "language_gate",
+                    "language_note",
+                    "guard_alert",
+                )
+                if res.get(k)
+            } or None
 
             promoted_jid = None
             with self._db_lock:
-                if cls == "banco_talentos":
-                    auto_dismiss = post.get("portal") != "linkedin_post"
-                    self.repo.update_recruiter_post_ai(
-                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=auto_dismiss, ai_model=ai_model
+                self.repo.update_recruiter_post_ai(
+                    post["id"],
+                    cls,
+                    score,
+                    verdict,
+                    summary,
+                    best_email,
+                    auto_dismissed=False,
+                    ai_model=ai_model,
+                    ai_details=ai_details,
+                )
+                if cls not in ("banco_talentos", "nao_e_vaga") and score >= min_score:
+                    promoted_jid = self.recruiter_service.promote_post_to_interested(
+                        post,
+                        run_id,
+                        score,
+                        verdict,
+                        summary,
+                        best_email,
+                        ai_model=ai_model,
+                        subscores=res.get("subscores"),
+                        strengths=res.get("strengths"),
+                        gaps=res.get("gaps"),
+                        location_verdict=res.get("location_verdict"),
+                        language_gate=res.get("language_gate"),
+                        language_note=res.get("language_note"),
+                        guard_alert=res.get("guard_alert"),
                     )
-                elif cls == "nao_e_vaga":
-                    self.repo.update_recruiter_post_ai(
-                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=False, ai_model=ai_model
-                    )
-                else:
-                    self.repo.update_recruiter_post_ai(
-                        post["id"], cls, score, verdict, summary, best_email, auto_dismissed=False, ai_model=ai_model
-                    )
-                    if score >= min_score:
-                        promoted_jid = self.recruiter_service.promote_post_to_interested(
-                            post,
-                            run_id,
-                            score,
-                            verdict,
-                            summary,
-                            best_email,
-                            ai_model=ai_model,
-                            subscores=res.get("subscores"),
-                            strengths=res.get("strengths"),
-                            gaps=res.get("gaps"),
-                            location_verdict=res.get("location_verdict"),
-                            language_gate=res.get("language_gate"),
-                            language_note=res.get("language_note"),
-                            guard_alert=res.get("guard_alert"),
-                        )
 
             with self._lock:
                 counts = self.state["counts"]
@@ -1051,25 +1073,10 @@ class AutoModeService:
             try:
                 sync_res = self.recruiter_service.sync_all(
                     query=", ".join(keywords),
-                    days=1,
-                    linkedin_only=False,
                     should_stop=self._should_stop,
                 )
             except TypeError:
-                try:
-                    sync_res = self.recruiter_service.sync_all(
-                        query=", ".join(keywords),
-                        days=1,
-                        should_stop=self._should_stop,
-                    )
-                except TypeError:
-                    try:
-                        sync_res = self.recruiter_service.sync_all(
-                            query=", ".join(keywords),
-                            should_stop=self._should_stop,
-                        )
-                    except TypeError:
-                        sync_res = self.recruiter_service.sync_all(query=", ".join(keywords))
+                sync_res = self.recruiter_service.sync_all(query=", ".join(keywords))
             if self._should_stop():
                 return None
 
@@ -1101,18 +1108,25 @@ class AutoModeService:
                 + int(sync_res.get("remotive_synced", 0))
                 + int(sync_res.get("scrapes_synced", 0))
                 + int(sync_res.get("portal_synced", 0))
-                + int(sync_res.get("linkedin_synced", 0))
             )
             round_found = int(sync_res.get("posts_with_email", 0)) + external_synced
             round_eligible = len(candidates)
             round_post_ids = sorted(
                 matched_post_ids | {int(p["id"]) for p in candidates if p.get("id") is not None}
             )
+            portal_breakdown = {
+                str(k): dict(v)
+                for k, v in (sync_res.get("portal_breakdown") or {}).items()
+                if isinstance(v, dict)
+            }
+            round_warnings = [str(w) for w in (sync_res.get("warnings") or []) if str(w or "").strip()]
 
             with self._lock:
                 self.state["round_jobs_found"] = round_found
                 self.state["round_eligible_count"] = round_eligible
                 self.state["round_post_ids"] = round_post_ids
+                self.state["round_portal_breakdown"] = portal_breakdown
+                self.state["round_warnings"] = round_warnings
                 self.state["counts"]["found"] += round_found
                 self.state["counts"]["to_screen"] += round_eligible
                 self.state["counts"]["pending"] = round_eligible
@@ -1151,6 +1165,11 @@ class AutoModeService:
                 **self.state,
                 "keywords": list(self.state.get("keywords") or []),
                 "round_post_ids": list(self.state.get("round_post_ids") or []),
+                "round_portal_breakdown": {
+                    k: dict(v)
+                    for k, v in (self.state.get("round_portal_breakdown") or {}).items()
+                },
+                "round_warnings": list(self.state.get("round_warnings") or []),
                 "counts": dict(self.state.get("counts") or {}),
                 "promoted_items": list(self.state.get("promoted_items") or []),
                 "round_history": list(self.state.get("round_history") or []),

@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
-import { ApiService } from './api.service';
+import { ApiService, SyncRecruiterPortalStats } from './api.service';
 import { ToastService } from './toast.service';
 
 export type AutoModePhase =
@@ -22,6 +22,7 @@ export interface AutoModeRoundSummary {
   discarded: number;
   errors: number;
   rate_limited?: boolean;
+  portal_breakdown?: Record<string, SyncRecruiterPortalStats>;
   error?: string;
   finished_at?: string;
 }
@@ -53,6 +54,8 @@ export interface AutoModeStatus {
   round_jobs_found?: number;
   round_eligible_count?: number;
   round_post_ids?: number[];
+  round_portal_breakdown?: Record<string, SyncRecruiterPortalStats>;
+  round_warnings?: string[];
   round_screened?: number;
   round_promoted?: number;
   round_discarded?: number;

@@ -3,12 +3,14 @@ import { Vaga } from '../../../core/models/vaga.model';
 import { JobBadgesComponent } from '../../../shared/components/job-badges.component';
 import { PortalBadgeComponent } from '../../../shared/components/portal-badge.component';
 import {
+  formatDisplayDate,
   formatSalaryBRL,
   getJobWarning,
   getPortalDisplayName,
   getWorkModelLabel,
   hasVisaSponsorship,
   isJobUndated,
+  resolveEffectiveWorkModel,
 } from '../../../core/utils/job-filters.util';
 
 @Component({
@@ -38,4 +40,13 @@ export class BuscarJobCardComponent {
   readonly hasVisa = hasVisaSponsorship;
   readonly isUndated = isJobUndated;
   readonly getWarning = getJobWarning;
+
+  getEffectiveModelLabel(vaga: Vaga): string {
+    return getWorkModelLabel(resolveEffectiveWorkModel(vaga));
+  }
+
+  formatJobDate(vaga: Vaga): string {
+    const raw = vaga.posted_date || vaga.date || (vaga as any).found_date || '';
+    return formatDisplayDate(raw);
+  }
 }

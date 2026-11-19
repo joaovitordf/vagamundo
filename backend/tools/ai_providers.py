@@ -59,11 +59,12 @@ SPECS: dict[str, dict[str, Any]] = {
     },
     "gemini": {
         "label": "Google Gemini", "short": "Gemini", "aliases": ("google",),
-        "key_var": "GEMINI_API_KEY", "model_var": "GEMINI_MODEL", "default_model": "gemini-4-hydrogen-high",
+        "key_var": "GEMINI_API_KEY", "model_var": "GEMINI_MODEL", "default_model": "gemini-2.5-flash",
         "suggested": [
+            "gemini-2.5-flash", "gemini-2.5-pro",
             "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-low",
             "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-4-argon-high", "gemini-4-argon-medium",
-            "gemini-3.8-flash", "gemini-2.5-flash",
+            "gemini-3.8-flash",
         ],
         "cli": "Antigravity (agy)", "key_url": "https://aistudio.google.com/app/apikey",
     },
@@ -225,13 +226,15 @@ class UnconfiguredProvider:
     def is_available(self) -> bool:
         return False
 
-    def get_info(self) -> dict[str, str]:
+    def get_info(self) -> dict[str, Any]:
         return {
             "provider": "none",
             "name": "Nenhum",
             "mode": "none",
             "model": "none",
             "label": "Nenhuma IA configurada",
+            "via": "nenhum",
+            "available": False,
         }
 
     def generate(self, prompt: str, system_instruction: str | None = None,
@@ -319,21 +322,31 @@ class Provider:
             return "gemini-3.8-flash-high"
         return model_arg
 
-    def get_info(self) -> dict[str, str]:
+    def get_info(self) -> dict[str, Any]:
         mode = self.mode
         short = self.spec["short"]
         if mode == "api_key":
             via = "API própria" if self.custom_endpoint else "API"
             label, model = f"{self.spec['label']} ({self.model} via {via})", self.model
         elif mode == "cli":
+            via = self.spec["cli"]
             if self.name == "gemini":
                 eff = self._effective_gemini_cli_model()
-                label, model = f"{self.spec['label']} ({eff} via {self.spec['cli']})", eff
+                label, model = f"{self.spec['label']} ({eff} via {via})", eff
             else:
-                label, model = f"{self.spec['label']} ({self.spec['cli']})", "cli"
+                label, model = f"{self.spec['label']} ({via})", "cli"
         else:
+            via = "nenhum"
             label, model = f"{self.spec['label']} (não configurado)", "none"
-        return {"provider": self.name, "name": short, "mode": mode, "model": model, "label": label}
+        return {
+            "provider": self.name,
+            "name": short,
+            "mode": mode,
+            "model": model,
+            "label": label,
+            "via": via,
+            "available": mode != "none",
+        }
 
     # -- geração ------------------------------------------------------------
 
@@ -405,7 +418,8 @@ class Provider:
 
     def _generate_gemini(self, prompt: str, system: str | None, temperature: float, timeout: int,
                          response_json: bool = False) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        api_model = "gemini-2.5-flash" if self.model.startswith(("gemini-4-", "gemini-3.8-")) else self.model
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{api_model}:generateContent"
         gen_cfg: dict[str, Any] = {"temperature": temperature, "maxOutputTokens": MAX_OUTPUT_TOKENS}
         if response_json:
             gen_cfg["responseMimeType"] = "application/json"
@@ -522,7 +536,7 @@ def public_settings(env: dict[str, str] | None = None) -> dict:
             "supports_base_url": "base_var" in p.spec,
         })
     return {
-        "provider": normalize_provider(_setting(env, "AI_PROVIDER")) if _setting(env, "AI_PROVIDER") else DEFAULT_PROVIDER,
+        "provider": normalize_provider(_setting(env, "AI_PROVIDER")) if _setting(env, "AI_PROVIDER") else AUTO,
         "consent": _setting(env, "AI_DATA_CONSENT").lower() in ("1", "true", "yes", "sim"),
         "active": active.get_info(),
         "providers": rows,

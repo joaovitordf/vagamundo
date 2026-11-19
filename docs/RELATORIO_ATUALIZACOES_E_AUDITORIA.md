@@ -1,5 +1,8 @@
 # Relatório de Atualizações Não Documentadas e Auditoria Pré-Push
 
+> [!NOTE]
+> **Documento Histórico (Snapshot de Auditoria Anterior):** Este relatório registra um retrato histórico de uma auditoria pré-push de versão anterior do projeto. Desde então, módulos como `backend/core/linkedin_browser.py`, `backend/tools/eures.py` e `backend/tools/google_careers.py` (bem como endpoints como `/api/eures/stats` e `/api/recruiters/linkedin/*`) foram completamente removidos em favor da arquitetura modular atual em `backend/db/*_repo.py` (`jobs_repo.py`, `applications_repo.py`, `recruiters_repo.py`, `analytics_repo.py`, `migrations.py`, `utils.py` e fachada `repository.py`), `backend/core/recruiters/*` (`service.py`, `collectors.py`, `parser.py`, `triage.py`, `search_terms.py`) e da Barra de Pesquisa LinkedIn sem automação de conta (`LinkedinSearchBarComponent`). Para a arquitetura vigente, consulte [ARQUITETURA_PAINEL.md](ARQUITETURA_PAINEL.md) e [RADAR_RECRUTADORES_E_MODO_AUTOMATICO.md](RADAR_RECRUTADORES_E_MODO_AUTOMATICO.md).
+
 Este relatório consolida todas as alterações recentes implementadas no código após a atualização anterior da documentação (commit `984d4b4`, incluindo o commit `0172932` e as modificações atuais antes do push), os achados levantados na auditoria inicial (*SkillSpector*, código legado, hardcoding/whitelabel e inconsistências entre documentação e implementação) e as correções aplicadas após aprovação do plano.
 
 ---

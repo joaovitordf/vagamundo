@@ -387,10 +387,13 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
             self.assertEqual(promoted_saved["auto_run_id"], run_id)
             self.assertEqual(promoted_saved["recruiter_emails"][0], "vagas@alfa.com")
 
-            # Recrutadores listing: non-LinkedIn promoted removed; LinkedIn talent pool & active posts remain visible until manual dismiss
+            # Recrutadores listing: promoted/interested posts across all platforms, talent pools & active posts remain visible until manual dismiss
             rec_all = client.get("/api/recruiters").json()["posts"]
             rec_ids = [p["id"] for p in rec_all]
-            self.assertNotIn(p_promote["id"], rec_ids)
+            rec_by_id = {p["id"]: p for p in rec_all}
+            self.assertIn(p_promote["id"], rec_ids)
+            self.assertEqual(rec_by_id[p_promote["id"]]["auto_promoted"], 1)
+            self.assertEqual(rec_by_id[p_promote["id"]]["job_status"], "interested")
             self.assertIn(p_pool["id"], rec_ids)
             self.assertIn(p_low["id"], rec_ids)
             self.assertIn(p_non_job["id"], rec_ids)
@@ -880,7 +883,6 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
 
     def test_recruiters_auto_round_runs_all_platforms_simultaneously_and_scopes_round_post_ids(self):
         import time
-        from types import SimpleNamespace
 
         # Unrelated previously evaluated post in DB must NOT leak into round_post_ids of a new round
         old_evaluated = self.recruiter_service.add_pasted_post(
@@ -898,7 +900,7 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
             "flutter@antigo.dev",
         )
 
-        # Non-LinkedIn post matching the round keyword must run/triage simultaneously with LinkedIn
+        # Non-LinkedIn post + manually pasted LinkedIn post matching round keyword triage together
         other_portal_post = self.recruiter_service.add_pasted_post(
             raw_text="Vaga Angular em outro portal. Envie CV para externo@freehire.dev",
             url="https://freehire.me/jobs/angular-999",
@@ -908,22 +910,9 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         with self.repo.conn:
             self.repo.conn.execute("UPDATE recruiter_posts SET portal = 'freehire-search' WHERE id = ?", (other_portal_post["id"],))
 
-        fake_li_worker = SimpleNamespace(
-            search_content_posts=lambda q, force=False, should_stop=None: {
-                "ok": True,
-                "cards_total": 1,
-                "posts": [{
-                    "raw_text": "Vaga Rust Backend sem permalink! Enviar CV para rustjobs@nouri.dev",
-                    "company": "NouriSystems",
-                    "title": "Rust Backend Dev",
-                    "url": "",
-                }],
-            }
-        )
         live_recruiter = RecruiterService(
             repo=self.repo,
             enable_live_feeds=True,
-            linkedin_worker=fake_li_worker,
         )
         auto_live = AutoModeService(
             repo=self.repo,
@@ -939,6 +928,22 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         app.dependency_overrides[get_repository] = lambda: self.repo
         client = TestClient(app)
         token = get_token()
+
+        # Importa manualmente um post do LinkedIn sem permalink (como o usuário colaria na UI)
+        pasted_li = client.post(
+            "/api/recruiters/paste-batch",
+            json={
+                "items": [{
+                    "raw_text": "Vaga Angular & Rust Backend sem permalink! Enviar CV para rustjobs@nouri.dev",
+                    "company": "NouriSystems",
+                    "title": "Rust / Angular Dev",
+                    "url": "",
+                }]
+            },
+            headers={"X-Painel-Token": token},
+        )
+        self.assertEqual(pasted_li.status_code, 200)
+        self.assertEqual(pasted_li.json()["imported"], 1)
 
         sync_calls = []
 
@@ -992,13 +997,127 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
         self.assertEqual(len(interested), 2)
         self.assertEqual({j["portal"] for j in interested}, {"linkedin_post", "freehire-search"})
 
-        # Promoted LinkedIn post remains listed in Recrutadores with job_status='interested' and AI score
+        # Both promoted LinkedIn post AND promoted external-portal post remain listed in Recrutadores
+        rec_all = client.get("/api/recruiters").json()["posts"]
+        rec_by_id = {p["id"]: p for p in rec_all}
         li_posts = client.get("/api/recruiters?portal=linkedin_post").json()["posts"]
         li_by_id = {p["id"]: p for p in li_posts}
         new_li_id = next(pid for pid in st["round_post_ids"] if pid != other_portal_post["id"])
         self.assertIn(new_li_id, li_by_id)
         self.assertEqual(li_by_id[new_li_id]["ai_score"], 81)
         self.assertEqual(li_by_id[new_li_id]["job_status"], "interested")
+
+        self.assertIn(other_portal_post["id"], rec_by_id)
+        self.assertEqual(rec_by_id[other_portal_post["id"]]["auto_promoted"], 1)
+        self.assertEqual(rec_by_id[other_portal_post["id"]]["job_status"], "interested")
+        fh_posts = client.get("/api/recruiters?portal=freehire-search").json()["posts"]
+        self.assertIn(other_portal_post["id"], [p["id"] for p in fh_posts])
+
+    def test_recruiters_round_records_portal_breakdown_warnings_and_non_linkedin_talent_pool_visibility(self):
+        import time
+        from tempfile import TemporaryDirectory
+        from backend.api.deps import get_recruiter_service, get_repository
+
+        self.repo.upsert_job({
+            "id": "ext-solides-auto-1",
+            "title": "Dev Python Pleno",
+            "company": "SolidesAutoCo",
+            "url": "https://vagas.solides.com.br/vaga/99901",
+            "portal": "solides-search",
+            "description": "Vaga Python remota. Enviar CV para rh@solidesauto.dev",
+            "status": "new",
+        })
+        self.repo.upsert_job({
+            "id": "ext-freehire-pool-1",
+            "title": "Banco de Talentos Python",
+            "company": "FreeHirePoolCo",
+            "url": "https://freehire.me/jobs/pool-python-99902",
+            "portal": "freehire-search",
+            "description": "Banco de talentos Python. Envie CV para talentos@freehirepool.dev",
+            "status": "new",
+        })
+        self.recruiter_service.sync_from_jobs(query="Python")
+        by_portal = {p["portal"]: p for p in self.recruiter_service.list_posts()}
+        solides_post = by_portal["solides-search"]
+        freehire_pool = by_portal["freehire-search"]
+
+        breakdown = {
+            "solides-search": {"fetched": 5, "matched": 1, "errors": 0, "last_error": None},
+            "freehire-search": {"fetched": 7, "matched": 1, "errors": 0, "last_error": None},
+            "github-vagas": {"fetched": 0, "matched": 0, "errors": 1, "last_error": "HTTP 403 rate limit"},
+        }
+        warnings = ["github-vagas: HTTP 403 rate limit"]
+
+        def fake_triar(post):
+            if post["id"] == solides_post["id"]:
+                return {
+                    "classification": "vaga_ativa",
+                    "score": 86,
+                    "verdict": "Strong Fit",
+                    "summary": "Stack Python alinhada.",
+                    "best_email": "rh@solidesauto.dev",
+                }
+            return {
+                "classification": "banco_talentos",
+                "score": 0,
+                "verdict": "Poor Fit",
+                "summary": "Captação contínua.",
+                "best_email": "talentos@freehirepool.dev",
+            }
+
+        app.dependency_overrides[get_auto_mode] = lambda: self.auto
+        app.dependency_overrides[get_tracker] = lambda: self.tracker
+        app.dependency_overrides[get_recruiter_service] = lambda: self.recruiter_service
+        app.dependency_overrides[get_repository] = lambda: self.repo
+        client = TestClient(app)
+
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir, \
+             patch("backend.tools.painel_ia.PAINEL_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel.CLAUDE_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel_ia.save_job_cache"), \
+             patch("backend.tools.painel.saved", return_value=[]), \
+             patch("backend.tools.painel.discarded", return_value=[]), \
+             patch("backend.tools.painel.discard_job", return_value={"discarded": True}), \
+             patch("backend.tools.painel.restore_job"), \
+             patch.object(self.auto, "validate_ready"), \
+             patch("backend.tools.painel_ia.sortear_palavras_chave_busca", return_value={"keywords": ["Python"], "rationale": "Foco"}), \
+             patch.object(
+                 self.recruiter_service,
+                 "sync_all",
+                 return_value={
+                     "synced": 2,
+                     "scanned": 12,
+                     "errors": 1,
+                     "matched_post_ids": [solides_post["id"], freehire_pool["id"]],
+                     "collected_post_ids": [solides_post["id"], freehire_pool["id"]],
+                     "portal_breakdown": breakdown,
+                     "warnings": warnings,
+                 },
+             ), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", side_effect=fake_triar):
+            start_resp = self.auto.start_recruiters(min_score=60, continuous=False)
+            self.assertTrue(start_resp["ok"])
+            deadline = time.monotonic() + 5.0
+            st = self.auto.status()
+            while st["running"] and time.monotonic() < deadline:
+                time.sleep(0.05)
+                st = self.auto.status()
+            self.assertFalse(st["running"])
+
+        self.assertEqual(st["round_portal_breakdown"], breakdown)
+        self.assertEqual(st["round_warnings"], warnings)
+        self.assertEqual(len(st["round_history"]), 1)
+        self.assertEqual(st["round_history"][0]["portal_breakdown"], breakdown)
+
+        # Both promoted external post and non-LinkedIn banco_talentos remain visible in Recrutadores
+        rec_posts = client.get("/api/recruiters").json()["posts"]
+        rec_by_id = {p["id"]: p for p in rec_posts}
+        self.assertIn(solides_post["id"], rec_by_id)
+        self.assertEqual(rec_by_id[solides_post["id"]]["auto_promoted"], 1)
+        self.assertEqual(rec_by_id[solides_post["id"]]["job_status"], "interested")
+        self.assertIn(freehire_pool["id"], rec_by_id)
+        self.assertEqual(rec_by_id[freehire_pool["id"]]["ai_classification"], "banco_talentos")
+        self.assertEqual(rec_by_id[freehire_pool["id"]]["dismissed"], 0)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,10 @@
 import {
   AVAILABLE_PORTALS,
   FIT_THRESHOLDS,
+  PORTAL_CATEGORIES,
   PORTAL_LABELS,
   formatDisplayDate,
+  formatSalaryBRL,
   getPortalDisplayName,
   getPrimaryEmail,
   isWithinDateRange,
@@ -167,5 +169,11 @@ describe('job-filters.util', () => {
     expect(isWithinDateRange('01/11/2026', '7d', '', '', refNow)).toBeFalse();
     expect(isWithinDateRange('2026-11-08', 'custom', '2026-11-05', '2026-11-10', refNow)).toBeTrue();
     expect(isWithinDateRange('04/11/2026', 'custom', '2026-11-05', '2026-11-10', refNow)).toBeFalse();
+  });
+
+  it('parses USD/EUR salaries with comma thousands and dot decimals without inflating by 100x', () => {
+    expect(formatSalaryBRL('$80,000.00')).toBe(formatSalaryBRL('$80,000'));
+    expect(formatSalaryBRL('US$ 5,000.00')).toBe(formatSalaryBRL('US$ 5,000'));
+    expect(PORTAL_CATEGORIES.find(c => c.id === 'global')?.label).toBe('Internacional & Remoto Global');
   });
 });

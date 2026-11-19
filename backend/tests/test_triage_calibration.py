@@ -73,6 +73,35 @@ class TestTriageCalibration(unittest.TestCase):
             )
             self.assertEqual((s_mix, v_mix), (74, "Good Fit"))
 
+        # Whitelabel check: candidate accepting Senior or without seniority restriction is NOT capped at 45
+        with patch.object(
+            painel_ia,
+            "_load_candidate_triage_rules",
+            return_value={"accept_seniority": ["senior", "especialista"], "locais": "Remoto", "regimes": ["CLT"], "modelo": ["remoto"], "idiomas": ["PT"]},
+        ):
+            s_sr, v_sr, _ = painel_ia._apply_seniority_ceiling(
+                "Senior Backend Engineer",
+                {"min_years_required": 6, "body_has_accessible_level": False},
+                85,
+                "Strong Fit",
+                "Perfil sênior compatível",
+            )
+            self.assertEqual((s_sr, v_sr), (85, "Strong Fit"))
+
+        with patch.object(
+            painel_ia,
+            "_load_candidate_triage_rules",
+            return_value={"accept_seniority": [], "locais": "Remoto", "regimes": [], "modelo": [], "idiomas": []},
+        ):
+            s_un, v_un, _ = painel_ia._apply_seniority_ceiling(
+                "Gerente de Operações",
+                {"min_years_required": 8, "body_has_accessible_level": False},
+                80,
+                "Strong Fit",
+                "Perfil sem restrição de senioridade",
+            )
+            self.assertEqual((s_un, v_un), (80, "Strong Fit"))
+
     def test_triar_vaga_rapida_computes_weighted_subscores_and_applies_gates(self) -> None:
         fake_llm_reply = json.dumps({
             "model": "gemini-4-hydrogen-high",
@@ -347,6 +376,8 @@ class TestTriageCalibration(unittest.TestCase):
         self.assertTrue(_matches_accepted_location("Recife - PE", "Recife, Brasilia"))
         self.assertTrue(_matches_accepted_location("Brasília / DF", "Brasilia - DF"))
         self.assertTrue(_matches_accepted_location("Niterói, RJ", "Rio de Janeiro - RJ"))
+        self.assertTrue(_matches_accepted_location("Manaus, AM", "Amazonas"))
+        self.assertTrue(_matches_accepted_location("Natal - RN", "Rio Grande do Norte"))
         self.assertTrue(_matches_accepted_location("London, UK", "Londres, London"))
         self.assertFalse(_matches_accepted_location("Manaus - AM", "Recife - PE, Belo Horizonte"))
 

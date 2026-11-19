@@ -8,20 +8,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Modern Angular Frontend SPA**: Complete interface rewrite with standalone components, signals, interactive World and Brazil opportunity map, job cards, interview dossier generator, and dynamic profile editing.
-- **FastAPI Backend Gateway**: Async REST API replacing legacy monolithic handlers, featuring Pydantic schemas, OpenAPI docs (`/docs`), and robust background task execution.
-- **SQLite Database with WAL Mode**: Atomic relational persistence (`data/vagamundo.db`) with full transactional integrity, automated schema migrations, and fast indexed search queries.
-- **Multi-Provider AI Gateway**: Built-in support for Google Gemini, Anthropic Claude, and OpenAI/Ollama, enabling AI fit scoring, cover letter creation, tailored CV generation, and interview preparation.
-- **Expanded Scraper Ecosystem**: 18 specialized portal CLIs covering Brazil and global tech markets (Gupy, Sólides, Vagas.com, InfoJobs, Remotar, Greenhouse, Programathor, GeekHunter, Trampos, Michael Page, Robert Half, PCD Online, Agrobase, AGROSearch, DigAÍ, Empregos.com.br, LinkedIn, FreeHire).
+- **Modern Angular Frontend SPA**: Complete domain-neutral interface rewrite with standalone components, signals, interactive World and Brazil opportunity map (`GeoMapComponent`), job cards, interview dossier generator, and dynamic profile editing (`Meu Perfil`).
+- **FastAPI Backend Gateway**: Async REST API replacing legacy monolithic handlers, featuring Pydantic schemas, OpenAPI docs (`/docs`), CSRF/Host-header protection, and background task execution.
+- **Modular SQLite Persistence (`backend/db/*_repo.py`)**: Atomic relational persistence (`data/vagamundo.db`) with WAL mode, automated schema migrations (`migrations.py`), and domain repositories (`jobs_repo.py`, `applications_repo.py`, `recruiters_repo.py`, `analytics_repo.py`, and facade `repository.py`).
+- **Multi-Provider AI Gateway (`backend/tools/ia/`)**: Built-in support for Google Gemini (`gemini-2.5-flash` default), Anthropic Claude, and OpenAI/Ollama (`AI_PROVIDER=auto` default), enabling calibrated AI fit scoring, cover letter creation, tailored CV generation, interview preparation, and one-click PDF profile extraction (`POST /api/profile/organize`).
+- **24-Portal Scraper Ecosystem**: 24 specialized portal CLIs under `.agents/skills/` covering Brazil, remote-first, and international markets (`gupy-search`, `solides-search`, `vagas-search`, `infojobs-search`, `remotar-search`, `greenhouse-search`, `programathor-search`, `geekhunter-search`, `trampos-search`, `michaelpage-search`, `roberthalf-search`, `pcd-search`, `agrobase-search`, `agrosearch-search`, `digai-search`, `empregos-search`, `linkedin-search`, `freehire-search`, `ashby-search`, `hn-search`, `jobicy-search`, `remoteok-search`, `hh-search`, `habrcareer-search`), including Russia/Eurasia integration (`hh.ru` and `career.habr.com`) with automatic PT→EN query translation in `scrape_run.py`.
+- **Recruiter Radar & LinkedIn Search Bar (`backend/core/recruiters/*`, `LinkedinSearchBarComponent`)**: Direct recruiter email (`@`) mining across HN *Who is Hiring*, GitHub Vagas BR, Remotive, and 9 live portal CLIs, paired with a zero-login LinkedIn Search Bar featuring automatic CV area sorting, lean boolean queries (max 4 operators), bilingual PT↔EN dictionary + AI term expansion (`POST /api/recruiters/expand-search-term`), Google X-Ray fallback, and inline AI evaluation cards under the paste box.
+- **Continuous Autonomous Mode & Liveness Check (`backend/core/auto_mode.py`, `backend/core/liveness.py`)**: Background daemon loop for both Jobs and Recruiter Radar with anti-ban jitter/backoff, rate-limit detection, atomic undo, and SSRF-safe TLS job URL liveness verification.
 
 ### Changed
 
-- **Unified Developer Workflow**: Single-command orchestrator `node dev.js` (`npm run dev`) that manages backend Uvicorn, port cleanup, and Angular development server concurrently.
-- **Centralized Job Age and Date Filtering**: Enforced multi-layered date cutoffs across scraper helpers, LinkedIn API queries, and backend collector pipelines.
+- **Zero-Tracked-Edits Onboarding & Unified Developer Workflow**: Single-command installer (`npm run install:all` via `install.js`) and orchestrator (`npm run dev` via `dev.js`) with automatic `.venv` resolution, root `.env` configuration, and local gitignored profile storage (`backend/documents/perfil/`).
+- **Centralized Job Age and Date Filtering**: Enforced multi-layered date cutoffs across scraper helpers, LinkedIn Snowflake ID decoding, and backend collector pipelines.
 
 ### Removed
 
-- **Legacy Monolithic Handlers**: Removed outdated ad-hoc HTTP servers in favor of modern FastAPI routes.
+- **Legacy Monolithic Handlers & Obsolete Connectors**: Removed outdated ad-hoc HTTP servers and deprecated connectors (`eures.py`, `google_careers.py`, `linkedin_browser.py`) in favor of modular FastAPI routes and safe manual LinkedIn search/paste workflows.
 - **Obsolete Upstream Documentation**: Cleaned out foreign project references, legacy licenses, and outdated CLI-only setup guides.
 
 ## [2.0.0] - 2026-10-31

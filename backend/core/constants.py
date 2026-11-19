@@ -19,6 +19,24 @@ AUTO_SCORE_MIN = 45
 AUTO_SCORE_MAX = 95
 AUTO_SCORE_DEFAULT = 60
 
+APPLIED_PIPELINE_STATUSES: tuple[str, ...] = (
+    "applied",
+    "screening",
+    "interview",
+    "offer",
+    "hired",
+    "rejected",
+    "no_response",
+    "offer_declined",
+    "withdrawn",
+)
+
+EXCLUDED_RADAR_JOB_STATUSES: tuple[str, ...] = (
+    *APPLIED_PIPELINE_STATUSES,
+    "discarded",
+    "skipped",
+)
+
 DEFAULT_ALLOWED_ORIGINS: tuple[str, ...] = (
     "http://localhost:4200",
     "http://127.0.0.1:4200",

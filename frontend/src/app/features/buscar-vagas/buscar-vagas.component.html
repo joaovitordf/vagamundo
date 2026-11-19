@@ -484,13 +484,13 @@
 
           </button>
 
-          <button type="button" class="btn-sort-triaged" (click)="filterByBestScore()" [disabled]="!hasTriagedJobs() || batchRunning()" [class.active]="filterSort === 'score-desc' && filterScore === 'triadas'" title="Filtrar e ordenar vagas triadas pela maior nota">
+          <button type="button" class="btn-sort-triaged" (click)="filterByBestScore()" [disabled]="!hasTriagedJobs() || batchRunning()" [class.active]="isBestScoreFilterActive()" title="Alternar filtro e ordenação das vagas triadas pela maior nota">
             <i class="bi bi-sort-numeric-down-alt"></i> Filtrar por Maior Nota
           </button>
 
 
 
-          <button type="button" class="btn-clear-pending" (click)="clearPendingJobs()" title="Descarta vagas pendentes">
+          <button type="button" class="btn-clear-pending" (click)="clearPendingJobs()" title="Remove da lista as vagas pendentes da busca atual (não envia para Descartadas)">
 
             Limpar vagas pendentes
 
@@ -818,13 +818,13 @@
 
           </button>
 
-          <button type="button" class="btn-sort-triaged" (click)="filterByBestScore()" [disabled]="!hasTriagedJobs() || batchRunning()" [class.active]="filterSort === 'score-desc' && filterScore === 'triadas'" title="Filtrar e ordenar vagas triadas pela maior nota">
+          <button type="button" class="btn-sort-triaged" (click)="filterByBestScore()" [disabled]="!hasTriagedJobs() || batchRunning()" [class.active]="isBestScoreFilterActive()" title="Alternar filtro e ordenação das vagas triadas pela maior nota">
             <i class="bi bi-sort-numeric-down-alt"></i> Filtrar por Maior Nota
           </button>
 
 
 
-          <button type="button" class="btn-clear-pending" (click)="clearPendingJobs()">
+          <button type="button" class="btn-clear-pending" (click)="clearPendingJobs()" title="Remove da lista as vagas pendentes da busca atual (não envia para Descartadas)">
 
             Limpar vagas pendentes
 

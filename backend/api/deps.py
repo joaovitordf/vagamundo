@@ -1,177 +1,117 @@
 """Dependency injection providers for FastAPI."""
 
 from __future__ import annotations
+
 import logging
 import threading
+from typing import Any, Callable, TypeVar
 
-from backend.db.repository import Repository
-from backend.core.tracker import TrackerService
-from backend.core.scanner import ScannerService
-from backend.core.evaluator import EvaluatorService
-from backend.core.docgen import DocGenService
-from backend.core.profile import ProfileService
 from backend.core.ai_mux import AIMux
-from backend.core.liveness import LivenessService
-from backend.core.constants import ROOT
-from backend.core.recruiter_service import RecruiterService
-from backend.core.linkedin_browser import LinkedInBrowserWorker
 from backend.core.auto_mode import AutoModeService
-from backend.tools import painel_ia
+from backend.core.docgen import DocGenService
+from backend.core.evaluator import EvaluatorService
+from backend.core.liveness import LivenessService
+from backend.core.profile import ProfileService
+from backend.core.recruiter_service import RecruiterService
+from backend.core.scanner import ScannerService
+from backend.core.tracker import TrackerService
+from backend.db.repository import Repository
 
 logger = logging.getLogger(__name__)
-_lock = threading.RLock()
+_T = TypeVar("_T")
 
-_repo: Repository | None = None
-_tracker: TrackerService | None = None
-_scanner: ScannerService | None = None
-_evaluator: EvaluatorService | None = None
-_docgen: DocGenService | None = None
-_profile: ProfileService | None = None
-_ai_mux: AIMux | None = None
-_liveness: LivenessService | None = None
-_linkedin_worker: LinkedInBrowserWorker | None = None
-_recruiter: RecruiterService | None = None
-_auto_mode: AutoModeService | None = None
+
+class _ServiceRegistry:
+    """Thread-safe lazy singleton container for FastAPI service dependencies."""
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._instances: dict[str, Any] = {}
+
+    def get(self, key: str, factory: Callable[[], _T]) -> _T:
+        inst = self._instances.get(key)
+        if inst is None:
+            with self._lock:
+                inst = self._instances.get(key)
+                if inst is None:
+                    inst = factory()
+                    self._instances[key] = inst
+        return inst
+
+    def shutdown(self) -> None:
+        with self._lock:
+            auto_mode = self._instances.get("auto_mode")
+            if auto_mode is not None:
+                try:
+                    auto_mode.cancel()
+                except Exception as exc:
+                    logger.warning("Failed to cancel AutoModeService on shutdown: %s", exc)
+            repo = self._instances.get("repo")
+            if repo is not None:
+                try:
+                    repo.close()
+                except Exception as exc:
+                    logger.warning("Failed to close Repository on shutdown: %s", exc)
+            self._instances.clear()
+
+
+_registry = _ServiceRegistry()
 
 
 def get_repository() -> Repository:
-    global _repo
-    if _repo is None:
-        with _lock:
-            if _repo is None:
-                _repo = Repository()
-    return _repo
+    return _registry.get("repo", Repository)
 
 
 def get_tracker() -> TrackerService:
-    global _tracker
-    if _tracker is None:
-        with _lock:
-            if _tracker is None:
-                _tracker = TrackerService(repo=get_repository())
-    return _tracker
+    return _registry.get("tracker", lambda: TrackerService(repo=get_repository()))
 
 
 def get_scanner() -> ScannerService:
-    global _scanner
-    if _scanner is None:
-        with _lock:
-            if _scanner is None:
-                _scanner = ScannerService(repo=get_repository())
-    return _scanner
+    return _registry.get("scanner", lambda: ScannerService(repo=get_repository()))
 
 
 def get_evaluator() -> EvaluatorService:
-    global _evaluator
-    if _evaluator is None:
-        with _lock:
-            if _evaluator is None:
-                _evaluator = EvaluatorService(repo=get_repository())
-    return _evaluator
+    return _registry.get("evaluator", lambda: EvaluatorService(repo=get_repository()))
 
 
 def get_docgen() -> DocGenService:
-    global _docgen
-    if _docgen is None:
-        with _lock:
-            if _docgen is None:
-                _docgen = DocGenService(repo=get_repository())
-    return _docgen
+    return _registry.get("docgen", lambda: DocGenService(repo=get_repository()))
 
 
 def get_profile() -> ProfileService:
-    global _profile
-    if _profile is None:
-        with _lock:
-            if _profile is None:
-                _profile = ProfileService()
-    return _profile
+    return _registry.get("profile", ProfileService)
 
 
 def get_ai_mux() -> AIMux:
-    global _ai_mux
-    if _ai_mux is None:
-        with _lock:
-            if _ai_mux is None:
-                _ai_mux = AIMux()
-    return _ai_mux
+    return _registry.get("ai_mux", AIMux)
 
 
 def get_liveness() -> LivenessService:
-    global _liveness
-    if _liveness is None:
-        with _lock:
-            if _liveness is None:
-                _liveness = LivenessService(repo=get_repository())
-    return _liveness
-
-
-def get_linkedin_worker() -> LinkedInBrowserWorker:
-    global _linkedin_worker
-    if _linkedin_worker is None:
-        with _lock:
-            if _linkedin_worker is None:
-                _linkedin_worker = LinkedInBrowserWorker(
-                    profile_dir=ROOT / "data" / "browser_profile",
-                    state_dir=painel_ia.PAINEL_DIR,
-                )
-    return _linkedin_worker
+    return _registry.get("liveness", lambda: LivenessService(repo=get_repository()))
 
 
 def get_recruiter_service() -> RecruiterService:
-    global _recruiter
-    if _recruiter is None:
-        with _lock:
-            if _recruiter is None:
-                _recruiter = RecruiterService(
-                    repo=get_repository(),
-                    cache_dir=painel_ia.PAINEL_DIR,
-                    linkedin_worker=get_linkedin_worker(),
-                )
-    return _recruiter
+    return _registry.get(
+        "recruiter",
+        lambda: RecruiterService(
+            repo=get_repository(),
+            cache_dir=RecruiterService.default_cache_dir(),
+        ),
+    )
 
 
 def get_auto_mode() -> AutoModeService:
-    global _auto_mode
-    if _auto_mode is None:
-        with _lock:
-            if _auto_mode is None:
-                _auto_mode = AutoModeService(
-                    repo=get_repository(),
-                    scanner=get_scanner(),
-                    evaluator=get_evaluator(),
-                    recruiter_service=get_recruiter_service(),
-                )
-    return _auto_mode
+    return _registry.get(
+        "auto_mode",
+        lambda: AutoModeService(
+            repo=get_repository(),
+            scanner=get_scanner(),
+            evaluator=get_evaluator(),
+            recruiter_service=get_recruiter_service(),
+        ),
+    )
 
 
 def shutdown_services() -> None:
     """Stop active background services and reset singletons so closed connections are never reused."""
-    global _auto_mode, _repo, _tracker, _scanner, _evaluator, _docgen, _profile, _ai_mux, _liveness, _linkedin_worker, _recruiter
-    with _lock:
-        if _auto_mode is not None:
-            try:
-                _auto_mode.cancel()
-            except Exception as exc:
-                logger.warning("Failed to cancel AutoModeService on shutdown: %s", exc)
-        if _linkedin_worker is not None:
-            try:
-                _linkedin_worker.shutdown()
-            except Exception as exc:
-                logger.warning("Failed to shutdown LinkedInBrowserWorker on shutdown: %s", exc)
-        if _repo is not None:
-            try:
-                _repo.close()
-            except Exception as exc:
-                logger.warning("Failed to close Repository on shutdown: %s", exc)
-        _auto_mode = None
-        _recruiter = None
-        _linkedin_worker = None
-        _liveness = None
-        _docgen = None
-        _evaluator = None
-        _scanner = None
-        _tracker = None
-        _profile = None
-        _ai_mux = None
-        _repo = None
+    _registry.shutdown()

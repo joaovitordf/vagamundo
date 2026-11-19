@@ -80,13 +80,6 @@
   color: var(--vc-muted, #94a3b8);
 }
 
-.header-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
 /* Seletor de Período Histórico */
 .period-toggle-group {
   display: inline-flex;
@@ -710,16 +703,13 @@
   justify-content: center;
   padding: 4rem 2rem;
   gap: 1rem;
-  color: var(--vc-muted, #94a3b8);
 }
 
 .vc-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(56, 189, 248, 0.2);
-  border-top-color: var(--vc-blue, #38bdf8);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  border-width: 3px;
+  color: var(--vc-blue, #38bdf8);
 }
 
 .alert-box {

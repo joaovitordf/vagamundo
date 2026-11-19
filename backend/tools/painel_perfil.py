@@ -56,7 +56,7 @@ SCHEMA = [
          "placeholder": "Português - nativo\nInglês - avançado",
          "help": "Seja realista: uma vaga que exige um idioma fora desta lista é descartada."},
         {"key": "cargos", "label": "Cargos a buscar, um por linha", "type": "lines",
-         "placeholder": "Engenheiro de Software\nDesenvolvedor Full Stack"},
+         "placeholder": "Engenheiro de Software\nAnalista de Dados\nCoordenador de Operações"},
         {"key": "palavras_chave_sorteio",
          "label": "Palavras-chave do currículo para busca e sorteio (Sortear área CV), uma por linha",
          "type": "lines",

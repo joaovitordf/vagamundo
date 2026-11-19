@@ -176,7 +176,7 @@ class TrackerService:
         label: str,
     ) -> list[dict[str, Any]]:
         try:
-            raw_items = self.list_jobs(status=status_db, limit=500)
+            raw_items = self.list_jobs(status=status_db, limit=5000)
         except sqlite3.Error as exc:
             logger.warning("Failed to list %s jobs from SQLite: %s", label, exc)
             raw_items = []
@@ -410,6 +410,14 @@ class TrackerService:
         job = self.repo.get_job_by_url(url)
         if job:
             self.mark_jobs([job["id"]], decision="interested", source="painel")
+            try:
+                with self.repo.conn:
+                    self.repo.conn.execute(
+                        "UPDATE recruiter_posts SET dismissed = 0 WHERE job_id = ? OR url = ?",
+                        (job["id"], url),
+                    )
+            except sqlite3.Error as exc:
+                logger.warning("Failed to un-dismiss linked recruiter post on restore (%s): %s", url, exc)
         painel.restore_job(url)
 
     def delete_discarded_with_legacy(self, urls: list[str]) -> dict[str, int]:

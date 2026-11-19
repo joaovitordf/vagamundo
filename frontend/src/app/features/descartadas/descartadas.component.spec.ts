@@ -82,7 +82,7 @@ describe('DescartadasComponent', () => {
     expect(cards[0].querySelector('.job-card__title')?.textContent?.trim()).toBe('Product Owner');
     expect(cards[0].querySelector('.job-card__company')?.textContent).toContain('Omega');
     expect(cards[0].querySelector('.job-card__company')?.textContent).toContain('Remotar');
-    expect(cards[0].textContent).toContain('2026-10-19');
+    expect(cards[0].textContent).toContain('19/10/2026');
     expect(cards[0].querySelector('.vc-badge-fit')).toBeNull();
 
     expect(cards[1].querySelector('.job-card__title')?.textContent?.trim()).toBe('Staff Frontend Software Engineer');

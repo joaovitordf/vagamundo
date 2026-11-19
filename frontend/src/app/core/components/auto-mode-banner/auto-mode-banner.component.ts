@@ -21,7 +21,7 @@ export class AutoModeBannerComponent {
     const isRecruiters = st.mode === 'recruiters';
     switch (st.phase) {
       case 'picking_keywords':
-        return 'IA sorteando até 2 palavras-chave do seu currículo…';
+        return 'IA sorteando 1 palavra-chave por rodada do seu currículo…';
       case 'searching': {
         if (isRecruiters) {
           return 'Sincronizando publicações de recrutadores…';

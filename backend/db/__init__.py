@@ -11,6 +11,10 @@ ROOT = _here.parent.parent.parent if _here.parent.parent.name == "backend" else 
 DEFAULT_DB_PATH = ROOT / "data" / "vagamundo.db"
 
 
+class RepositoryError(RuntimeError):
+    """Domain-level persistence error wrapping underlying SQLite failures."""
+
+
 def get_db(db_path: str | Path | None = None) -> sqlite3.Connection:
     """Connect to SQLite with WAL mode, foreign keys, and busy timeout enabled."""
     if not db_path:

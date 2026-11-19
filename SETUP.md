@@ -131,28 +131,126 @@ Para encerrar a aplicação, pressione `Ctrl + C` no terminal.
 
 ## 5. Personalizando o Seu Perfil *(0 arquivos versionados editados)*
 
-O Vagamundo personaliza notas de triagem, currículos, cartas e dossiês com base no seu perfil real, **sem editar nenhum arquivo rastreado pelo Git**:
-1. Acesse a aba **"Meu Perfil"** na interface web (`http://localhost:4200`).
-2. Faça o upload do seu currículo (PDF/DOCX/TXT) ou perfil do LinkedIn (salvo localmente em `backend/documents/perfil/`, já no `.gitignore`).
-3. Preencha suas preferências (cargo-alvo, senioridade, cidades, modelo de trabalho) e clique em **Gerar perfil com IA** (opcional — mesmo sem clicar, o formulário e os CVs enviados já alimentam a triagem e o `Sortear área CV`).
-4. **Uso avançado (opcional):** quem utiliza agentes de terminal (Claude Code / Antigravity slash commands) pode opcionalmente manter `CLAUDE.md`, `.claude/skills/job-application-assistant/01-candidate-profile.md` e `.claude/skills/job-scraper/search-queries.md`.
+O Vagamundo personaliza notas de triagem, currículos, cartas e dossiês para qualquer área profissional com base no seu perfil real, **sem editar nenhum arquivo rastreado pelo Git**:
+
+1. Acesse a aba **"Meu Perfil"** na interface web (`http://localhost:4200/meu-perfil`).
+2. **Envio de documentos (estritamente `.pdf` na interface web):**
+   - Clique em **"Enviar currículo (PDF)"** para salvar seu currículo em `backend/documents/cv/`.
+   - Clique em **"Enviar LinkedIn (PDF)"** para salvar a exportação em PDF do seu perfil do LinkedIn em `backend/documents/linkedin/`.
+   - *(Ambos os diretórios estão protegidos no `.gitignore`.)*
+3. **Extração e preenchimento do formulário:**
+   - Ao enviar um PDF (ou clicando manualmente no botão **"Organizar tudo do PDF com a IA"**), a IA extrai seus dados objetivos, preenche o formulário e gera os arquivos locais em `backend/documents/perfil/`:
+     - `respostas.json` — respostas estruturadas do formulário (cargos, palavras-chave do sorteio, senioridade, cidades, modelo de trabalho, regimes e deal-breakers).
+     - `search-queries.md` — consultas de busca geradas automaticamente a partir das suas respostas.
+     - `candidate-profile.md` — perfil consolidado em Markdown usado pela triagem e geração de documentos.
+   - **Sem PDF ou sem IA configurada?** Você pode preencher o formulário diretamente e clicar em **"Salvar respostas"** — o sistema já gera `respostas.json` e `search-queries.md` em `backend/documents/perfil/`, habilitando imediatamente as buscas e o botão **"Sortear área CV"**.
+4. **Consolidação manual com IA:**
+   - Sempre que ajustar respostas ou anexar novos PDFs, você pode clicar em **"Montar meu perfil com a IA"** (ou **"Atualizar meu perfil com a IA"**) para regenerar `backend/documents/perfil/candidate-profile.md`.
+5. **Uso avançado por agentes de terminal (opcional):**
+   - Quem utiliza slash commands no Claude Code / Antigravity (`/setup`, `/scrape`, `/apply`) também pode manter os arquivos canônicos `CLAUDE.md`, `.claude/skills/job-application-assistant/01-candidate-profile.md` e `.claude/skills/job-scraper/search-queries.md` protegidos com `skip-worktree` (veja a **Seção 8** abaixo).
 
 ---
 
-## 6. Solução de Problemas Comuns (Troubleshooting)
+## 6. Fluxos Principais do Painel Web
+
+Com o perfil pronto e o servidor rodando em `http://localhost:4200`:
+
+1. **Buscar e Vagas (`/buscar-vagas`):**
+   - Pesquise em até **24 portais nacionais e internacionais** simultaneamente, use o botão **"Sortear área CV"**, filtre por região/modelo de trabalho e alterne entre a grade de **Cards** e o **Mapa Mundial / Brasil em SVG**.
+2. **Radar de Recrutadores (`/recrutadores`):**
+   - Minera publicações com contato direto (`@`) em feeds públicos e portais ao vivo.
+   - Inclui a **Barra de Pesquisa LinkedIn** (com sorteio automático de área do CV, expansão bilíngue PT↔EN + variação por IA, presets enxutos como *Vagas*, *Hiring + E-mail*, *E-mail / CV* e *Só termos*, link fallback para **Google X-Ray** e caixa de colagem com avaliação inline da IA e botões **"Me interessa"** e **"Descartar"**).
+3. **Modo Automático Contínuo:**
+   - Disponível tanto em **Buscar e Vagas** quanto em **Recrutadores**, sorteando áreas do currículo em background com intervalo anti-ban, detecção de rate-limit e promoção automática das vagas com nota compatível para **Me Interessam** (`/me-interessam`).
+4. **Geração de Materiais e Pipeline (`/me-interessam` e `/candidaturas`):**
+   - Gere currículos adaptados em LaTeX/PDF (`lualatex`), cartas de apresentação (`xelatex`) e dossiês de entrevista, acompanhando todas as etapas do processo seletivo.
+
+---
+
+## 7. Solução de Problemas (Troubleshooting)
 
 - **`bun` não é reconhecido como comando interno:**
   - Após instalar o Bun, feche todas as janelas do terminal e do VS Code e abra novamente para atualizar a variável `PATH` do sistema.
+- **`npm run backend` ou `uvicorn` fora da `.venv`:**
+  - Os comandos `npm run dev`, `npm run backend` e `npm run install:all` localizam automaticamente `.venv/Scripts/python.exe` (Windows) ou `.venv/bin/python` (Linux/macOS), sem exigir ativação manual do ambiente virtual.
 - **Erro de permissão no PowerShell (`script não pode ser carregado`):**
   - Execute no PowerShell como usuário:
     ```powershell
     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
     ```
-- **Porta em uso (EADDRINUSE):**
-  - O script `npm run dev` (`dev.js`) encerra processos nas portas `8765` e `4200` automaticamente. Caso precise forçar manualmente:
-    ```powershell
-    # Windows:
+- **Porta em uso (`EADDRINUSE` nas portas `8765` ou `4200`):**
+  - O script `npm run dev` (`dev.js`) encerra automaticamente processos órfãos nas portas `8765` e `4200` em Windows (`netstat`/`taskkill`) e Linux/macOS (`lsof`/`fuser`). Caso precise liberar manualmente:
+    ```bash
     npx kill-port 8765 4200
     ```
+- **Upload recusado na aba Meu Perfil:**
+  - A interface web aceita exclusivamente arquivos **`.pdf`** (até 10 MB). Se o seu currículo estiver em Word (`.docx`), exporte-o como PDF antes de enviar.
 - **Erro de SQLite ou banco inexistente:**
-  - O banco de dados `data/vagamundo.db` é criado e inicializado automaticamente com todas as tabelas na primeira execução do backend.
+  - O banco de dados `data/vagamundo.db` é criado e migrado automaticamente em modo WAL na primeira execução do backend.
+
+---
+
+## 8. Privacidade, `skip-worktree` e Atualizações (`git pull`)
+
+O Vagamundo foi projetado com arquitetura **Local-First & Whitelabel** para que seus dados pessoais nunca vazem em um repositório público:
+
+### 8.1 Onde ficam seus dados locais (100% no `.gitignore`)
+Quando você usa o painel web, **nenhum arquivo rastreado pelo Git é modificado**:
+- Chaves de API ficam apenas no `.env` da raiz.
+- PDFs enviados ficam em `backend/documents/cv/` e `backend/documents/linkedin/`.
+- Formulário e perfil gerado ficam em `backend/documents/perfil/` (`respostas.json`, `search-queries.md`, `candidate-profile.md`).
+- Vagas, avaliações e candidaturas ficam em `data/vagamundo.db`.
+
+### 8.2 Receita de 2 minutos para Repositório Privado (evite Forks Públicos)
+Um **fork de repositório público no GitHub é sempre público**. Se você pretende rodar o comando `/setup` no terminal (que preenche arquivos como `CLAUDE.md` e `.claude/skills/...`) e quer salvar backup na nuvem, aponte seu `origin` para um **repositório privado**:
+
+```bash
+# 1. Crie um repositório privado vazio na sua conta (via GitHub CLI ou interface web):
+gh repo create meu-vagamundo-privado --private
+
+# 2. Renomeie o repositório original para 'upstream' e aponte 'origin' para o seu repo privado:
+git remote rename origin upstream
+git remote add origin https://github.com/<seu-usuario>/meu-vagamundo-privado.git
+git push -u origin main
+```
+
+### 8.3 Protegendo arquivos de template com `skip-worktree`
+Se você personalizou os arquivos canônicos pelo comando `/setup` (`CLAUDE.md`, `.claude/skills/job-application-assistant/01-candidate-profile.md`, `.claude/skills/job-scraper/search-queries.md`, `backend/cv/main_example.tex`), proteja-os no Git local para que `git status` e `git commit -a` ignorem suas alterações pessoais:
+
+```bash
+git update-index --skip-worktree CLAUDE.md \
+  .claude/skills/job-application-assistant/01-candidate-profile.md \
+  .claude/skills/job-scraper/search-queries.md \
+  backend/cv/main_example.tex
+```
+
+### 8.4 Como atualizar o projeto (`git pull`) com `skip-worktree` ativo
+Ao puxar atualizações do repositório oficial (`git pull upstream main` ou `git pull`), caso algum arquivo marcado com `skip-worktree` tenha recebido melhorias estruturais no template:
+
+```bash
+# 1. Destrave temporariamente os arquivos marcados:
+git update-index --no-skip-worktree CLAUDE.md \
+  .claude/skills/job-application-assistant/01-candidate-profile.md \
+  .claude/skills/job-scraper/search-queries.md \
+  backend/cv/main_example.tex
+
+# 2. Guarde suas alterações locais, puxe a atualização e reaplique:
+git stash push -m "meu-perfil-local"
+git pull --rebase
+git stash pop
+
+# 3. Reative o skip-worktree:
+git update-index --skip-worktree CLAUDE.md \
+  .claude/skills/job-application-assistant/01-candidate-profile.md \
+  .claude/skills/job-scraper/search-queries.md \
+  backend/cv/main_example.tex
+```
+
+### 8.5 Auditoria Pré-Push (`check_privacy.py`)
+Antes de qualquer `git push`, execute o verificador automático de privacidade:
+
+```bash
+python backend/tools/check_privacy.py
+```
+
+Ele inspeciona arquivos rastreados, novos arquivos não ignorados, *staging area*, `HEAD` de arquivos com `skip-worktree` e regras do `.gitignore`, bloqueando o envio caso detecte chaves de API, CPF/CNPJ ou dados do seu perfil local.

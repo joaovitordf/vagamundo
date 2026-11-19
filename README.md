@@ -4,43 +4,53 @@
 
 # Vagamundo
 
-*A sua plataforma inteligente de busca de emprego e aceleração de carreira — rodando 100% na sua máquina.*
+*A sua plataforma inteligente de busca de emprego e aceleração de carreira — para qualquer profissão e mercado, rodando 100% na sua máquina.*
 
-O **Vagamundo** é um ecossistema completo e local para profissionais buscarem vagas, avaliarem compatibilidade com Inteligência Artificial, gerarem currículos e cartas sob medida e acompanharem todo o pipeline de candidaturas e evolução técnica.
+O **Vagamundo** é um ecossistema completo, *whitelabel* e local para profissionais de **qualquer área** (tecnologia, gestão, finanças, agronegócio, marketing, comunicação, engenharia, saúde, operações e mais) buscarem vagas no Brasil e no exterior, minerarem contatos diretos de recrutadores, avaliarem compatibilidade com Inteligência Artificial, gerarem currículos e cartas sob medida e acompanharem todo o pipeline de candidaturas e evolução profissional.
+
+- **Guia completo de primeira instalação:** [SETUP.md](SETUP.md)
+- **Documentação técnica e arquitetural:** [docs/README.md](docs/README.md)
 
 ---
 
 ## Principais Funcionalidades
 
 ### 1. Busca Multicanal em 24 Portais de Vagas
-O Vagamundo agrega oportunidades de 24 portais nacionais e internacionais em uma interface unificada:
-- **Portais ATS Corporativos:** Gupy, Sólides Vagas, Greenhouse, Ashby e DigAÍ (entrevistas por IA).
-- **Portais Especializados em Tecnologia e Comunicação:** Programathor, GeekHunter, Trampos, FreeHire (agregador técnico global), Habr Career e Hacker News.
-- **Portais Generalistas, Executivos e Internacionais:** VAGAS.com, InfoJobs Brasil, Empregos.com.br, Michael Page, Robert Half, LinkedIn e HeadHunter (`hh.ru`).
-- **Vagas 100% Remotas:** Remotar (Brasil), Jobicy e RemoteOK (Internacionais).
-- **Vagas Afirmativas & Nichos:** PCD Online (exclusivo para PcD), Agrobase e AGROSearch (agronegócio e ciências agrárias).
+O Vagamundo agrega oportunidades de **24 portais nacionais e internacionais** (executados como Agent Skills via Bun em `.agents/skills/`) em uma interface unificada:
+- **Portais ATS Corporativos:** Gupy (`gupy-search`), Sólides Vagas (`solides-search`), Greenhouse (`greenhouse-search`), Ashby (`ashby-search`) e DigAÍ (`digai-search`, entrevistas por IA).
+- **Portais Generalistas, Executivos e Especialistas:** VAGAS.com (`vagas-search`), InfoJobs Brasil (`infojobs-search`), Empregos.com.br (`empregos-search`), Michael Page (`michaelpage-search`), Robert Half (`roberthalf-search`) e LinkedIn (`linkedin-search`).
+- **Tecnologia, Produto, Design e Comunicação:** Programathor (`programathor-search`), GeekHunter (`geekhunter-search`), Trampos (`trampos-search`), FreeHire (`freehire-search`) e Hacker News *Who is Hiring* (`hn-search`).
+- **Vagas 100% Remotas (Brasil e Exterior):** Remotar (`remotar-search`), Jobicy (`jobicy-search`) e RemoteOK (`remoteok-search`).
+- **Rússia & Eurásia (com tradução automática PT→EN):** HeadHunter (`hh-search` em `hh.ru`) e Habr Career (`habrcareer-search` em `career.habr.com`), integrados ao escopo remoto global com tradução automática de termos de busca em português para inglês em `scrape_run.py`.
+- **Vagas Afirmativas & Agronegócio:** PCD Online (`pcd-search`, exclusivo para PcD), Agrobase (`agrobase-search`) e AGROSearch (`agrosearch-search`).
 
-### 2. Mapa Interativo (Brasil & Mundo)
-- Visualização cartográfica interativa da distribuição de vagas por estado brasileiro (27 UFs) e por país (172 nações).
-- Identificação instantânea de pólos de contratação e filtros rápidos para vagas 100% remotas nacionais ou internacionais.
+### 2. Radar de Recrutadores & Barra de Pesquisa LinkedIn
+- **Mineração de E-mails Diretos (`@`):** Consolida publicações com e-mail direto de recrutadores a partir de Hacker News, GitHub Vagas BR, Remotive, 9 portais CLI ao vivo e banco local, com higienização estrita, trecho contextual do contato e trava anti-duplicação via `application_ledger`.
+- **Barra de Pesquisa LinkedIn (`LinkedinSearchBarComponent`):**
+  - Sorteia automaticamente uma área do seu currículo ao abrir e monta queries booleanas enxutas (máx. 4 operadores para evitar bugs do feed do LinkedIn).
+  - **Expansão Bilíngue (PT↔EN) + Variação por IA:** Combina dicionário bilíngue instantâneo para múltiplas profissões com expansão dinâmica via IA (`POST /api/recruiters/expand-search-term`).
+  - **Presets prontos:** *Vagas*, *Hiring + E-mail*, *E-mail / CV* e *Só termos*, além de link fallback para **Google X-Ray**.
+  - **Avaliação Inline por IA:** Ao colar posts do LinkedIn (com ou sem e-mail), a IA avalia imediatamente a aderência e exibe o card inline abaixo da caixa de colagem com botões **"Me interessa"** e **"Descartar"**.
 
-### 3. Inteligência Artificial Multi-Provedor
-- Suporte nativo e configurável a **Google Gemini**, **Anthropic Claude** e **OpenAI** (com compatibilidade para modelos locais via **Ollama**).
-- **Triagem Rápida & Fit Score:** Avaliação automatizada de aderência (0 a 100) cruzando os requisitos de cada vaga com suas experiências e formação reais.
-- **Detecção de Fraudes e Golpes:** Identificação em tempo real de anúncios suspeitos (pedidos de Pix, dados bancários ou canais ilegítimos).
+### 3. Modo Automático Contínuo (Anti-Ban) e Verificação de Liveness
+- **Loop Autônomo para Vagas e Recrutadores:** Sorteia áreas do currículo sem repetir termos recentes, varre os portais ou feeds de recrutadores, avalia com IA e promove automaticamente as oportunidades compatíveis para **Me Interessam** (`/me-interessam`).
+- **Proteção Anti-Ban e Reversão:** Intervalo configurável com jitter, backoff automático ao detectar rate-limit (`429`), botão para pular espera (`skip-cooldown`) e reversão atômica (`undo`).
+- **Verificação de Vagas Ativas (`Liveness Check`):** Sondagem assíncrona com proteção anti-SSRF e validação TLS (`POST /api/jobs/liveness`) para identificar anúncios encerrados ou expirados antes de investir tempo na candidatura.
 
-### 4. Geração Sob Medida de Currículos e Cartas
-- Geração instantânea de **Cartas de Apresentação** persuasivas e personalizadas para a empresa e o cargo.
-- Adaptação de **Currículos Técnicos** em LaTeX (com compilação automática para PDF) destacando as competências exigidas pela vaga.
+### 4. Mapa Interativo (Brasil & Mundo)
+- Visualização cartográfica interativa em SVG puro (`GeoMapComponent`) da distribuição de vagas por estado brasileiro (27 UFs) e por país (172 nações), sem dependências externas.
+- Alternância entre modo **Volume de Vagas** e **Notas da Triagem IA**, com filtros rápidos para vagas remotas nacionais ou internacionais.
 
-### 5. Dossiê Preparatório para Entrevistas
-- Simulação de perguntas técnicas prováveis baseadas na stack da vaga.
-- Questões comportamentais e preparação de respostas no método STAR.
-- Perguntas estratégicas sugeridas para o candidato fazer ao recrutador ou gestor técnico.
+### 5. Inteligência Artificial Multi-Provedor
+- Suporte nativo e configurável a **Google Gemini** (padrão `gemini-2.5-flash`), **Anthropic Claude** e **OpenAI** (com compatibilidade para modelos locais via **Ollama**).
+- **Triagem Rápida & Fit Score:** Avaliação automatizada de aderência (0 a 100) cruzando os requisitos de cada vaga com suas experiências, senioridade, idiomas e formação reais.
+- **Detecção de Fraudes e Golpes:** Identificação em tempo real de anúncios suspeitos (pedidos de Pix, pagamento antecipado ou dados bancários).
 
-### 6. Pipeline de Candidaturas & Evolução Profissional
-- Acompanhamento do ciclo de vida das candidaturas (Interesse, Aplicada, Entrevista, Aprovada, Rejeitada).
-- **Aba de Evolução:** Mapeamento de competências demandadas pelas vagas monitoradas e sugestões de capacitação técnica (*upskilling*).
+### 6. Geração Sob Medida de Currículos, Cartas e Dossiês de Entrevista
+- Geração instantânea de **Cartas de Apresentação** (`xelatex`) persuasivas e personalizadas para a empresa e o cargo.
+- Adaptação de **Currículos Profissionais** em LaTeX (`lualatex`, com compilação automática e segura para PDF) destacando as competências relevantes da sua trajetória.
+- **Dossiê Preparatório para Entrevistas:** Perguntas técnicas/específicas da função, questões comportamentais no método STAR e perguntas estratégicas para fazer ao recrutador.
+- **Pipeline de Candidaturas & Evolução:** Acompanhamento completo do funil (`/candidaturas`) e mapeamento de lacunas de competências (`/evolucao`).
 
 ---
 
@@ -48,14 +58,14 @@ O Vagamundo agrega oportunidades de 24 portais nacionais e internacionais em uma
 
 ```
 vagamundo/
-├── frontend/             # SPA Angular 17+ (Signals, Standalone Components, Design Dark)
+├── frontend/             # SPA Angular 17+ (Signals, Standalone Components, Design Dark/Light)
 ├── backend/
-│   ├── api/              # API Gateway FastAPI assíncrona (rotas REST, schemas Pydantic)
-│   ├── core/             # Serviços de negócio (avaliador, rastreador, perfil)
-│   ├── db/               # SQLite primário (modo WAL) e repositório de persistência
-│   └── tools/            # Utilitários de compilação, scraping e integração com IA
+│   ├── api/              # API Gateway FastAPI assíncrona (9 módulos de rotas REST, CSRF/HostCheck)
+│   ├── core/             # Serviços de negócio (scanner, evaluator, tracker, auto_mode, recruiters/)
+│   ├── db/               # SQLite primário (modo WAL) e repositórios modulares (*_repo.py)
+│   └── tools/            # Utilitários de compilação LaTeX, scraping, privacidade e pacote ia/
 ├── .agents/skills/       # 24 Scrapers de portais de vagas em TypeScript (Bun)
-└── docs/                 # Documentação arquitetural detalhada e ADRs
+└── docs/                 # Documentação arquitetural detalhada e ADRs (veja docs/README.md)
 ```
 
 ---
@@ -80,14 +90,14 @@ cd vagamundo
 npm run install:all
 ```
 
-> **Instalação limpa:** **0 arquivos versionados** precisam ser alterados após o clone. Todo perfil, CV e busca funcionam direto pela interface web (salvos em `backend/documents/perfil/` e `data/`, já no `.gitignore`).
+> **Instalação limpa:** **0 arquivos versionados** precisam ser alterados após o clone. Todo perfil, upload de PDF (`backend/documents/cv/` e `backend/documents/linkedin/`) e geração de buscas (`backend/documents/perfil/`) funcionam direto pela interface web (já protegidos no `.gitignore`).
 
 ### 2. Configurar a Chave de Inteligência Artificial *(Opcional)*
 Você pode cadastrar sua chave direto pela aba **Configurações** da interface web **ou**, se preferir usar arquivo, copiar `.env.example` para **1 único `.env` na raiz** (o **Google Gemini** possui plano gratuito):
 ```bash
 cp .env.example .env
 ```
-No arquivo `.env` (o `AI_PROVIDER=auto` já vem pronto no exemplo; basta preencher a chave desejada):
+No arquivo `.env` (`AI_PROVIDER=auto` e `GEMINI_MODEL=gemini-2.5-flash` já vêm configurados como padrão):
 ```env
 AI_PROVIDER=auto
 AI_DATA_CONSENT=yes
@@ -103,7 +113,7 @@ Acesse a interface no navegador:
 - **Painel Web:** [http://localhost:4200](http://localhost:4200)
 - **API Swagger / Docs:** [http://127.0.0.1:8765/docs](http://127.0.0.1:8765/docs)
 
-Para instruções detalhadas de configuração, consulte o [SETUP.md](SETUP.md).
+Para instruções detalhadas de instalação, troubleshooting e configuração de repositório privado / `skip-worktree`, consulte o [SETUP.md](SETUP.md) e a documentação técnica em [docs/README.md](docs/README.md).
 
 ---
 

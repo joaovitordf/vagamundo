@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -29,7 +29,7 @@ const NOMES: Record<string, string> = {
   templateUrl: './meu-perfil.component.html',
   styleUrl: './meu-perfil.component.css'
 })
-export class MeuPerfilComponent implements OnInit {
+export class MeuPerfilComponent implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -65,6 +65,13 @@ export class MeuPerfilComponent implements OnInit {
         this.focusSchemaField(focusKey);
       }
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.focusTimer) {
+      clearTimeout(this.focusTimer);
+      this.focusTimer = null;
+    }
   }
 
   private focusSchemaField(key: string): void {
@@ -174,11 +181,15 @@ export class MeuPerfilComponent implements OnInit {
     if (input) input.click();
   }
 
-  onFileSelected(event: any): void {
+  onFileSelected(event: any, explicitKind?: 'cv' | 'linkedin'): void {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    const kind: 'cv' | 'linkedin' = explicitKind || this.currentUploadKind;
+    this.uploadFile(file, kind);
+  }
 
+  uploadFile(file: File, kind: 'cv' | 'linkedin'): void {
     if (file.size > 10 * 1024 * 1024) {
       this.uploadStatus.set('Arquivo grande demais (máximo 10 MB).');
       return;
@@ -188,7 +199,7 @@ export class MeuPerfilComponent implements OnInit {
     const reader = new FileReader();
     reader.onload = () => {
       const base64Data = String(reader.result).split(',', 2)[1] || '';
-      this.api.uploadFile(this.currentUploadKind, file.name, base64Data).subscribe({
+      this.api.uploadFile(kind, file.name, base64Data).subscribe({
         next: (res) => {
           this.uploadStatus.set(`Recebido: ${res.saved}.`);
           this.loadProfile(true, () => {
@@ -245,15 +256,26 @@ export class MeuPerfilComponent implements OnInit {
         this.saving.set(false);
       },
       error: (err) => {
-        this.saveStatus.set('Não consegui salvar: ' + err.message);
+        this.saveStatus.set('Não consegui salvar: ' + (err?.error?.detail || err?.message || 'falha inesperada'));
         this.saving.set(false);
       }
     });
   }
 
+  hasFilledProfileFields(): boolean {
+    const keys = ['cargo', 'cargos', 'resumo', 'comportamental', 'palavras_chave_sorteio'];
+    return keys.some((k) => {
+      const val = this.formValues?.[k];
+      if (Array.isArray(val)) {
+        return val.some((item) => String(item || '').trim().length > 0);
+      }
+      return String(val || '').trim().length > 0;
+    });
+  }
+
   isAiDisabled(): boolean {
     if (this.isAiRunning() || this.isOrganizing()) return true;
-    if (this.allUploadedFiles().length === 0) return true;
+    if (this.allUploadedFiles().length === 0 && !this.hasFilledProfileFields()) return true;
     if (this.showConfirmBox() && !this.confirmedPrivacy) return true;
     return false;
   }

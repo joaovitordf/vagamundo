@@ -19,7 +19,7 @@
     </button>
 
     <!-- Indicador de Status do Motor de IA -->
-    <div class="motor-badge" title="Motor ativo do assistente de IA">
+    <div class="motor-badge" [class.motor-badge--inactive]="!engineAvailable" title="Motor ativo do assistente de IA">
       <i class="bi bi-cpu"></i>
       <span>{{ engineLabel }}</span>
     </div>

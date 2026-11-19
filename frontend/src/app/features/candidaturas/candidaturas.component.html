@@ -258,8 +258,12 @@
                       <i class="bi bi-file-earmark-pdf"></i> CV
                     </a>
                   } @else {
-                    <button type="button" class="btn-material-add cv" (click)="generateCv(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')" title="Gerar Currículo Adaptado com IA em PDF">
-                      <i class="bi bi-plus" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')"></i> CV
+                    <button type="button"
+                            class="btn-material-add cv"
+                            (click)="generateCv(app)"
+                            [disabled]="!getAppUrl(app) || generatingDoc() === (getAppUrl(app) + '_cv')"
+                            [title]="getAppUrl(app) ? 'Gerar Currículo Adaptado com IA em PDF' : 'URL da vaga não disponível para gerar currículo'">
+                      <i class="bi bi-plus" [class.spin]="generatingDoc() === (getAppUrl(app) + '_cv')"></i> CV
                     </button>
                   }
 
@@ -268,8 +272,12 @@
                       <i class="bi bi-envelope"></i> Carta
                     </a>
                   } @else {
-                    <button type="button" class="btn-material-add carta" (click)="generateCarta(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')" title="Gerar Carta de Apresentação com IA em PDF">
-                      <i class="bi bi-plus" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')"></i> Carta
+                    <button type="button"
+                            class="btn-material-add carta"
+                            (click)="generateCarta(app)"
+                            [disabled]="!getAppUrl(app) || generatingDoc() === (getAppUrl(app) + '_carta')"
+                            [title]="getAppUrl(app) ? 'Gerar Carta de Apresentação com IA em PDF' : 'URL da vaga não disponível para gerar carta de apresentação'">
+                      <i class="bi bi-plus" [class.spin]="generatingDoc() === (getAppUrl(app) + '_carta')"></i> Carta
                     </button>
                   }
 
@@ -282,16 +290,12 @@
               </td>
               <td class="text-right">
                 <div class="actions-cell">
-                  <button type="button" class="btn-action-icon btn-action-carta" (click)="generateCarta(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')" [title]="(app.pdf_carta || app.cover_letter_file) ? 'Refazer Carta de Apresentação com IA' : 'Gerar Carta de Apresentação com IA'">
-                    <i class="bi bi-envelope" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_carta')"></i>
-                  </button>
-
-                  <button type="button" class="btn-action-icon btn-action-cv" (click)="generateCv(app)" [disabled]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')" [title]="(app.pdf_cv || app.cv_file) ? 'Refazer Currículo com IA' : 'Gerar Currículo Adaptado com IA'">
-                    <i class="bi bi-file-earmark-person" [class.spin]="generatingDoc() === ((app.url || app.job_url || app.source) + '_cv')"></i>
-                  </button>
-
-                  <button type="button" class="btn-prep-interview-action" (click)="prepareInterview(app)" [disabled]="preparingInterview() === (app.url || app.job_url || app.source)" [title]="app.pdf_entrevista ? 'Regerar Dossiê de Entrevista com IA' : 'Gerar Dossiê de Entrevista com IA'">
-                    <i class="bi bi-person-video3" [class.spin]="preparingInterview() === (app.url || app.job_url || app.source)"></i>
+                  <button type="button"
+                          class="btn-prep-interview-action"
+                          (click)="prepareInterview(app)"
+                          [disabled]="!getAppUrl(app) || preparingInterview() === getAppUrl(app)"
+                          [title]="!getAppUrl(app) ? 'URL da vaga não disponível para preparar entrevista' : (app.pdf_entrevista ? 'Regerar Dossiê de Entrevista com IA' : 'Gerar Dossiê de Entrevista com IA')">
+                    <i class="bi bi-person-video3" [class.spin]="preparingInterview() === getAppUrl(app)"></i>
                   </button>
 
                   <button type="button" class="btn-history-action" (click)="openHistoryModal(app)" title="Histórico de Entrevistas & Feedbacks">
@@ -311,9 +315,9 @@
                     <button type="button"
                             class="btn-action-reopen"
                             (click)="reopenInRecruiters(app)"
-                            [disabled]="reopeningKey() === (app.url || app.job_url || app.id)"
+                            [disabled]="isReopening(app)"
                             title="Desfazer registro e devolver para a aba Recrutadores">
-                      <i class="bi bi-arrow-counterclockwise"></i> Reabrir
+                      <i class="bi bi-arrow-counterclockwise" [class.spin]="isReopening(app)"></i> Reabrir
                     </button>
                   }
 
@@ -351,9 +355,9 @@
             <button type="button"
                     class="btn-action-reopen"
                     (click)="reopenInRecruiters(selectedApp())"
-                    [disabled]="reopeningKey() === (selectedApp().url || selectedApp().job_url || selectedApp().id)"
+                    [disabled]="isReopening(selectedApp())"
                     title="Devolver esta oportunidade para a aba Recrutadores">
-              <i class="bi bi-arrow-counterclockwise"></i> Reabrir em Recrutadores
+              <i class="bi bi-arrow-counterclockwise" [class.spin]="isReopening(selectedApp())"></i> Reabrir em Recrutadores
             </button>
           }
           <button type="button" class="btn-close-modal" (click)="closeHistoryModal()" title="Fechar janela">
@@ -521,7 +525,7 @@
               <select id="eventStage" [(ngModel)]="formStage" class="form-control">
                 <option value="Triagem RH">Triagem RH (Screening)</option>
                 <option value="Entrevista Técnica">Entrevista Técnica</option>
-                <option value="Live Coding">Live Coding / Teste Prático</option>
+                <option value="Etapa Técnica / Case">Etapa Técnica / Case / Teste Prático</option>
                 <option value="Entrevista com Gestor">Entrevista com Gestor</option>
                 <option value="Apresentação de Case">Apresentação de Case</option>
                 <option value="Proposta Recebida">Proposta Recebida</option>

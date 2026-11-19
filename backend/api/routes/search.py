@@ -12,6 +12,7 @@ from backend.api.models import SearchRequest, SearchStatusResponse
 from backend.api.security import verify_csrf_token
 from backend.core.evaluator import EvaluatorService
 from backend.core.scanner import ScannerService
+from backend.tools import ai_providers
 
 router = APIRouter(tags=["Search"])
 
@@ -41,7 +42,11 @@ def search_status(
     evaluator: EvaluatorService = Depends(get_evaluator),
 ) -> Dict[str, Any]:
     """Check status and output summary of the running search job."""
-    return {**scanner.status(), "batch": evaluator.batch_status()}
+    return {
+        **scanner.status(),
+        "batch": evaluator.batch_status(),
+        "provider": ai_providers.get_ai_provider().get_info(),
+    }
 
 
 @router.get("/stream")

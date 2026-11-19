@@ -319,6 +319,21 @@ export interface PreviouslyContactedEmail {
   application_id?: number;
 }
 
+export interface RecruiterPostAiDetails {
+  subscores?: {
+    technical?: number;
+    experience?: number;
+    behavioral?: number;
+    career?: number;
+  };
+  strengths?: string[];
+  gaps?: string[];
+  location_verdict?: string;
+  language_gate?: string;
+  language_note?: string;
+  guard_alert?: string;
+}
+
 export interface RecruiterPost {
   id: number;
   emails: string[];
@@ -326,6 +341,7 @@ export interface RecruiterPost {
   title: string;
   company: string;
   portal: string;
+  source?: string | null;
   url?: string;
   location?: string;
   work_model?: string;
@@ -342,6 +358,7 @@ export interface RecruiterPost {
   ai_summary?: string | null;
   ai_best_email?: string | null;
   ai_model?: string | null;
+  ai_details?: RecruiterPostAiDetails | null;
   ai_evaluated_at?: string | null;
   auto_promoted?: number;
   auto_run_id?: string | null;

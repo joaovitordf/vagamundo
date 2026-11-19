@@ -12,9 +12,9 @@ from typing import Any
 from ._facade import facade, painel_perfil, posting_signals, rank_state
 
 _CALIBRATION_ANCHORS = """CALIBRAÇÃO POR ÂNCORAS (USE COMO REFERÊNCIA DE NOTA):
-- Âncora A (Júnior/Pleno aderente com stack principal e local/remoto compatível): technical ~86, experience ~88, behavioral ~80, career ~88 -> nota ponderada ~86 (Strong Fit).
-- Âncora B (Júnior/Pleno/New Grad com base sólida no ecossistema pedindo tecnologia/framework irmão equivalente na mesma área): technical ~72, experience ~80, behavioral ~75, career ~78 -> nota ~76 (Strong/Good Fit); registre a adaptação em gaps SEM aplicar teto 55.
-- Âncora C (Vaga Sênior/Lead/Staff ou 5+ anos exclusivos sem trilha Júnior/Pleno, mesmo com stack idêntica): technical ~85, experience <= 20, behavioral ~70, career <= 35 -> teto máximo 45 (Weak Fit)."""
+- Âncora A (Vaga na senioridade-alvo do perfil com competências principais e local/remoto compatíveis): technical ~86, experience ~88, behavioral ~80, career ~88 -> nota ponderada ~86 (Strong Fit).
+- Âncora B (Vaga na senioridade-alvo com base sólida na área pedindo ferramenta ou metodologia equivalente/transferível no mesmo domínio): technical ~72, experience ~80, behavioral ~75, career ~78 -> nota ~76 (Strong/Good Fit); registre a adaptação em gaps SEM aplicar teto 55.
+- Âncora C (Vaga que exige exclusivamente senioridade/anos de experiência acima da faixa-alvo declarada no perfil, mesmo na mesma área): technical ~85, experience <= 20, behavioral ~70, career <= 35 -> teto máximo 45 (Weak Fit)."""
 
 _LOW_YIELD_SEARCH_TERMS: set[str] = {
     "css3",
@@ -39,19 +39,33 @@ _LOCATION_STOPWORDS: set[str] = {
 }
 
 _STATE_ALIAS_GROUPS: tuple[tuple[str, ...], ...] = (
-    ("sp", "sao paulo"),
-    ("mg", "minas gerais"),
-    ("rj", "rio de janeiro"),
-    ("rs", "rio grande do sul", "porto alegre"),
-    ("pr", "parana", "curitiba"),
-    ("sc", "santa catarina", "florianopolis"),
+    ("ac", "acre", "rio branco"),
+    ("al", "alagoas", "maceio"),
+    ("ap", "amapa", "macapa"),
+    ("am", "amazonas", "manaus"),
     ("ba", "bahia", "salvador"),
-    ("pe", "pernambuco", "recife"),
     ("ce", "ceara", "fortaleza"),
     ("df", "distrito federal", "brasilia"),
-    ("go", "goias", "goiania"),
     ("es", "espirito santo", "vitoria"),
-    ("bh", "belo horizonte"),
+    ("go", "goias", "goiania"),
+    ("ma", "maranhao", "sao luis"),
+    ("mt", "mato grosso", "cuiaba"),
+    ("ms", "mato grosso do sul", "campo grande"),
+    ("mg", "minas gerais", "belo horizonte", "bh"),
+    ("pa", "para", "belem"),
+    ("pb", "paraiba", "joao pessoa"),
+    ("pr", "parana", "curitiba"),
+    ("pe", "pernambuco", "recife"),
+    ("pi", "piaui", "teresina"),
+    ("rj", "rio de janeiro"),
+    ("rn", "rio grande do norte", "natal"),
+    ("rs", "rio grande do sul", "porto alegre"),
+    ("ro", "rondonia", "porto velho"),
+    ("rr", "roraima", "boa vista"),
+    ("sc", "santa catarina", "florianopolis"),
+    ("sp", "sao paulo"),
+    ("se", "sergipe", "aracaju"),
+    ("to", "tocantins", "palmas"),
 )
 
 
@@ -163,7 +177,10 @@ def _apply_seniority_ceiling(
 ) -> tuple[int, str, str]:
     """Trava determinística de segurança para senioridade acima da faixa-alvo."""
     rules = facade()._load_candidate_triage_rules()
-    accept_set = set(rules.get("accept_seniority") or ["junior", "pleno"])
+    raw_accept = rules.get("accept_seniority")
+    if not raw_accept:
+        return score, verdict, summary
+    accept_set = set(raw_accept)
 
     title_str = (title or "").lower()
     sig = signals if isinstance(signals, dict) else {}
@@ -172,10 +189,21 @@ def _apply_seniority_ceiling(
     body_has_accessible = bool(sig.get("body_has_accessible_level"))
     min_years = sig.get("min_years_required")
 
-    senior_title_pat = r"\b(senior|sênior|sr\.?|tech lead|staff|principal|head|engineering manager|gerente|coordenador|diretor|vp)\b"
+    disallowed_title_terms: list[str] = []
+    if "senior" not in accept_set:
+        disallowed_title_terms.extend(["senior", "sênior", r"sr\.?"])
     if "especialista" not in accept_set:
-        senior_title_pat = r"\b(senior|sênior|sr\.?|especialista|tech lead|staff|principal|head|engineering manager|gerente|coordenador|diretor|vp)\b"
-    is_senior_title = bool(re.search(senior_title_pat, title_str))
+        disallowed_title_terms.append("especialista")
+    if "staff" not in accept_set and "lead" not in accept_set:
+        disallowed_title_terms.extend(["tech lead", "staff", "principal"])
+    if "gestao" not in accept_set and "diretoria" not in accept_set:
+        disallowed_title_terms.extend(["head", "engineering manager", "gerente", "coordenador", "diretor", "vp"])
+
+    is_senior_title = (
+        bool(re.search(rf"\b({'|'.join(disallowed_title_terms)})\b", title_str))
+        if disallowed_title_terms
+        else False
+    )
     has_accessible_level = bool(
         re.search(r"\b(junior|júnior|jr\.?|pleno|mid|mid-level|new grad|entry|est[aá]gio|intern|trainee)\b", title_str)
     )
@@ -185,7 +213,11 @@ def _apply_seniority_ceiling(
         above_levels.add("especialista")
     above_levels -= accept_set
 
-    years_mismatch = isinstance(min_years, (int, float)) and min_years >= 5 and ("senior" not in accept_set)
+    years_mismatch = (
+        isinstance(min_years, (int, float))
+        and min_years >= 5
+        and not bool(accept_set & {"senior", "especialista", "staff", "lead", "gestao", "diretoria"})
+    )
     body_mismatch = (sig_mismatch and any(lvl in above_levels for lvl in sig_levels)) or years_mismatch
 
     triggered = (is_senior_title and not has_accessible_level) or (
@@ -435,9 +467,9 @@ def triar_vaga_rapida(url: str, job_data: dict | None = None) -> dict:
     prompt_head = f"""Você é o triador rigoroso de vagas do Vagamundo. Avalie o encaixe real entre o perfil e a vaga usando SOMENTE fatos do perfil.
 
 RUBRICA OFICIAL (SUBNOTAS 0..100 E PESOS CANÔNICOS):
-1. `technical` (30%): aderência à stack principal, fundamentos e entregas comprovadas (NÃO restrinja a versão específica; em níveis Júnior/Pleno/New Grad, trate frameworks irmãos dentro de ecossistema já dominado como transferíveis na faixa 68–80 sem aplicar punição de stack ausente; reserve <= 40 apenas quando stack central exclusiva estiver totalmente ausente do perfil).
-2. `experience` (25%): senioridade e tempo real de experiência vs `Senioridade-alvo` do perfil. Se exigir Sênior/5+ anos/Tech Lead/Staff/Gerência sem trilha Júnior/Pleno paralela, atribua `experience` <= 25 (isso ativa o teto rígido 45 Weak Fit).
-3. `behavioral` (15%): autonomia, colaboração e práticas de engenharia exigidas (quando pouco detalhado no anúncio, base neutra 70 para vagas aderentes).
+1. `technical` (30%): aderência às competências principais, ferramentas, fundamentos e entregas comprovadas da área (NÃO restrinja a versão específica; em níveis compatíveis com o perfil, trate ferramentas, metodologias ou frameworks equivalentes dentro de domínio já comprovado como transferíveis na faixa 68–80 sem aplicar punição de competência ausente; reserve <= 40 apenas quando a especialidade central exclusiva estiver totalmente ausente do perfil).
+2. `experience` (25%): senioridade e tempo real de experiência vs `Senioridade-alvo` do perfil. Se exigir exclusivamente senioridade/anos acima da faixa aceita no perfil sem trilha compatível paralela, atribua `experience` <= 25 (isso ativa o teto rígido 45 Weak Fit).
+3. `behavioral` (15%): autonomia, colaboração e práticas profissionais exigidas (quando pouco detalhado no anúncio, base neutra 70 para vagas aderentes).
 4. `career` (30%): alinhamento de cargo, modelo/localidade, regime e idiomas aceitos no perfil.
 
 GATES DE ELEGIBILIDADE (EXTRAIA EVIDÊNCIA LITERAL ANTES DE PONTUAR):
@@ -774,7 +806,7 @@ def sortear_palavras_chave_busca(
         else "- Retorne no máximo 2 termos (cada termo com 1 a 3 palavras, sem vírgulas nem operadores booleanos)."
     )
     json_example = (
-        '{"keywords": ["termo1"], "rationale": "Frase curta explicando a tecnologia escolhida."}'
+        '{"keywords": ["termo1"], "rationale": "Frase curta explicando a competência ou especialidade escolhida."}'
         if n_terms == 1
         else '{"keywords": ["termo1", "termo2"], "rationale": "Frase curta explicando o eixo escolhido."}'
     )

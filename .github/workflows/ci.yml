@@ -49,12 +49,11 @@ jobs:
           python-version: "3.12"
       - run: pip install pyyaml
       - run: python backend/tools/lint_skills.py
-      - name: Framework version guard (upstream template only)
-        if: github.repository == 'MadsLorentzen/ai-job-search'
+      - name: Framework version guard
         run: python backend/tools/check_framework_version.py
 
   security-guards:
-    name: Security guards (permissions, gitignore, manifests)
+    name: Security guards (permissions, gitignore, manifests, privacy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -64,6 +63,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python backend/tools/security_guards.py
+      - run: python backend/tools/check_privacy.py
 
   python-tests:
     name: Python tool tests (Python ${{ matrix.python-version }})
@@ -202,19 +202,17 @@ jobs:
         run: |
           python3 backend/tools/verify_pdf.py backend/cv/main_example.pdf --min-chars 100
           python3 backend/tools/verify_pdf.py backend/cover_letters/cover_example.pdf --min-chars 100
-      - name: Assert stock PDF structure (upstream template only)
-        if: github.repository == 'MadsLorentzen/ai-job-search'
+      - name: Assert stock PDF structure
         run: |
           python3 backend/tools/verify_pdf.py backend/cv/main_example.pdf \
-            --pages 2 \
             --ascii-dates \
             --contains '[your.email@example.com]' \
-            --contains 'Professional Experience' \
-            --contains 'Achievement'
+            --contains 'Experiência Profissional' \
+            --contains 'Conquista'
           python3 backend/tools/verify_pdf.py backend/cover_letters/cover_example.pdf \
             --pages 1 \
             --contains 'your.email@example.com' \
-            --contains 'Dear [Hiring Manager / Team]'
+            --contains 'Olá, [Nome da pessoa recrutadora / equipe],'
 
   discover-clis:
     # The matrix is discovered, not hardcoded, so a portal CLI added in a fork
@@ -268,8 +266,7 @@ jobs:
         working-directory: .agents/skills/${{ matrix.tool }}/cli
 
   placeholder-integrity:
-    name: Placeholder integrity (upstream template only)
-    if: github.repository == 'MadsLorentzen/ai-job-search'
+    name: Placeholder integrity
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

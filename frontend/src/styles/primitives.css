@@ -1,0 +1,240 @@
+/* ==========================================================================
+   Vagamundo Shared UI Primitives
+   Estilos base reutilizados entre features para evitar duplicação por componente
+   ========================================================================== */
+
+@keyframes vc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vc-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: vc-spin 0.8s linear infinite;
+}
+
+.vc-spinner.large {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+  color: var(--vc-blue);
+  margin-bottom: 0.75rem;
+}
+
+.title-with-badge {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.title-with-badge h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--vc-text);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.badge-total {
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--vc-blue);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+}
+
+.panel-desc {
+  margin: 0;
+  color: var(--vc-muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.loading-state {
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: var(--vc-muted);
+}
+
+.empty-state {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--vc-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.empty-icon {
+  font-size: 2.4rem;
+  color: var(--vc-muted);
+  opacity: 0.55;
+}
+
+.btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.55rem 1.15rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.btn-action.compact-btn {
+  padding: 0.4rem 0.72rem;
+  font-size: 0.8rem;
+}
+
+.btn-action.primary {
+  background: var(--vc-green, #10b981);
+  color: #fff;
+}
+
+.btn-action.primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-action.primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-action.secondary {
+  background: var(--vc-surface-2);
+  color: var(--vc-text);
+  border: 1px solid var(--vc-border);
+}
+
+.btn-action.secondary:hover:not(:disabled) {
+  border-color: var(--vc-blue);
+  color: var(--vc-blue);
+}
+
+.btn-action.secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-action.linkedin-btn {
+  background: #0a66c2;
+  color: #fff;
+}
+
+.btn-action.linkedin-btn:hover {
+  background: #004182;
+  transform: translateY(-1px);
+}
+
+.link-external {
+  color: var(--vc-blue);
+  text-decoration: none;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.link-external:hover {
+  text-decoration: underline;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  gap: 1.25rem;
+}
+
+.job-card {
+  min-width: 0;
+  max-width: 100%;
+  background: var(--vc-bg-surface);
+  border: 1px solid var(--vc-border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.job-card:hover {
+  border-color: var(--vc-blue);
+}
+
+.job-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.75rem;
+}
+
+.job-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--vc-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.job-card__company {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 4px 0 0 0;
+  color: var(--vc-muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.job-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  background: var(--vc-bg-2);
+  border: 1px solid var(--vc-border);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--vc-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

@@ -14,6 +14,7 @@ from backend.db.repository import Repository
 DEAD_PATTERNS = [
     re.compile(r"vaga\s+(?:foi\s+)?encerrada", re.I),
     re.compile(r"processo\s+seletivo\s+(?:foi\s+)?encerrado", re.I),
+    re.compile(r"inscri[çc][õo]es\s+(?:foram\s+)?encerradas", re.I),
     re.compile(r"vaga\s+(?:n[ãa]o\s+est[áa]\s+mais\s+dispon[íi]vel|desativada|expirada)", re.I),
     re.compile(r"esta\s+oportunidade\s+n[ãa]o\s+est[áa]\s+mais\s+aberta", re.I),
     re.compile(r"job\s+(?:is\s+)?no\s+longer\s+available", re.I),
@@ -73,9 +74,16 @@ class LivenessService:
                 except httpx.HTTPError:
                     resp = None
 
-                # Fallback to GET if HEAD failed, returned 405 Method Not Allowed, or returned 403
+                # Fallback to GET if HEAD failed, returned 405/403, or returned 200 with empty body
                 if resp is None or resp.status_code in (405, 403):
                     resp = await client.get(url, timeout=self.timeout, follow_redirects=True)
+                elif resp.status_code == 200 and not getattr(resp, "text", ""):
+                    try:
+                        get_resp = await client.get(url, timeout=self.timeout, follow_redirects=True)
+                        if isinstance(getattr(get_resp, "status_code", None), int):
+                            resp = get_resp
+                    except httpx.HTTPError:
+                        pass
 
                 if resp.status_code in (404, 410):
                     return {

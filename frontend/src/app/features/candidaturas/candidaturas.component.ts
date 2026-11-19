@@ -200,8 +200,20 @@ export class CandidaturasComponent implements OnInit, OnDestroy {
     this.loading.set(true);
     this.api.getApplications().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (apps) => {
-        this.applications.set(apps || []);
+        const list = apps || [];
+        this.applications.set(list);
         this.loading.set(false);
+        const cur = this.selectedApp();
+        if (cur) {
+          const curUrl = this.getAppUrl(cur);
+          const updated = list.find(a =>
+            (cur.id !== undefined && a.id === cur.id) ||
+            (curUrl && this.getAppUrl(a) === curUrl)
+          );
+          if (updated) {
+            this.selectedApp.set(updated);
+          }
+        }
       },
       error: (err) => {
         console.error('Erro ao carregar candidaturas:', err);
@@ -243,6 +255,20 @@ export class CandidaturasComponent implements OnInit, OnDestroy {
     return pickPrimaryEmail(app);
   }
 
+  getAppUrl(app: any): string {
+    return String(app?.url || app?.job_url || app?.source || '').trim();
+  }
+
+  private getReopenKey(app: any): string | number | null {
+    if (!app) return null;
+    return app.id ?? (this.getAppUrl(app) || `${app.company || ''}:${app.role || app.title || app.job_title || ''}`);
+  }
+
+  isReopening(app: any): boolean {
+    const key = this.getReopenKey(app);
+    return key !== null && this.reopeningKey() === key;
+  }
+
   copyRecruiterEmail(email: string): void {
     if (!email) return;
     const done = () => {
@@ -258,7 +284,9 @@ export class CandidaturasComponent implements OnInit, OnDestroy {
       }, 2200);
     };
     if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(email).then(done).catch(done);
+      navigator.clipboard.writeText(email).then(done).catch(() => {
+        this.toast.error('Não foi possível copiar o e-mail para a área de transferência.');
+      });
     } else {
       done();
     }
@@ -272,7 +300,7 @@ export class CandidaturasComponent implements OnInit, OnDestroy {
       return;
     }
 
-    const key = app.url || app.job_url || app.id || title;
+    const key = this.getReopenKey(app);
     this.reopeningKey.set(key);
     this.api.reopenRecruiterApplication({
       id: app.id,
@@ -316,7 +344,7 @@ export class CandidaturasComponent implements OnInit, OnDestroy {
     errorPrefix: string,
     successMsg: string
   ): void {
-    const url = app?.url || app?.job_url || app?.source;
+    const url = this.getAppUrl(app);
     if (!url) {
       this.toast.warning(missingUrlMsg);
       return;
@@ -327,15 +355,6 @@ export class CandidaturasComponent implements OnInit, OnDestroy {
         busySignal.set(null);
         this.toast.success(successMsg);
         this.loadApplications();
-        if (this.selectedApp()) {
-          this.api.getApplications().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-            next: (apps) => {
-              const updated = apps.find(a => (a.url || a.job_url || a.source) === url);
-              if (updated) this.selectedApp.set(updated);
-            },
-            error: (err) => console.warn('Falha ao atualizar detalhe selecionado:', err),
-          });
-        }
       },
       error: (err) => {
         busySignal.set(null);

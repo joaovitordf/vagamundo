@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
@@ -64,8 +65,12 @@ gupy-search: -q "fora de seção"
 """
 
 
+def _recent_iso(days_ago: int = 1) -> str:
+    return (date.today() - timedelta(days=days_ago)).isoformat()
+
+
 def job(id_, title, company, url, **extra):
-    return {"id": id_, "title": title, "company": company, "location": "Remoto", "date": extra.pop("date", "2026-11-03"),
+    return {"id": id_, "title": title, "company": company, "location": "Remoto", "date": extra.pop("date", _recent_iso()),
             "url": url, "description": extra.pop("description", ""), **extra}
 
 
@@ -314,6 +319,27 @@ class QueryAndRegionNormalization(unittest.TestCase):
             default_query="produto",
         )
         self.assertEqual([c[1] for c in out_fallback], ["jobicy-search"])
+
+    def test_international_portals_translate_pt_query_terms_to_english(self):
+        calls = [
+            (1, "gupy-search", ["-q", "antigo", "--remote"]),
+            (1, "hh-search", ["-q", "antigo", "--remote"]),
+            (1, "habrcareer-search", ["-q", "antigo", "--remote"]),
+        ]
+        updated = scrape_run._apply_query_terms(calls, "Visão Computacional")
+        by_portal = {portal: cargs for _, portal, cargs in updated}
+        self.assertEqual(by_portal["gupy-search"], ["-q", "Visão Computacional", "--remote"])
+        self.assertEqual(by_portal["hh-search"], ["-q", "Computer Vision", "--remote"])
+        self.assertEqual(by_portal["habrcareer-search"], ["-q", "Computer Vision", "--remote"])
+
+        self.assertEqual(scrape_run.translate_query_for_portal("Desenvolvedor Python", "hh-search"), "Python")
+        self.assertEqual(scrape_run.translate_query_for_portal("Desenvolvedor de Visão Computacional", "habrcareer-search"), "Computer Vision")
+        self.assertEqual(
+            scrape_run._make_portal_call("habrcareer-search", "Ciência de Dados", "remote"),
+            (1, "habrcareer-search", ["-q", "Data Science", "--remote"]),
+        )
+        self.assertIn("hh-search", scrape_run.REGION_PORTALS["remote"])
+        self.assertIn("habrcareer-search", scrape_run.REGION_PORTALS["remote"])
 
 
 if __name__ == "__main__":

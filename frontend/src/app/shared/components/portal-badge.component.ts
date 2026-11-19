@@ -1,6 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { getPortalDisplayName } from '../../core/utils/job-filters.util';
+import { PORTAL_LABELS, getPortalDisplayName } from '../../core/utils/job-filters.util';
 
 /**
  * Shared portal origin badge with distinctive LinkedIn branding (icon + LinkedIn blue)
@@ -122,7 +122,18 @@ export class PortalBadgeComponent {
 
   get displayLabel(): string {
     const custom = (this.labelOverride || '').trim();
-    if (custom) return custom;
+    if (custom) {
+      const key = this.portalKey;
+      const rawSlug = key.replace(/-search$/, '');
+      const isRawSlug =
+        key &&
+        (custom.toLowerCase() === key ||
+          custom.toLowerCase() === rawSlug ||
+          custom.toLowerCase() === key.replace(/[-_]/g, ' '));
+      if (!isRawSlug || !PORTAL_LABELS[key]) {
+        return custom;
+      }
+    }
     return getPortalDisplayName(this.portal);
   }
 

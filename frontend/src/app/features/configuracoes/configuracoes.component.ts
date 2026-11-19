@@ -17,6 +17,8 @@ export class ConfiguracoesComponent implements OnInit {
   private readonly toast = inject(ToastService);
 
   settingsData = signal<SettingsResponse | null>(null);
+  loading = signal<boolean>(true);
+  loadError = signal<string>('');
   chosenProvider = 'auto';
   consentGiven = false;
   saving = signal<boolean>(false);
@@ -32,14 +34,20 @@ export class ConfiguracoesComponent implements OnInit {
   }
 
   loadSettings(): void {
+    this.loading.set(true);
+    this.loadError.set('');
     this.api.getSettings().subscribe({
       next: (res) => {
+        this.loading.set(false);
         this.settingsData.set(res);
         this.chosenProvider = res.provider || 'auto';
         this.consentGiven = Boolean(res.consent);
         this.syncFormFromSettings(res);
       },
       error: (err) => {
+        this.loading.set(false);
+        const detail = err?.error?.detail || err?.message || 'Não foi possível carregar as configurações de IA.';
+        this.loadError.set(detail);
         console.error('Erro ao carregar configurações:', err);
         this.toast.error('Erro ao carregar configurações de IA.');
       }
@@ -52,8 +60,9 @@ export class ConfiguracoesComponent implements OnInit {
     const nextBaseUrls: Record<string, string> = {};
     const nextClear: Record<string, boolean> = {};
     for (const item of res.providers || []) {
+      const defaultModel = item.default_model || (item.id === 'gemini' ? 'gemini-2.5-flash' : '');
       nextKeys[item.id] = '';
-      nextModels[item.id] = item.model || item.default_model || '';
+      nextModels[item.id] = item.model || defaultModel;
       nextBaseUrls[item.id] = item.base_url || '';
       nextClear[item.id] = false;
     }
@@ -117,7 +126,8 @@ export class ConfiguracoesComponent implements OnInit {
     const providersPayload: Record<string, any> = {};
     for (const item of this.settingsData()?.providers || []) {
       const cfg: Record<string, any> = {};
-      const modelVal = (this.providerModels[item.id] || '').trim();
+      const defaultModel = item.default_model || (item.id === 'gemini' ? 'gemini-2.5-flash' : '');
+      const modelVal = (this.providerModels[item.id] || defaultModel).trim();
       if (modelVal) {
         cfg['model'] = modelVal;
       }

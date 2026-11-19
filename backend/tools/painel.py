@@ -40,6 +40,7 @@ WORK_CONTEXT_DIR = ROOT.parent / "work"
 APPLICATION_STATUSES = {
     "drafted": "Rascunho",
     "applied": "Enviada",
+    "screening": "Triagem",
     "interview": "Entrevista",
     "offer": "Proposta",
     "hired": "Contratação",
@@ -63,11 +64,6 @@ PERFIL_KEY = "perfil"  # o perfil não é de uma vaga: a resposta fica sob esta 
 # ---------------------------------------------------------------------------
 # Dados (funções puras, testadas sem servidor)
 # ---------------------------------------------------------------------------
-
-def results_path(day: str | None = None) -> Path:
-    """O arquivo da busca do painel: na pasta temporária, nunca no repositório."""
-    return Path(tempfile.gettempdir()) / f"painel_busca_{day or date.today().isoformat()}.json"
-
 
 def load_results(path: Path) -> dict | None:
     try:
@@ -993,26 +989,6 @@ def job_pdfs(company: str, role: str) -> dict:
     return out
 
 
-def delete_generated_document(rel_path: str) -> dict:
-    """Exclui somente um currículo gerado e os arquivos derivados do mesmo nome."""
-    rel = str(rel_path or "").replace("\\", "/").strip("/")
-    cv_root = (ROOT / "cv").resolve()
-    target = (ROOT / rel).resolve()
-    if (target.parent != cv_root or target.suffix.lower() != ".pdf"
-            or not target.name.startswith("main_") or target.name == "main_example.pdf"):
-        raise ValueError("só é permitido excluir currículos PDF gerados")
-    if not target.is_file():
-        return {"deleted": False, "path": rel, "removed": []}
-
-    removed = []
-    for suffix in (".pdf", ".tex", ".aux", ".log", ".out", ".fls", ".fdb_latexmk", ".synctex.gz"):
-        candidate = cv_root / f"{target.stem}{suffix}"
-        if candidate.is_file() and candidate.parent == cv_root:
-            candidate.unlink()
-            removed.append(str(candidate.relative_to(ROOT)).replace("\\", "/"))
-    return {"deleted": True, "path": rel, "removed": removed}
-
-
 def list_generated_documents() -> list:
     """Lista todos os PDFs gerados (currículos, cartas e dossiês de entrevista)."""
     known_jobs = []
@@ -1045,13 +1021,18 @@ def list_generated_documents() -> list:
         ("cv", "Currículo", ROOT / "cv", "main_*.pdf"),
         ("carta", "Carta de Apresentação", ROOT / "cover_letters", "cover_*.pdf"),
         ("entrevista", "Dossiê de Entrevista", ROOT / "documents" / "interview", "prep_*.pdf"),
+        ("entrevista", "Dossiê de Entrevista", ROOT / "documents" / "interview", "prep_*.md"),
     ]
+    seen_stems: set[tuple[str, str]] = set()
     for kind, label, folder, pattern in sources:
         if not folder.exists():
             continue
         for pdf in folder.glob(pattern):
             if not pdf.is_file():
                 continue
+            if (kind, pdf.stem) in seen_stems:
+                continue
+            seen_stems.add((kind, pdf.stem))
             stat = pdf.stat()
             stem = pdf.stem
             matched_company = ""
@@ -1181,81 +1162,3 @@ def get_cached_score(url: str, batch_results: dict | None = None) -> dict | None
         except (OSError, ValueError, TypeError) as exc:
             logger.warning("Failed to parse cached score for %s: %s", url, exc)
     return None
-
-
-def enriched_applications(tracker_path: Path | None = None, seen_path: Path | None = None,
-                          claude_base: Path | None = None, batch_results: dict | None = None,
-                          evolution_path: Path | None = None) -> list:
-    """Enriquece as candidaturas do tracker.csv (e seen_jobs.json) com avaliação, PDFs e notas."""
-    tracker_path = scrape_run.TRACKER if tracker_path is None else tracker_path
-    seen_path = scrape_run.SEEN if seen_path is None else seen_path
-    claude_base = CLAUDE_DIR if claude_base is None else claude_base
-    evolution_path = EVOLUTION_PATH if evolution_path is None else evolution_path
-    raw_rows = applications(tracker_path)
-    evolution_data = load_evolution(evolution_path)
-    evolution_apps = evolution_data.get("applications", {})
-    seen_by_url = {}
-    try:
-        if seen_path.exists():
-            st = json.loads(seen_path.read_text(encoding="utf-8"))
-            for v in st.get("seen", {}).values():
-                if isinstance(v, dict) and v.get("url"):
-                    seen_by_url[v["url"]] = v
-                    if v.get("status") == "applied" and not any((r.get("source") or "") == v["url"] for r in raw_rows):
-                        raw_rows.append({
-                            "date": v.get("applied_date") or v.get("first_seen") or "",
-                            "company": v.get("company") or "",
-                            "role": v.get("title") or "",
-                            "channel": v.get("portal") or "painel",
-                            "status": "applied",
-                            "notes": "Registrado pelo painel",
-                            "source": v["url"],
-                        })
-    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
-        logger.warning("Failed to read seen_jobs cache during application enrichment: %s", exc)
-
-    out = []
-    seen_urls = set()
-    for r in reversed(raw_rows):
-        url = (r.get("source") or r.get("url") or "").strip()
-        if r.get("status") == "drafted" and seen_by_url.get(url, {}).get("status") != "applied":
-            continue
-        if url and url in seen_urls:
-            continue
-        if url:
-            seen_urls.add(url)
-        s_info = seen_by_url.get(url, {})
-        company = r.get("company") or s_info.get("company") or ""
-        role = r.get("role") or r.get("title") or s_info.get("title") or ""
-        portal = r.get("channel") or r.get("portal") or s_info.get("portal") or ""
-        pdfs = job_pdfs(company, role)
-        answers = claude_answers(url, claude_base) if url else {}
-        screening = get_cached_score(url, batch_results) if url else None
-        item = {
-            **r,
-            "url": url,
-            "title": role,
-            "role": role,
-            "company": company,
-            "portal": portal,
-            "first_seen": r.get("date") or s_info.get("first_seen") or "",
-            "claude": answers,
-            "screening": screening,
-            **pdfs,
-        }
-        evolution_record = evolution_apps.get(url) if isinstance(evolution_apps, dict) else None
-        if isinstance(evolution_record, dict):
-            item["evolution"] = evolution_record
-            evo_app = evolution_record.get("application") if isinstance(evolution_record.get("application"), dict) else {}
-            item["status"] = evo_app.get("status") or item.get("status") or "applied"
-            item["cv_file"] = evo_app.get("cv_file") or item.get("cv_file") or ""
-            item["cover_letter_file"] = evo_app.get("cover_letter_file") or item.get("cover_letter_file") or ""
-            item["history"] = evolution_record.get("history") or []
-        if s_info.get("visa_sponsorship") is True:
-            item["visa_sponsorship"] = True
-        out.append(item)
-    out.sort(key=lambda item: (
-        item.get("date") or "",
-        (item.get("screening") or {}).get("score", -1) if isinstance(item.get("screening"), dict) else -1,
-    ), reverse=True)
-    return out

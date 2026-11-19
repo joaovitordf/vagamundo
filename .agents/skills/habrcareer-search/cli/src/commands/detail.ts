@@ -1,14 +1,77 @@
-import { fetchHtml, cleanHtml, decodeHtmlEntities, detectWorkplace, type JobResult } from "../helpers.ts"
+import {
+  fetchHtml,
+  cleanHtml,
+  decodeHtmlEntities,
+  detectWorkplace,
+  extractHabrSsrState,
+  mapHabrQualification,
+  type JobResult,
+} from "../helpers.ts"
 
 export async function runDetail(target: string): Promise<void> {
   let url = target.trim()
   if (/^\d+$/.test(url)) {
-    url = `https://career.habr.ru/vacancies/${url}`
+    url = `https://career.habr.com/vacancies/${url}`
   } else if (!url.startsWith("http")) {
-    url = `https://career.habr.ru/vacancies/${url.replace(/^habr-/, "")}`
+    url = `https://career.habr.com/vacancies/${url.replace(/^habr-/, "")}`
+  } else if (url.includes("://career.habr.ru/")) {
+    url = url.replace("://career.habr.ru/", "://career.habr.com/")
   }
 
   const html = await fetchHtml(url)
+  const ssr = extractHabrSsrState(html)
+  const v = ssr?.vacancy
+  if (v && typeof v === "object") {
+    const id = v.id ? `habr-${v.id}` : `habr-${Date.now()}`
+    const title = String(v.title || "Vaga Habr Career").trim()
+    const company = v.company?.title ? String(v.company.title).trim() : null
+    const salary = v.salary?.formatted ? String(v.salary.formatted).trim() : null
+    const date = v.publishedDate?.date ? String(v.publishedDate.date).slice(0, 10) : new Date().toISOString().slice(0, 10)
+    const isRemote = Boolean(v.remoteWork)
+    const rawDescHtml = typeof v.description === "string" ? v.description : ""
+    const rawDesc = rawDescHtml ? cleanHtml(rawDescHtml) : null
+    const skills = Array.isArray(v.skills) ? v.skills.map((s: any) => s?.title).filter(Boolean) : []
+    const description =
+      [rawDesc, skills.length ? `Stack: ${skills.join(", ")}` : ""].filter(Boolean).join("\n\n") || null
+    const workplace = isRemote ? "remote" : detectWorkplace(`${title} ${description || ""}`)
+    const signals: string[] = []
+    if (workplace === "remote") signals.push("remote")
+    const lower = `${title} ${description || ""}`.toLowerCase()
+    if (lower.includes("relocation") || lower.includes("релокац") || lower.includes("виза") || lower.includes("visa")) {
+      signals.push("relocation")
+    }
+    const cityNames = Array.isArray(v.humanCityNames)
+      ? v.humanCityNames.filter(Boolean)
+      : Array.isArray(v.locations)
+        ? v.locations.map((l: any) => l?.title).filter(Boolean)
+        : []
+    const location =
+      cityNames.length > 0
+        ? `${cityNames.join(", ")}${isRemote ? " (Remoto)" : ""}, Rússia`
+        : isRemote
+          ? "Remoto (Rússia)"
+          : "Rússia"
+
+    const result: JobResult = {
+      id,
+      title,
+      company,
+      location,
+      date,
+      url,
+      deadline: null,
+      contract: "Efetivo",
+      workplace_type: workplace,
+      seniority: mapHabrQualification(v.qualification || v.salaryQualification?.title),
+      salary,
+      description,
+      country_code: "RU",
+      signals,
+    }
+    console.log(JSON.stringify(result, null, 2))
+    return
+  }
+
   const idMatch = url.match(/\/vacancies\/(\d+)/)
   const id = idMatch ? `habr-${idMatch[1]}` : `habr-${Date.now()}`
 
@@ -55,9 +118,8 @@ export async function runDetail(target: string): Promise<void> {
     salary,
     description,
     country_code: "RU",
-    signals
+    signals,
   }
 
   console.log(JSON.stringify(result, null, 2))
 }
-

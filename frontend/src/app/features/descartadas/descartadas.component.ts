@@ -5,6 +5,7 @@ import { ApiService } from '../../core/services/api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { Vaga } from '../../core/models/vaga.model';
 import {
+  formatDisplayDate,
   getPortalDisplayName,
   getWorkModelLabel,
   matchesTextFilter,
@@ -30,6 +31,7 @@ export class DescartadasComponent implements OnInit {
   filterText = '';
   loading = signal<boolean>(true);
   deletingUrls = signal<Set<string>>(new Set());
+  restoringUrls = signal<Set<string>>(new Set());
 
   ngOnInit(): void {
     this.loadDiscarded();
@@ -68,10 +70,16 @@ export class DescartadasComponent implements OnInit {
   }
 
   readonly getPortalName = getPortalDisplayName;
+  readonly formatDate = formatDisplayDate;
 
   isDeleting(url?: string | null): boolean {
     if (!url) return false;
     return this.deletingUrls().has(url);
+  }
+
+  isRestoring(url?: string | null): boolean {
+    if (!url) return false;
+    return this.restoringUrls().has(url);
   }
 
   isExternalHttpUrl(url?: string | null): boolean {
@@ -79,12 +87,33 @@ export class DescartadasComponent implements OnInit {
   }
 
   restoreJob(job: Vaga): void {
-    this.api.restoreJob(job.url).subscribe({
+    const targetUrl = (job.url || '').trim();
+    if (!targetUrl || this.isRestoring(targetUrl) || this.isDeleting(targetUrl)) return;
+
+    this.restoringUrls.update(set => {
+      const next = new Set(set);
+      next.add(targetUrl);
+      return next;
+    });
+
+    this.api.restoreJob(targetUrl).subscribe({
       next: () => {
-        this.toast.success(`Vaga "${job.title}" restaurada.`);
+        this.restoringUrls.update(set => {
+          const next = new Set(set);
+          next.delete(targetUrl);
+          return next;
+        });
+        this.toast.success(`Vaga "${job.title}" restaurada para Me Interessam.`);
         this.loadDiscarded();
       },
-      error: (err) => this.toast.error('Erro ao restaurar vaga: ' + (err?.error?.detail || err?.message || 'Falha na requisição'))
+      error: (err) => {
+        this.restoringUrls.update(set => {
+          const next = new Set(set);
+          next.delete(targetUrl);
+          return next;
+        });
+        this.toast.error('Erro ao restaurar vaga: ' + (err?.error?.detail || err?.message || 'Falha na requisição'));
+      }
     });
   }
 

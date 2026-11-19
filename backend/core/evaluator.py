@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
 from backend.core.constants import (
+    EXCLUDED_RADAR_JOB_STATUSES,
     HIGH_FIT_MIN_SCORE,
     LOW_SCORE_AUTO_DISCARD_THRESHOLD,
     MED_FIT_MIN_SCORE,
@@ -318,7 +319,7 @@ class EvaluatorService:
                     if job_id:
                         existing = self.repo.get_job(job_id) or self.repo.get_job_by_url(url)
                         curr_status = existing["status"] if existing else None
-                        if curr_status not in ("applied", "discarded", "skipped", "interested"):
+                        if curr_status not in ("interested", *EXCLUDED_RADAR_JOB_STATUSES):
                             note_prefix = f"[auto:{run_id}] " if run_id else ""
                             self.repo.mark_jobs(
                                 [job_id],

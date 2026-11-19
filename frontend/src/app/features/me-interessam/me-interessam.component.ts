@@ -2,7 +2,7 @@ import { Component, DestroyRef, OnDestroy, OnInit, inject, signal, computed, eff
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService } from '../../core/services/api.service';
+import { ApiService, JobLivenessResult } from '../../core/services/api.service';
 import { AutoModeService } from '../../core/services/auto-mode.service';
 import { ToastService } from '../../core/services/toast.service';
 import { Vaga } from '../../core/models/vaga.model';
@@ -35,6 +35,7 @@ export class MeInteressamComponent implements OnInit, OnDestroy {
   loading = signal<boolean>(true);
   actionStatus = signal<string>('');
   copiedRecruiterEmail = signal<string | null>(null);
+  runningAiUrls = signal<Set<string>>(new Set());
 
   // Seleção em lote
   selectedUrls = signal<Set<string>>(new Set());
@@ -47,7 +48,11 @@ export class MeInteressamComponent implements OnInit, OnDestroy {
   reevalCurrentTitle = signal<string>('');
   reevalErrors = signal<number>(0);
   reevalProvider = signal<string>('');
-  readonly bulkBusy = computed(() => this.reevalRunning() || this.bulkActionLoading());
+  checkingLiveness = signal<boolean>(false);
+  livenessByUrl = signal<Record<string, JobLivenessResult>>({});
+  readonly bulkBusy = computed(
+    () => this.reevalRunning() || this.bulkActionLoading() || this.checkingLiveness()
+  );
 
   // Filtros de Data e Busca
   dateCriterion = signal<'saved' | 'posted'>('saved'); // 'saved' = quando adicionei; 'posted' = data da vaga
@@ -300,6 +305,37 @@ export class MeInteressamComponent implements OnInit, OnDestroy {
     return d;
   }
 
+  formatWorkModel(raw?: string | null): string {
+    return getWorkModelLabel(raw);
+  }
+
+  getDateRangeLabel(): string {
+    const r = this.dateRange();
+    switch (r) {
+      case 'today': return 'Hoje';
+      case '3d': return 'Últimos 3 dias';
+      case '7d': return 'Últimos 7 dias';
+      case '15d': return 'Últimos 15 dias';
+      case '30d': return 'Últimos 30 dias';
+      case 'custom': return `${this.customStartDate() || '...'} até ${this.customEndDate() || '...'}`;
+      default: return r;
+    }
+  }
+
+  isAiRunningForJob(url?: string): boolean {
+    return Boolean(url && this.runningAiUrls().has(url));
+  }
+
+  private setJobAiBusy(url: string, busy: boolean): void {
+    if (!url) return;
+    this.runningAiUrls.update(set => {
+      const next = new Set(set);
+      if (busy) next.add(url);
+      else next.delete(url);
+      return next;
+    });
+  }
+
   readonly getPortalName = getPortalDisplayName;
 
   encodePath(path: string): string {
@@ -307,19 +343,24 @@ export class MeInteressamComponent implements OnInit, OnDestroy {
   }
 
   runAi(job: Vaga, step: string): void {
+    const url = job?.url || '';
+    if (url && this.isAiRunningForJob(url)) return;
     let label = 'Ação de IA';
     if (step === 'avaliar') label = 'Avaliação rápida';
     else if (step === 'curriculo') label = 'Currículo em PDF';
     else if (step === 'carta') label = 'Carta de Apresentação';
     else if (step === 'entrevista') label = 'Dossiê de Preparação para Entrevista';
 
+    this.setJobAiBusy(url, true);
     this.actionStatus.set(`A IA está gerando ${label} para "${job.title || 'a vaga'}"… Aguarde.`);
     this.api.triggerClaude({ url: job.url, step }).subscribe({
       next: () => {
+        this.setJobAiBusy(url, false);
         this.actionStatus.set('');
         this.loadSaved();
       },
       error: (err) => {
+        this.setJobAiBusy(url, false);
         this.actionStatus.set('');
         this.toast.error('Erro ao processar com IA: ' + (err.error?.detail || err.message));
       }
@@ -528,6 +569,58 @@ export class MeInteressamComponent implements OnInit, OnDestroy {
         this.actionStatus.set('');
         this.toast.error('Erro ao desfazer promoção automática: ' + (err.error?.detail || err.message));
       }
+    });
+  }
+
+  getLiveness(url?: string): JobLivenessResult | null {
+    if (!url) return null;
+    return this.livenessByUrl()[url] || null;
+  }
+
+  checkVisibleLinks(): void {
+    if (this.bulkBusy()) return;
+    const pool = this.visibleSelectedJobs().length > 0 ? this.visibleSelectedJobs() : this.filteredJobs();
+    const urls = Array.from(
+      new Set(
+        pool
+          .map(j => String(j?.url || '').trim())
+          .filter(u => /^https?:\/\//i.test(u))
+      )
+    );
+    if (!urls.length) {
+      this.toast.warning('Nenhuma vaga com link HTTP disponível para verificar.');
+      return;
+    }
+
+    this.checkingLiveness.set(true);
+    this.bulkStatusMsg.set(`Verificando ${urls.length} link(s) ativos…`);
+    this.api.checkJobsLiveness(urls).subscribe({
+      next: (res) => {
+        this.checkingLiveness.set(false);
+        const results = res?.results || [];
+        this.livenessByUrl.update(curr => {
+          const next = { ...curr };
+          for (const item of results) {
+            if (item?.url) next[item.url] = item;
+          }
+          return next;
+        });
+        const aliveCount = results.filter(r => r.alive === true).length;
+        const closedCount = results.filter(r => r.alive === false).length;
+        const unknownCount = results.filter(r => r.alive === null).length;
+        const summary = `Links verificados: ${aliveCount} ativa(s), ${closedCount} encerrada(s)${unknownCount > 0 ? `, ${unknownCount} inconclusivo(s)` : ''}.`;
+        this.bulkStatusMsg.set(summary);
+        if (closedCount > 0) {
+          this.toast.warning(summary);
+        } else {
+          this.toast.success(summary);
+        }
+      },
+      error: (err) => {
+        this.checkingLiveness.set(false);
+        this.bulkStatusMsg.set('');
+        this.toast.error('Erro ao verificar links: ' + (err?.error?.detail || err?.message || 'Falha'));
+      },
     });
   }
 

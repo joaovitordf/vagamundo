@@ -14,8 +14,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backend.core.constants import LOW_SCORE_AUTO_DISCARD_THRESHOLD, ROOT
-from backend.db.repository import Repository
+from backend.core.constants import (
+    EXCLUDED_RADAR_JOB_STATUSES,
+    LOW_SCORE_AUTO_DISCARD_THRESHOLD,
+    ROOT,
+)
+from backend.db.repository import Repository, RepositoryError
 from backend.tools import painel, scrape_run
 
 logger = logging.getLogger(__name__)
@@ -124,8 +128,6 @@ class ScannerService:
             }
 
         cmd = [sys.executable, str(ROOT / "backend" / "tools" / "scrape_run.py"), "search"]
-        if not (ROOT / "backend" / "tools" / "scrape_run.py").exists():
-            cmd = [sys.executable, str(ROOT / "tools" / "scrape_run.py"), "search"]
 
         if all_priorities or not priorities:
             cmd.append("--all")
@@ -231,7 +233,7 @@ class ScannerService:
                         "total_seen": 0,
                         "portals_summary": data.get("meta"),
                     })
-                except (OSError, json.JSONDecodeError, sqlite3.Error) as exc:
+                except (OSError, json.JSONDecodeError, RepositoryError, sqlite3.Error) as exc:
                     logger.warning("Failed to record scan_run summary: %s", exc)
         except Exception as exc:
             with self.lock:
@@ -260,19 +262,7 @@ class ScannerService:
         """URLs e pares (empresa, cargo) de vagas já candidatadas, vindos do ledger de candidaturas e da tabela jobs."""
         urls: set = set()
         pairs: set = set()
-        if hasattr(self.repo, "get_applied_index_rows"):
-            rows = self.repo.get_applied_index_rows()
-        else:
-            rows = []
-            for sql in (
-                "SELECT job_url AS url, company, role AS title FROM application_ledger",
-                "SELECT url, company, title FROM jobs WHERE status = 'applied'",
-            ):
-                try:
-                    rows.extend(dict(r) for r in self.repo.conn.execute(sql).fetchall())
-                except sqlite3.Error as exc:
-                    logger.debug("Legacy/mock conn query skipped in _load_applied_index: %s", exc)
-        for row in rows:
+        for row in self.repo.get_applied_index_rows():
             u = self._norm_url(row.get("url"))
             if u:
                 urls.add(u)
@@ -282,27 +272,10 @@ class ScannerService:
         return urls, pairs
 
     def _lookup_job_by_url_or_pair(self, url: str | None, company: str | None, title: str | None) -> dict | None:
-        if hasattr(self.repo, "get_job_by_url"):
-            row = self.repo.get_job_by_url(url) if url else None
-            if row:
-                return row
-            if hasattr(self.repo, "get_job_by_company_title"):
-                return self.repo.get_job_by_company_title(company or "", title or "")
-            return None
-        if url:
-            cur = self.repo.conn.execute("SELECT status, fit FROM jobs WHERE url = ?", (url,))
-            r = cur.fetchone()
-            if r:
-                return dict(r)
-        if company and title:
-            cur = self.repo.conn.execute(
-                "SELECT status, fit FROM jobs WHERE LOWER(TRIM(company)) = LOWER(TRIM(?)) AND LOWER(TRIM(title)) = LOWER(TRIM(?))",
-                (company, title),
-            )
-            r = cur.fetchone()
-            if r:
-                return dict(r)
-        return None
+        row = self.repo.get_job_by_url(url) if url else None
+        if row:
+            return row
+        return self.repo.get_job_by_company_title(company or "", title or "")
 
     def load_results(self) -> Dict[str, Any]:
         """Load currently available results, filtering already-seen jobs."""
@@ -327,7 +300,7 @@ class ScannerService:
             ):
                 continue
             row = self._lookup_job_by_url_or_pair(url, company, title)
-            if row and row["status"] in ("interested", "discarded", "applied", "skipped"):
+            if row and row["status"] in ("interested", *EXCLUDED_RADAR_JOB_STATUSES):
                 continue
             if url:
                 try:

@@ -23,38 +23,14 @@
   gap: 1rem;
 }
 
-.title-with-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.title-with-badge h2 {
-  margin: 0;
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--vc-text, #f8fafc);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .badge-total {
   background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.3);
   color: var(--vc-green, #10b981);
-  font-size: 0.8rem;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  font-weight: 600;
 }
 
 .panel-desc {
   margin: 0.5rem 0 0 0;
-  font-size: 0.9rem;
-  color: var(--vc-muted, #94a3b8);
-  line-height: 1.45;
 }
 
 /* GRID DE FILTROS */
@@ -105,21 +81,11 @@
   align-items: center;
 }
 
-.vc-input {
+.input-with-action .vc-input {
   width: 100%;
-  background: var(--vc-bg-2, #0f172a);
-  border: 1px solid var(--vc-border, #334155);
-  color: var(--vc-text, #f8fafc);
   padding: 0.65rem 0.85rem;
   padding-right: 236px;
   border-radius: 8px;
-  font-size: 0.9rem;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.vc-input:focus {
-  border-color: var(--vc-blue, #38bdf8);
 }
 
 .input-actions-cluster {
@@ -132,18 +98,7 @@
 }
 
 .vc-select {
-  background: var(--vc-bg-2, #0f172a);
-  border: 1px solid var(--vc-border, #334155);
-  color: var(--vc-text, #f8fafc);
   padding: 0.65rem 0.85rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  outline: none;
-  cursor: pointer;
-}
-
-.vc-select:focus {
-  border-color: var(--vc-blue, #38bdf8);
 }
 
 .btn-clear-input {
@@ -208,44 +163,6 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.btn-action {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-  padding: 0.55rem 1.15rem;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-action.primary {
-  background: var(--vc-green, #10b981);
-  color: #fff;
-}
-
-.btn-action.primary:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-.btn-action.primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-action.linkedin-btn {
-  background: #0a66c2;
-  color: #fff;
-}
-
-.btn-action.linkedin-btn:hover {
-  background: #004182;
-  transform: translateY(-1px);
 }
 
 .status-badge {
@@ -587,15 +504,12 @@
 .loading-state,
 .empty-state {
   padding: 3.5rem 1.5rem;
-  text-align: center;
   background: var(--vc-surface, #1e293b);
   border: 1px solid var(--vc-border, #334155);
   border-radius: 12px;
-  color: var(--vc-muted, #94a3b8);
 }
 
-.prompt-icon,
-.empty-icon {
+.prompt-icon {
   font-size: 2.8rem;
   color: var(--vc-muted, #94a3b8);
   opacity: 0.45;
@@ -959,28 +873,6 @@
   background: rgba(239, 68, 68, 0.1);
 }
 
-.vc-spinner {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top-color: #fff;
-  animation: vc-spin 0.8s linear infinite;
-}
-
-.vc-spinner.large {
-  width: 24px;
-  height: 24px;
-  border-width: 3px;
-  border-top-color: var(--vc-blue, #38bdf8);
-  margin-bottom: 0.75rem;
-}
-
-@keyframes vc-spin {
-  to { transform: rotate(360deg); }
-}
-
 .post-card--non-job {
   opacity: 0.78;
   border-color: rgba(245, 158, 11, 0.35);
@@ -1266,138 +1158,92 @@
   color: #92400e;
 }
 
-.btn-action.secondary {
-  background: var(--vc-surface-2, #1e293b);
-  color: var(--vc-text, #f1f5f9);
-  border: 1px solid var(--vc-border, #334155);
-}
-
-.btn-action.secondary:hover:not(:disabled) {
-  border-color: var(--vc-accent, #38bdf8);
-  color: var(--vc-accent, #38bdf8);
-}
-
-.linkedin-worker-bar {
+.multiplatform-radar-bar {
   margin-top: 0.9rem;
-  padding: 0.72rem 0.95rem;
+  padding: 0.65rem 0.95rem;
   border-radius: 10px;
-  border: 1px solid rgba(10, 102, 194, 0.4);
-  background: rgba(10, 102, 194, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(15, 23, 42, 0.45);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
-.linkedin-worker-main {
+.multiplatform-radar-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.65rem;
-}
-
-.linkedin-worker-identity {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 0.5rem;
 }
 
-.linkedin-strip-title {
-  font-size: 0.88rem;
+.multiplatform-radar-title {
+  font-size: 0.82rem;
   font-weight: 700;
-  color: #7dd3fc;
+  color: #cbd5e1;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
 }
 
-.linkedin-status-pill {
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 2px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(148, 163, 184, 0.14);
-  color: #cbd5e1;
-}
-
-.linkedin-status-pill[data-status="connected"] {
-  background: rgba(34, 197, 94, 0.16);
-  border-color: rgba(34, 197, 94, 0.45);
-  color: #86efac;
-}
-
-.linkedin-status-pill[data-status="awaiting_login"] {
-  background: rgba(56, 189, 248, 0.16);
-  border-color: rgba(56, 189, 248, 0.5);
-  color: #7dd3fc;
-}
-
-.linkedin-status-pill[data-status="login_required"],
-.linkedin-status-pill[data-status="checkpoint_required"],
-.linkedin-status-pill[data-status="unavailable"] {
-  background: rgba(245, 158, 11, 0.16);
-  border-color: rgba(245, 158, 11, 0.45);
-  color: #fcd34d;
-}
-
-.linkedin-meta-pill {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.28);
-  color: #bae6fd;
-}
-
-.linkedin-worker-actions {
+.multiplatform-pills-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.42rem;
 }
 
-.compact-btn {
-  padding: 0.4rem 0.72rem;
-  font-size: 0.8rem;
-}
-
-.linkedin-worker-alert {
-  display: flex;
+.multiplatform-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  font-size: 0.8rem;
+  gap: 0.32rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.multiplatform-pill:hover {
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.multiplatform-pill--matched {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+
+.multiplatform-pill--error {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
   color: #fcd34d;
 }
 
-.linkedin-login-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: #bae6fd;
+.multiplatform-pill--active {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.45);
 }
 
-:host-context([data-theme="light"]) .linkedin-strip-title,
-:host-context([data-theme="light"]) .linkedin-meta-pill,
-:host-context([data-theme="light"]) .linkedin-login-hint {
-  color: #0369a1;
+:host-context([data-theme="light"]) .multiplatform-radar-bar {
+  background: rgba(241, 245, 249, 0.9);
+  border-color: rgba(14, 165, 233, 0.25);
 }
 
-:host-context([data-theme="light"]) .linkedin-status-pill {
+:host-context([data-theme="light"]) .multiplatform-radar-title,
+:host-context([data-theme="light"]) .multiplatform-pill {
   color: #334155;
 }
 
-:host-context([data-theme="light"]) .linkedin-status-pill[data-status="connected"] {
+:host-context([data-theme="light"]) .multiplatform-pill--matched {
   color: #15803d;
 }
 
-:host-context([data-theme="light"]) .linkedin-status-pill[data-status="login_required"],
-:host-context([data-theme="light"]) .linkedin-status-pill[data-status="checkpoint_required"],
-:host-context([data-theme="light"]) .linkedin-worker-alert {
+:host-context([data-theme="light"]) .multiplatform-pill--error {
   color: #b45309;
 }
 
@@ -1459,7 +1305,7 @@
     gap: 0.5rem;
   }
 
-  .vc-input {
+  .input-with-action .vc-input {
     padding-right: 0.85rem;
   }
 

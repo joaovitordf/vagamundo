@@ -51,7 +51,7 @@
             <span class="chip"><i class="bi bi-geo-alt"></i> {{ job.location }}</span>
           }
           @if (job.date) {
-            <span class="chip"><i class="bi bi-calendar3"></i> {{ job.date }}</span>
+            <span class="chip"><i class="bi bi-calendar3"></i> {{ formatDate(job.date) }}</span>
           }
           @if (job.recruiter_emails && job.recruiter_emails.length > 0) {
             <span class="chip chip--email" title="E-mail(s) de contato da publicação">
@@ -65,13 +65,14 @@
             <button type="button"
                     class="btn-restore"
                     (click)="restoreJob(job)"
-                    [disabled]="isDeleting(job.url)">
-              <i class="bi bi-arrow-counterclockwise"></i> Restaurar
+                    [disabled]="isDeleting(job.url) || isRestoring(job.url)"
+                    title="Restaurar para Me Interessam">
+              <i class="bi bi-arrow-counterclockwise"></i> {{ isRestoring(job.url) ? 'Restaurando...' : 'Restaurar para Me Interessam' }}
             </button>
             <button type="button"
                     class="btn-delete-db"
                     (click)="deleteFromDb(job)"
-                    [disabled]="!job.url || isDeleting(job.url)"
+                    [disabled]="!job.url || isDeleting(job.url) || isRestoring(job.url)"
                     title="Excluir esta vaga definitivamente do banco de dados">
               <i class="bi bi-trash3"></i> {{ isDeleting(job.url) ? 'Excluindo...' : 'Excluir do BD' }}
             </button>

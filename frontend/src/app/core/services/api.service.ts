@@ -23,11 +23,6 @@ export interface SyncRecruiterPostsResponse {
   remotive_synced?: number;
   scrapes_synced?: number;
   portal_synced?: number;
-  linkedin_synced?: number;
-  linkedin_cards_total?: number;
-  linkedin_cooldown_remaining_seconds?: number;
-  linkedin_skipped_reason?: string | null;
-  linkedin_alert?: string | null;
   collected_urls?: string[];
   collected_post_ids?: number[];
   matched_post_ids?: number[];
@@ -47,29 +42,6 @@ export interface RecruiterTriageResponse {
   posts: RecruiterPost[];
 }
 
-export interface LinkedInWorkerStatus {
-  ok?: boolean;
-  status: 'not_connected' | 'awaiting_login' | 'connected' | 'login_required' | 'checkpoint_required' | 'unavailable';
-  browser_available: boolean;
-  browser_name: string | null;
-  profile_initialized: boolean;
-  login_window_open?: boolean;
-  enabled: boolean;
-  headless: boolean;
-  cooldown_minutes: number;
-  max_daily_searches: number;
-  max_scrolls: number;
-  daily_date: string | null;
-  daily_count: number;
-  cooldown_remaining_seconds: number;
-  last_run_at: string | null;
-  last_error: string;
-  last_query: string;
-  last_imported: number;
-  last_cards_total?: number;
-  message?: string;
-}
-
 export interface PasteRecruiterPostPayload {
   raw_text: string;
   url?: string;
@@ -78,6 +50,7 @@ export interface PasteRecruiterPostPayload {
   location?: string;
   work_model?: string;
   published_date?: string;
+  allow_without_email?: boolean;
 }
 
 export interface PasteRecruiterBatchResponse {
@@ -88,6 +61,21 @@ export interface PasteRecruiterBatchResponse {
   invalid: number;
   posts: RecruiterPost[];
   auto_mode_woken?: boolean;
+}
+
+export interface ExpandSearchTermResponse {
+  ok: boolean;
+  term: string;
+  en: string | null;
+  pt: string | null;
+  source: 'ai' | 'cache' | 'none';
+}
+
+export interface JobLivenessResult {
+  url: string;
+  alive: boolean | null;
+  reason: string;
+  checked_at: string;
 }
 
 @Injectable({
@@ -258,6 +246,13 @@ export class ApiService {
   startBatchReevaluate(urls: string[]): Observable<{ ok: boolean; started: boolean; total: number }> {
     return this.http.post<{ ok: boolean; started: boolean; total: number }>(
       `${this.baseUrl}/saved/batch-reevaluate`,
+      { urls }
+    );
+  }
+
+  checkJobsLiveness(urls: string[]): Observable<{ results: JobLivenessResult[]; total: number }> {
+    return this.http.post<{ results: JobLivenessResult[]; total: number }>(
+      `${this.baseUrl}/jobs/liveness`,
       { urls }
     );
   }
@@ -446,11 +441,9 @@ export class ApiService {
     return this.http.post(`${this.baseUrl}/recruiters/auto/start`, payload);
   }
 
-  syncRecruiterPosts(query?: string, opts?: { includeLinkedin?: boolean; forceLinkedin?: boolean; days?: number | null }): Observable<SyncRecruiterPostsResponse> {
+  syncRecruiterPosts(query?: string, opts?: { days?: number | null }): Observable<SyncRecruiterPostsResponse> {
     const params = new URLSearchParams();
     if (query && query.trim()) params.set('q', query.trim());
-    if (opts?.includeLinkedin === false) params.set('include_linkedin', 'false');
-    if (opts?.forceLinkedin) params.set('force_linkedin', 'true');
     if (opts?.days && opts.days > 0) params.set('days', String(opts.days));
     const qs = params.toString() ? `?${params.toString()}` : '';
     return this.http.post<SyncRecruiterPostsResponse>(
@@ -475,32 +468,6 @@ export class ApiService {
     );
   }
 
-  getLinkedInWorkerStatus(): Observable<LinkedInWorkerStatus> {
-    return this.http.get<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/status`);
-  }
-
-  connectLinkedInWorker(): Observable<LinkedInWorkerStatus> {
-    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/connect`, {});
-  }
-
-  verifyLinkedInWorker(): Observable<LinkedInWorkerStatus> {
-    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/verify`, {});
-  }
-
-  updateLinkedInWorkerConfig(payload: {
-    enabled?: boolean;
-    headless?: boolean;
-    cooldown_minutes?: number;
-    max_daily_searches?: number;
-    max_scrolls?: number;
-  }): Observable<LinkedInWorkerStatus> {
-    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/config`, payload);
-  }
-
-  disconnectLinkedInWorker(): Observable<LinkedInWorkerStatus> {
-    return this.http.post<LinkedInWorkerStatus>(`${this.baseUrl}/recruiters/linkedin/disconnect`, {});
-  }
-
   pasteRecruiterPost(payload: PasteRecruiterPostPayload): Observable<{ ok: boolean; post: RecruiterPost; auto_mode_woken?: boolean }> {
     return this.http.post<{ ok: boolean; post: RecruiterPost; auto_mode_woken?: boolean }>(
       `${this.baseUrl}/recruiters/paste`,
@@ -513,6 +480,7 @@ export class ApiService {
   pasteRecruiterPostsBatch(payload: {
     items?: PasteRecruiterPostPayload[];
     raw_batch_text?: string;
+    allow_without_email?: boolean;
   }): Observable<PasteRecruiterBatchResponse> {
     return this.http.post<PasteRecruiterBatchResponse>(
       `${this.baseUrl}/recruiters/paste-batch`,
@@ -575,6 +543,13 @@ export class ApiService {
       { post_ids: postIds }
     ).pipe(
       tap(() => this.refreshCounts())
+    );
+  }
+
+  expandRecruiterSearchTerm(term: string): Observable<ExpandSearchTermResponse> {
+    return this.http.post<ExpandSearchTermResponse>(
+      `${this.baseUrl}/recruiters/expand-search-term`,
+      { term }
     );
   }
 

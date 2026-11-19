@@ -88,12 +88,17 @@ export function parseHHSearch(html: string): JobResult[] {
   const results: JobResult[] = []
   const seenUrls = new Set<string>()
 
-  // Regex para capturar os blocos de cards de vaga no HH
   const titleRegex = /<a[^>]*data-qa="serp-item__title"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+  const matches: Array<{ index: number; href: string; rawTitle: string }> = []
   let m: RegExpExecArray | null
 
   while ((m = titleRegex.exec(html)) !== null) {
-    let rawUrl = m[1]
+    matches.push({ index: m.index, href: m[1], rawTitle: m[2] })
+  }
+
+  for (let i = 0; i < matches.length; i++) {
+    const entry = matches[i]
+    let rawUrl = entry.href
     if (rawUrl.startsWith("/")) rawUrl = `https://hh.ru${rawUrl}`
     const cleanUrl = rawUrl.split("?")[0]
     if (!cleanUrl.includes("/vacancy/")) continue
@@ -102,28 +107,60 @@ export function parseHHSearch(html: string): JobResult[] {
 
     const idMatch = cleanUrl.match(/\/vacancy\/(\d+)/)
     const id = idMatch ? `hh-${idMatch[1]}` : `hh-${Date.now()}-${results.length}`
-    const title = decodeHtmlEntities(m[2].replace(/<[^>]+>/g, "").trim())
+    const title = decodeHtmlEntities(entry.rawTitle.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
 
-    // Encontra o trecho ao redor deste link para extrair empresa, endereço e salário
-    const idx = m.index
-    const block = html.slice(Math.max(0, idx - 200), Math.min(html.length, idx + 2500))
+    const startIdx = Math.max(0, entry.index - 200)
+    const nextIdx = i + 1 < matches.length ? matches[i + 1].index : Math.min(html.length, entry.index + 14000)
+    const endIdx = Math.min(html.length, nextIdx, entry.index + 14000)
+    const block = html.slice(startIdx, endIdx)
 
-    // Empresa
-    const empMatch = block.match(/data-qa="vacancy-serp__vacancy-employer"[^>]*>([\s\S]*?)<\/a>/i)
-    const company = empMatch ? decodeHtmlEntities(empMatch[1].replace(/<[^>]+>/g, "").trim()) : null
+    // Empresa (tenta wrapper dedicado de texto ou link completo removendo tags internas)
+    const empMatch =
+      block.match(/data-qa="vacancy-serp__vacancy-employer-text"[^>]*>([\s\S]*?)<\/span>/i) ||
+      block.match(/data-qa="vacancy-serp__vacancy-employer"[^>]*>([\s\S]*?)<\/a>/i)
+    const company = empMatch
+      ? decodeHtmlEntities(empMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()) || null
+      : null
 
     // Salário
     const salMatch = block.match(/data-qa="vacancy-serp__vacancy-compensation"[^>]*>([\s\S]*?)<\/span>/i)
-    const salary = salMatch ? decodeHtmlEntities(salMatch[1].replace(/<[^>]+>/g, "").trim()) : null
+    const salary = salMatch
+      ? decodeHtmlEntities(salMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()) || null
+      : null
 
     // Endereço / Local
     const addrMatch = block.match(/data-qa="vacancy-serp__vacancy-address"[^>]*>([\s\S]*?)<\/span>/i)
-    let location = addrMatch ? decodeHtmlEntities(addrMatch[1].replace(/<[^>]+>/g, "").trim()) : "Rússia"
+    let location = addrMatch
+      ? decodeHtmlEntities(addrMatch[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()) || "Rússia"
+      : "Rússia"
     if (!location.toLowerCase().includes("россия") && !location.toLowerCase().includes("russia") && !location.toLowerCase().includes("rússia")) {
       location = `${location}, Rússia`
     }
 
-    const workplace = detectWorkplace(title, location, block)
+    const workplace: "remote" | "hybrid" | "on-site" = block.includes("vacancy-label-work-schedule-remote")
+      ? "remote"
+      : detectWorkplace(title, location, block)
+
+    let seniority: string | null = null
+    if (block.includes("vacancy-serp__vacancy-work-experience-noExperience")) {
+      seniority = "Júnior"
+    } else if (block.includes("vacancy-serp__vacancy-work-experience-between1And3")) {
+      seniority = "Pleno"
+    } else if (
+      block.includes("vacancy-serp__vacancy-work-experience-between3And6") ||
+      block.includes("vacancy-serp__vacancy-work-experience-moreThan6")
+    ) {
+      seniority = "Sênior"
+    }
+
+    const respMatch = block.match(/data-qa="vacancy-serp__vacancy_snippet_responsibility"[^>]*>([\s\S]*?)<\/div>/i)
+    const reqMatch = block.match(/data-qa="vacancy-serp__vacancy_snippet_requirement"[^>]*>([\s\S]*?)<\/div>/i)
+    const snippetParts = [respMatch?.[1], reqMatch?.[1]]
+      .filter((s): s is string => Boolean(s))
+      .map((s) => decodeHtmlEntities(s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()))
+      .filter(Boolean)
+    const description = snippetParts.length > 0 ? snippetParts.join(" — ") : title
+
     const signals: string[] = []
     if (workplace === "remote") signals.push("remote")
     const lowerBlock = block.toLowerCase()
@@ -141,11 +178,11 @@ export function parseHHSearch(html: string): JobResult[] {
       deadline: null,
       contract: "Efetivo",
       workplace_type: workplace,
-      seniority: null,
+      seniority,
       salary,
-      description: title,
+      description,
       country_code: "RU",
-      signals
+      signals,
     })
   }
 

@@ -30,5 +30,22 @@ describe('BuscarJobCardComponent', () => {
     expect(badge).not.toBeNull();
     expect(badge.querySelector('i.bi-linkedin')).not.toBeNull();
     expect(badge.textContent).toContain('LinkedIn');
+    expect(fixture.nativeElement.textContent).toContain('13/11/2026');
+  });
+
+  it('resolves effective work model when workplace_type is omitted', () => {
+    component.vaga = {
+      title: '[Remoto] Backend Developer',
+      company: 'RemoteCo',
+      portal: 'remotar-search',
+      url: 'https://remotar.com.br/job/1',
+      location: 'Remoto - Brasil',
+      date: '2026-11-15',
+    };
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Remoto');
+    expect(fixture.nativeElement.textContent).not.toContain('Não informado');
+    expect(fixture.nativeElement.textContent).toContain('15/11/2026');
   });
 });

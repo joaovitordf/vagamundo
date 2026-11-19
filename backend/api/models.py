@@ -37,6 +37,7 @@ class SearchStatusResponse(BaseModel):
     summary: Optional[str] = None
     progress: Optional[SearchProgress] = None
     batch: Optional[Dict[str, Any]] = None
+    provider: Optional[Dict[str, Any]] = None
 
 
 class MarkRequest(BaseModel):
@@ -188,6 +189,7 @@ class PasteRecruiterPostRequest(BaseModel):
     location: Optional[str] = None
     work_model: Optional[str] = None
     published_date: Optional[str] = None
+    allow_without_email: bool = False
 
 
 class PasteRecruiterBatchItem(BaseModel):
@@ -203,6 +205,7 @@ class PasteRecruiterBatchItem(BaseModel):
 class PasteRecruiterBatchRequest(BaseModel):
     items: Optional[List[PasteRecruiterBatchItem]] = None
     raw_batch_text: Optional[str] = None
+    allow_without_email: bool = False
 
 
 class AutoModeStartRequest(BaseModel):
@@ -246,14 +249,6 @@ class RecruiterAutoConfigRequest(BaseModel):
     cooldown_seconds: Optional[int] = None
 
 
-class LinkedInWorkerConfigRequest(BaseModel):
-    enabled: Optional[bool] = None
-    headless: Optional[bool] = None
-    cooldown_minutes: Optional[int] = None
-    max_daily_searches: Optional[int] = None
-    max_scrolls: Optional[int] = None
-
-
 class RecruiterTriageRequest(BaseModel):
     post_ids: Optional[List[int]] = None
     q: Optional[str] = None
@@ -263,3 +258,7 @@ class RecruiterTriageRequest(BaseModel):
 
 class RecruiterDismissBatchRequest(BaseModel):
     post_ids: List[int] = Field(default_factory=list)
+
+
+class RecruiterExpandTermRequest(BaseModel):
+    term: str = Field(..., min_length=1, max_length=120)

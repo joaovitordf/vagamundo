@@ -163,7 +163,7 @@
           <i class="bi bi-info-circle"></i>
           Filtros ativos:
           @if (dateRange() !== 'all') {
-            <strong>{{ dateCriterion() === 'saved' ? 'Adicionada em' : 'Publicada em' }} ({{ dateRange() === 'custom' ? ((customStartDate() || '...') + ' até ' + (customEndDate() || '...')) : dateRange() }})</strong>
+            <strong>{{ dateCriterion() === 'saved' ? 'Adicionada em' : 'Publicada em' }} ({{ getDateRangeLabel() }})</strong>
           }
           @if (portalFilter() !== 'all') {
             &bull; Portal: <strong>{{ getPortalName(portalFilter()) }}</strong>
@@ -226,6 +226,18 @@
       </div>
 
       <div class="selection-toolbar__actions">
+        <button type="button"
+          class="btn-action secondary compact-btn"
+          (click)="checkVisibleLinks()"
+          [disabled]="filteredJobs().length === 0 || bulkBusy()"
+          title="Verifica via HTTP se os links selecionados (ou visíveis) ainda estão abertos">
+          @if (checkingLiveness()) {
+            <span class="vc-spinner"></span> Verificando links…
+          } @else {
+            <i class="bi bi-activity"></i> Verificar links{{ selectedVisibleCount() > 0 ? ' (' + selectedVisibleCount() + ')' : '' }}
+          }
+        </button>
+
         <button type="button"
           class="btn-bulk-reevaluate"
           (click)="reevaluateSelected()"
@@ -344,7 +356,7 @@
             <span class="chip"><i class="bi bi-geo-alt"></i> {{ job.location }}</span>
           }
           @if (job.workplace_type) {
-            <span class="chip"><i class="bi bi-briefcase"></i> {{ job.workplace_type }}</span>
+            <span class="chip"><i class="bi bi-briefcase"></i> {{ formatWorkModel(job.workplace_type) }}</span>
           }
           @if (job.posted_date || job.date) {
             <span class="chip chip-date-posted" title="Data em que a vaga foi anunciada pela empresa">
@@ -356,19 +368,34 @@
               <i class="bi bi-bookmark-star-fill"></i> Salva em: {{ formatDateDisplay(job.saved_at) }}
             </span>
           }
+          @if (getLiveness(job.url); as liveness) {
+            @if (liveness.alive === true) {
+              <span class="chip chip-liveness-ok" [title]="'Link verificado: ' + liveness.reason">
+                <i class="bi bi-check-circle-fill"></i> Link ativo
+              </span>
+            } @else if (liveness.alive === false) {
+              <span class="chip chip-liveness-dead" [title]="'Motivo: ' + liveness.reason">
+                <i class="bi bi-x-octagon-fill"></i> Vaga encerrada ({{ liveness.reason }})
+              </span>
+            } @else {
+              <span class="chip chip-liveness-warn" [title]="'Status: ' + liveness.reason">
+                <i class="bi bi-question-circle"></i> Não conclusivo ({{ liveness.reason }})
+              </span>
+            }
+          }
         </div>
 
         <div class="ai-actions-row">
-          <button type="button" class="btn-ai-action btn-ai-avaliar" (click)="runAi(job, 'avaliar')" title="Avaliar aderência e compatibilidade com IA">
+          <button type="button" class="btn-ai-action btn-ai-avaliar" (click)="runAi(job, 'avaliar')" [disabled]="isAiRunningForJob(job.url) || bulkBusy()" title="Avaliar aderência e compatibilidade com IA">
             <i class="bi bi-stars"></i> {{ hasDoc(job, 'avaliar') ? 'Reavaliar com IA' : 'Avaliar com IA' }}
           </button>
-          <button type="button" class="btn-ai-action btn-ai-cv" (click)="runAi(job, 'curriculo')" title="Gerar currículo personalizado em PDF">
+          <button type="button" class="btn-ai-action btn-ai-cv" (click)="runAi(job, 'curriculo')" [disabled]="isAiRunningForJob(job.url) || bulkBusy()" title="Gerar currículo personalizado em PDF">
             <i class="bi bi-file-earmark-person"></i> {{ hasDoc(job, 'curriculo') ? 'Refazer Currículo' : 'Gerar Currículo' }}
           </button>
-          <button type="button" class="btn-ai-action btn-ai-carta" (click)="runAi(job, 'carta')" title="Gerar carta de apresentação personalizada em PDF">
+          <button type="button" class="btn-ai-action btn-ai-carta" (click)="runAi(job, 'carta')" [disabled]="isAiRunningForJob(job.url) || bulkBusy()" title="Gerar carta de apresentação personalizada em PDF">
             <i class="bi bi-envelope"></i> {{ hasDoc(job, 'carta') ? 'Refazer Carta' : 'Gerar Carta' }}
           </button>
-          <button type="button" class="btn-ai-action btn-ai-entrevista" (click)="runAi(job, 'entrevista')" title="Gerar dossiê preparatório para entrevista com IA">
+          <button type="button" class="btn-ai-action btn-ai-entrevista" (click)="runAi(job, 'entrevista')" [disabled]="isAiRunningForJob(job.url) || bulkBusy()" title="Gerar dossiê preparatório para entrevista com IA">
             <i class="bi bi-person-video3"></i> {{ hasDoc(job, 'entrevista') ? 'Refazer Dossiê' : 'Preparar Entrevista' }}
           </button>
         </div>

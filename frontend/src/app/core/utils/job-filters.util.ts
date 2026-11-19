@@ -89,7 +89,7 @@ export const PORTAL_LABELS: Record<string, string> = Object.fromEntries(
 export const PORTAL_CATEGORIES: Array<{ id: PortalOption['category']; label: string }> = [
   { id: 'brasil', label: 'Portais Brasil' },
   { id: 'tech', label: 'Tecnologia & Inovação' },
-  { id: 'global', label: 'Internacional & Remoto Global (Career-Ops)' },
+  { id: 'global', label: 'Internacional & Remoto Global' },
   { id: 'executivo', label: 'Executivo & Especialistas' },
   { id: 'agro', label: 'Agronegócio' },
 ];
@@ -674,13 +674,38 @@ export function formatSalaryBRL(raw?: string): string {
     currencySymbol = 'GBP';
   }
 
-  const matches = text.match(/\d+([.,]\d+)?/g);
+  const matches = text.match(/\d+(?:[.,]\d+)*/g);
   if (!matches || matches.length === 0) return text;
+
+  const parseSalaryToken = (m: string): number => {
+    const hasComma = m.includes(',');
+    const hasDot = m.includes('.');
+    if (hasComma && hasDot) {
+      const lastComma = m.lastIndexOf(',');
+      const lastDot = m.lastIndexOf('.');
+      if (lastDot > lastComma) {
+        return Number(m.replace(/,/g, ''));
+      }
+      return Number(m.replace(/\./g, '').replace(',', '.'));
+    }
+    if (hasComma) {
+      if (/^\d{1,3}(,\d{3})+$/.test(m)) {
+        return Number(m.replace(/,/g, ''));
+      }
+      return Number(m.replace(',', '.'));
+    }
+    if (hasDot) {
+      if (/^\d{1,3}(\.\d{3})+$/.test(m)) {
+        return Number(m.replace(/\./g, ''));
+      }
+      return Number(m);
+    }
+    return Number(m);
+  };
 
   const nums = matches
     .map((m) => {
-      const clean = m.replace(/\./g, '').replace(/,/g, '');
-      let val = Number(clean);
+      let val = parseSalaryToken(m);
       if (val < 1000 && (text.toLowerCase().includes('k') || text.toLowerCase().includes('mil'))) {
         val *= 1000;
       }

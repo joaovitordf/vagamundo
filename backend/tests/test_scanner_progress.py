@@ -32,19 +32,24 @@ class ScannerProgressTests(unittest.TestCase):
 class ScannerAppliedFilterTests(unittest.TestCase):
     def test_load_results_hides_jobs_already_applied_via_ledger(self):
         import json
-        import sqlite3
         import tempfile
         from pathlib import Path
-        from types import SimpleNamespace
+        from backend.db.repository import Repository
 
-        conn = sqlite3.connect(":memory:")
-        conn.row_factory = sqlite3.Row
-        conn.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, url TEXT, company TEXT, title TEXT, status TEXT, fit TEXT)")
-        conn.execute("CREATE TABLE application_ledger (id INTEGER PRIMARY KEY, job_url TEXT, company TEXT, role TEXT)")
-        conn.execute("INSERT INTO application_ledger (job_url, company, role) VALUES (?, ?, ?)",
-                     ("https://portal.example/vaga/1/", "Empresa A", "Cargo A"))
-        conn.execute("INSERT INTO application_ledger (job_url, company, role) VALUES (?, ?, ?)",
-                     ("", "Empresa B", "Cargo B"))
+        repo = Repository(":memory:")
+        self.addCleanup(repo.close)
+        repo.record_application_ledger(
+            company="Empresa A",
+            role="Cargo A",
+            job_url="https://portal.example/vaga/1/",
+        )
+        repo.upsert_job({
+            "id": "job-b",
+            "company": "Empresa B",
+            "title": "Cargo B",
+            "url": "https://portal.example/vaga/b-orig",
+            "status": "applied",
+        })
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "res.json"
             out.write_text(json.dumps({"new": [
@@ -52,9 +57,7 @@ class ScannerAppliedFilterTests(unittest.TestCase):
                 {"url": "https://portal.example/vaga/2", "company": " empresa b ", "title": "CARGO  B", "date": None},
                 {"url": "https://portal.example/vaga/3", "company": "Livre", "title": "Livre", "date": None},
             ]}), encoding="utf-8")
-            scanner = ScannerService()
-            scanner.repo = SimpleNamespace(conn=conn)
-            scanner.out = out
+            scanner = ScannerService(out_path=out, repo=repo)
             urls = [j["url"] for j in scanner.load_results()["new"]]
         self.assertEqual(urls, ["https://portal.example/vaga/3"])
 

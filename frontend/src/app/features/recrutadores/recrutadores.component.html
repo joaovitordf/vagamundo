@@ -14,8 +14,8 @@
         </div>
       </div>
       <p class="panel-desc">
-        Publicações e vagas com <strong>e-mail direto (&#64;)</strong> buscadas simultaneamente no <strong>LinkedIn</strong> e nas demais plataformas (Hacker News, GitHub, Remotive, Remotar, FreeHire e RemoteOK).
-        A compatibilidade com seu CV é avaliada pela IA local e os itens permanecem listados com a nota de triagem até você movê-los manualmente para Descartadas.
+        Publicações e vagas com <strong>e-mail direto (&#64;)</strong> coletadas em fontes públicas sem login (Hacker News, GitHub, Remotive, Remotar, FreeHire, RemoteOK, Sólides, Gupy, Greenhouse, Ashby, Jobicy e Empregos.com.br).
+        Para o <strong>LinkedIn</strong>, gere abaixo sua pesquisa booleana formatada para procurar manualmente com segurança e cole aqui as vagas encontradas para triagem com IA.
       </p>
     </div>
 
@@ -162,11 +162,13 @@
         <div class="auto-mode-trigger-group">
           <button type="button"
                   class="btn-auto-mode"
-                  [class.is-running]="autoMode.isRunning()"
+                  [class.is-running]="autoMode.isRunning() && autoMode.status()?.mode === 'recruiters'"
                   (click)="triggerAutoMode()"
                   [disabled]="autoMode.isRunning() && autoMode.status()?.mode !== 'recruiters'"
-                  title="Busca em paralelo no LinkedIn (quando conectado) e nas demais fontes, descarta bancos de talentos e move vagas compatíveis para Me Interessam">
-            <i class="bi" [class.bi-stop-circle]="autoMode.isRunning()" [class.bi-robot]="!autoMode.isRunning()"></i>
+                  title="Busca em paralelo nas fontes públicas sem login, descarta ruídos e move vagas compatíveis para Me Interessam">
+            <i class="bi"
+               [class.bi-stop-circle]="autoMode.isRunning() && autoMode.status()?.mode === 'recruiters'"
+               [class.bi-robot]="!(autoMode.isRunning() && autoMode.status()?.mode === 'recruiters')"></i>
             <span>{{ autoMode.isRunning() && autoMode.status()?.mode === 'recruiters' ? 'Parar Automático' : 'Modo Automático' }}</span>
           </button>
           <label class="auto-score-field" title="Nota mínima (45 a 95) para mover automaticamente para Me Interessam">
@@ -221,84 +223,57 @@
       </div>
     </div>
 
-    <!-- BARRA COMPACTA: STATUS DO LINKEDIN AUTOMÁTICO -->
-    <div class="linkedin-worker-bar">
-      <div class="linkedin-worker-main">
-        <div class="linkedin-worker-identity">
-          <span class="linkedin-strip-title">
-            <i class="bi bi-linkedin"></i> LinkedIn Automático
+    <!-- FAIXA DE FONTES MULTIPLATAFORMA -->
+    @if (platformSummaryItems().length > 0) {
+      <div class="multiplatform-radar-bar" aria-label="Resumo por plataforma de origem">
+        <div class="multiplatform-radar-header">
+          <span class="multiplatform-radar-title">
+            <i class="bi bi-broadcast"></i>
+            {{ activePortalBreakdown() ? 'Fontes consultadas na busca/rodada:' : 'Plataformas ativas no radar:' }}
           </span>
-          <span class="linkedin-status-pill" [attr.data-status]="linkedInStatus()?.status || 'not_connected'">
-            {{ linkedInStatusLabel() }}
-          </span>
-          <span class="linkedin-meta-pill">
-            {{ linkedInPostsCount() }} {{ linkedInPostsCount() === 1 ? 'post no radar' : 'posts no radar' }}
-          </span>
-          @if (linkedInStatus(); as li) {
-            @if (li.last_query) {
-              <span class="linkedin-meta-pill" title="Diagnóstico da última coleta automática no LinkedIn">
-                Última: "{{ li.last_query }}" · {{ li.last_cards_total ?? 0 }} cards · {{ li.last_imported }} c/ e-mail
-              </span>
-            }
-          }
         </div>
-
-        <div class="linkedin-worker-actions">
-          @if (linkedInStatus(); as li) {
-            @if (li.status === 'awaiting_login') {
-              <button type="button"
-                      class="btn-action linkedin-btn compact-btn"
-                      [disabled]="linkedInBusy()"
-                      (click)="verifyLinkedIn()">
-                <i class="bi bi-check2-circle"></i> Já entrei (Verificar)
-              </button>
-            } @else if (li.status === 'connected') {
-              <button type="button"
-                      class="btn-action secondary compact-btn"
-                      [disabled]="linkedInBusy()"
-                      (click)="disconnectLinkedIn()"
-                      title="Fecha o navegador isolado e remove os cookies salvos do LinkedIn">
-                <i class="bi bi-box-arrow-right"></i> Desconectar
-              </button>
-            } @else {
-              <button type="button"
-                      class="btn-action linkedin-btn compact-btn"
-                      [disabled]="linkedInBusy() || !li.browser_available"
-                      (click)="connectLinkedIn()"
-                      title="Abre uma janela visível isolada para você entrar 1 vez na sua conta do LinkedIn">
-                <i class="bi bi-linkedin"></i>
-                {{ li.status === 'login_required' || li.status === 'checkpoint_required' ? 'Reconectar LinkedIn' : 'Conectar LinkedIn (1ª vez)' }}
-              </button>
-            }
-          } @else {
+        <div class="multiplatform-pills-list">
+          @for (item of platformSummaryItems(); track item.portal) {
             <button type="button"
-                    class="btn-action linkedin-btn compact-btn"
-                    [disabled]="linkedInBusy()"
-                    (click)="connectLinkedIn()">
-              <i class="bi bi-linkedin"></i> Conectar LinkedIn (1ª vez)
+                    class="multiplatform-pill"
+                    [class.multiplatform-pill--active]="portalFilter === item.portal"
+                    [class.multiplatform-pill--matched]="item.matched > 0 || (!item.fromSync && item.radarCount > 0)"
+                    [class.multiplatform-pill--error]="item.errors > 0 && item.matched === 0"
+                    (click)="togglePortalQuickFilter(item.portal)"
+                    [title]="item.lastError ? (item.label + ': ' + item.lastError) : ('Filtrar por ' + item.label)">
+              <span>{{ item.label }}</span>
+              @if (item.fromSync) {
+                <span>
+                  @if (item.matched > 0) {
+                    · {{ item.matched }} compat.
+                  } @else if (item.fetched > 0) {
+                    · {{ item.fetched }} lidas
+                  } @else if (item.errors > 0) {
+                    · aviso
+                  }
+                  @if (item.radarCount > 0) {
+                    ({{ item.radarCount }})
+                  }
+                </span>
+              } @else {
+                <span>· {{ item.radarCount }}</span>
+              }
             </button>
           }
         </div>
       </div>
+    }
 
-      @if (linkedInStatus()?.status === 'awaiting_login') {
-        <div class="linkedin-login-hint">
-          <i class="bi bi-info-circle-fill"></i>
-          <span>
-            Entre no LinkedIn na janela aberta (se seu e-mail for Gmail e o Google bloquear o login social, use
-            <strong>"Esqueci a senha"</strong> na tela do LinkedIn para definir uma senha direta). Depois de entrar no feed,
-            <strong>feche a janela</strong> do navegador que conectamos automaticamente (ou clique em <strong>Já entrei</strong>).
-          </span>
-        </div>
-      }
-
-      @if (linkedInStatus()?.status === 'login_required' || linkedInStatus()?.status === 'checkpoint_required' || linkedInStatus()?.status === 'unavailable') {
-        <div class="linkedin-worker-alert">
-          <i class="bi bi-exclamation-triangle-fill"></i>
-          <span>{{ linkedInStatus()?.last_error || linkedInStatusLabel() }}</span>
-        </div>
-      }
-    </div>
+    <!-- BARRA FORMATADA: PESQUISA MANUAL NO LINKEDIN + COLAGEM SEGURA -->
+    <app-linkedin-search-bar
+      [filterText]="filterText"
+      [jobAgeFilter]="jobAgeFilter"
+      [linkedInPostsCount]="linkedInPostsCount()"
+      (postsImported)="onLinkedInPostsImported($event)"
+      (postsEvaluated)="onLinkedInPostsEvaluated($event)"
+      (postInterested)="onLinkedInPostInterested($event)"
+      (postDismissed)="onLinkedInPostDismissed($event)"
+      (pasteError)="onLinkedInPasteError($event)" />
 
   </section>
 
@@ -626,13 +601,15 @@
             </div>
           }
         </div>
-      } @else if (isExternalPostUrl(post.url)) {
+      } @else if (isExternalPostUrl(post.url) || post.source === 'linkedin_paste') {
         <div class="email-highlight-banner email-highlight-banner--linkedin">
           <div class="emails-row">
-            <span class="email-label"><i class="bi bi-linkedin"></i> Contato / candidatura direto na publicação do LinkedIn</span>
-            <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
-              <i class="bi bi-box-arrow-up-right"></i> Abrir publicação no LinkedIn
-            </a>
+            <span class="email-label"><i class="bi bi-linkedin"></i> Sem e-mail identificado — candidatura pelo link do post</span>
+            @if (isExternalPostUrl(post.url)) {
+              <a [href]="post.url" target="_blank" rel="noopener noreferrer" class="meta-link">
+                <i class="bi bi-box-arrow-up-right"></i> Abrir publicação no LinkedIn
+              </a>
+            }
           </div>
         </div>
       }

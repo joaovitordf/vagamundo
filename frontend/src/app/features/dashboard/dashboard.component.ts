@@ -5,6 +5,7 @@ import { RouterModule } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { DashboardStats, DashboardMonthlyPoint, DashboardDailyPoint, DashboardStatusPoint, DashboardPortalPoint, DashboardActivityPoint } from '../../core/models/vaga.model';
 import { PortalBadgeComponent } from '../../shared/components/portal-badge.component';
+import { PORTAL_LABELS } from '../../core/utils/job-filters.util';
 
 @Component({
   selector: 'app-dashboard',
@@ -103,5 +104,20 @@ export class DashboardComponent implements OnInit {
     const parts = datePart.split('-');
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return d;
+  }
+
+  getPortalLabelOverride(p?: DashboardPortalPoint | null): string | null {
+    if (!p) return null;
+    const key = String(p.portal || '').trim().toLowerCase();
+    if (key && PORTAL_LABELS[key]) {
+      return null;
+    }
+    const label = String(p.label || '').trim();
+    if (!label) return null;
+    const rawSlug = key.replace(/-search$/, '');
+    if (label.toLowerCase() === key || label.toLowerCase() === rawSlug) {
+      return null;
+    }
+    return label;
   }
 }

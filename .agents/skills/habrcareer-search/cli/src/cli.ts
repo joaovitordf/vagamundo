@@ -26,7 +26,7 @@ function parseArgs(args: string[]) {
 
 async function main() {
   if (!command || command === "help" || command === "--help" || command === "-h") {
-    console.log(`habrcareer-search — CLI de busca no Habr Career (career.habr.ru)
+    console.log(`habrcareer-search — CLI de busca no Habr Career (career.habr.com)
 
 Uso:
   bun run src/cli.ts search [-q <termo>] [--remote] [--jobage <dias>] [--limit <n>] [--format json]

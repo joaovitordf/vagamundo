@@ -12,9 +12,11 @@ export async function runSearch(opts: SearchOptions): Promise<void> {
   const query = opts.query || "developer"
   const params = new URLSearchParams()
   params.set("q", query)
-  params.set("type", opts.remote ? "remote" : "all")
+  if (opts.remote) {
+    params.set("remote", "1")
+  }
 
-  const url = `https://career.habr.ru/vacancies?${params.toString()}`
+  const url = `https://career.habr.com/vacancies?${params.toString()}`
   let results: JobResult[] = []
 
   try {

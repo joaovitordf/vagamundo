@@ -181,9 +181,119 @@ REGION_PORTALS = {
     "remote": {
         "remotar-search", "remoteok-search", "jobicy-search", "hn-search",
         "freehire-search", "ashby-search", "greenhouse-search", "linkedin-search",
-        "gupy-search", "solides-search", "vagas-search", "infojobs-search"
+        "gupy-search", "solides-search", "vagas-search", "infojobs-search",
+        "hh-search", "habrcareer-search",
     }
 }
+
+ENGLISH_ONLY_PORTALS = {
+    "hh-search", "habrcareer-search", "remoteok-search", "jobicy-search", "hn-search", "ashby-search",
+}
+
+_PT_TO_EN_SEARCH_TERMS = {
+    "visao computacional": "Computer Vision",
+    "visao por computador": "Computer Vision",
+    "inteligencia artificial": "Artificial Intelligence",
+    "ia generativa": "Generative AI",
+    "aprendizado de maquina": "Machine Learning",
+    "aprendizagem de maquina": "Machine Learning",
+    "aprendizado profundo": "Deep Learning",
+    "ciencia de dados": "Data Science",
+    "cientista de dados": "Data Scientist",
+    "engenharia de dados": "Data Engineer",
+    "engenheiro de dados": "Data Engineer",
+    "analise de dados": "Data Analyst",
+    "analista de dados": "Data Analyst",
+    "processamento de linguagem natural": "NLP",
+    "processamento de imagens": "Image Processing",
+    "redes neurais": "Neural Networks",
+    "mineracao de dados": "Data Mining",
+    "engenharia de software": "Software Engineer",
+    "engenheiro de software": "Software Engineer",
+    "arquitetura de software": "Software Architect",
+    "arquiteto de software": "Software Architect",
+    "desenvolvimento web": "Web Developer",
+    "desenvolvimento mobile": "Mobile Developer",
+    "sistemas embarcados": "Embedded Systems",
+    "computacao em nuvem": "Cloud Computing",
+    "seguranca da informacao": "Cybersecurity",
+    "ciberseguranca": "Cybersecurity",
+    "qualidade de software": "QA Engineer",
+    "testes automatizados": "QA Automation",
+    "banco de dados": "Database",
+    "bancos de dados": "Database",
+    "microsservicos": "Microservices",
+    "computacao grafica": "Computer Graphics",
+    "robotica": "Robotics",
+    "automacao industrial": "Industrial Automation",
+    "automacao": "Automation",
+    "infraestrutura": "Infrastructure",
+    "redes de computadores": "Network Engineer",
+    "suporte tecnico": "Technical Support",
+    "sistemas distribuidos": "Distributed Systems",
+    "gestao de projetos": "Project Manager",
+    "gerente de projetos": "Project Manager",
+    "gestao de produto": "Product Manager",
+    "gerente de produto": "Product Manager",
+    "design de produto": "Product Designer",
+    "experiencia do usuario": "UX Designer",
+    "analise financeira": "Financial Analyst",
+    "financas": "Finance",
+    "contabilidade": "Accounting",
+    "controladoria": "Financial Controller",
+    "auditoria": "Auditor",
+    "recursos humanos": "Human Resources",
+    "recrutamento e selecao": "Talent Acquisition",
+    "marketing digital": "Digital Marketing",
+    "sucesso do cliente": "Customer Success",
+    "atendimento ao cliente": "Customer Support",
+    "vendas": "Sales",
+    "comercial": "Business Development",
+    "operacoes": "Operations",
+    "cadeia de suprimentos": "Supply Chain",
+    "logistica": "Logistics",
+    "compras": "Procurement",
+    "juridico": "Legal",
+    "direito tributario": "Tax Law",
+    "conformidade": "Compliance",
+    "engenharia civil": "Civil Engineer",
+    "engenharia mecanica": "Mechanical Engineer",
+    "engenharia eletrica": "Electrical Engineer",
+    "engenharia de producao": "Industrial Engineer",
+    "engenharia quimica": "Chemical Engineer",
+    "agronegocio": "Agribusiness",
+    "agronomia": "Agronomy",
+}
+
+_PT_ROLE_PREFIX_RE = re.compile(
+    r"^(?:desenvolvedor(?:a)?|engenheir[oa](?:\s+de\s+software)?|programador(?:a)?|analista(?:\s+de\s+sistemas)?|especialista|tecnic[oa])\s+(?:de\s+|em\s+)?",
+    re.IGNORECASE,
+)
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(ch))
+
+
+def translate_query_for_portal(term: str, portal: str) -> str:
+    """Convert common Portuguese job/area keywords to English for international portals."""
+    clean = re.sub(r"\s+", " ", str(term or "").strip())
+    if not clean or portal not in ENGLISH_ONLY_PORTALS:
+        return clean
+
+    norm = re.sub(r"\s+", " ", _strip_accents(clean)).strip().lower()
+    if norm in _PT_TO_EN_SEARCH_TERMS:
+        return _PT_TO_EN_SEARCH_TERMS[norm]
+
+    stripped_norm = _PT_ROLE_PREFIX_RE.sub("", norm).strip()
+    if stripped_norm and stripped_norm != norm:
+        if stripped_norm in _PT_TO_EN_SEARCH_TERMS:
+            return _PT_TO_EN_SEARCH_TERMS[stripped_norm]
+        stripped_orig = _PT_ROLE_PREFIX_RE.sub("", clean).strip()
+        if stripped_orig:
+            return stripped_orig
+
+    return clean
 
 REGION_LINKEDIN_LOCATION = {
     "brasil": "Brazil",
@@ -226,17 +336,18 @@ def _apply_query_terms(calls: list[tuple], query_str: str) -> list[tuple]:
     seen_sigs = set()
     for term in terms:
         for prio, portal, cargs in calls:
+            portal_term = translate_query_for_portal(term, portal)
             new_cargs = list(cargs)
             if "-q" in new_cargs:
                 idx = new_cargs.index("-q")
                 if idx + 1 < len(new_cargs):
-                    new_cargs[idx + 1] = term
+                    new_cargs[idx + 1] = portal_term
             elif "--query" in new_cargs:
                 idx = new_cargs.index("--query")
                 if idx + 1 < len(new_cargs):
-                    new_cargs[idx + 1] = term
+                    new_cargs[idx + 1] = portal_term
             else:
-                new_cargs.extend(["-q", term])
+                new_cargs.extend(["-q", portal_term])
             sig = (portal, tuple(new_cargs))
             if sig not in seen_sigs:
                 seen_sigs.add(sig)
@@ -1053,9 +1164,11 @@ def summary(result: dict) -> str:
 
 
 def _make_portal_call(portal: str, query: str, region: str | None = None) -> tuple[int, str, list[str]]:
-    extra_cargs = ["-q", query]
+    extra_cargs = ["-q", translate_query_for_portal(query, portal)]
     if portal == "linkedin-search":
         extra_cargs.extend(["-l", REGION_LINKEDIN_LOCATION.get(region or "brasil", "Brazil")])
+    elif portal in ("hh-search", "habrcareer-search") and region in ("remote", "global", None, "all"):
+        extra_cargs.append("--remote")
     return (1, portal, extra_cargs)
 
 
@@ -1112,17 +1225,21 @@ def _filter_calls_by_region(
         default_q = default_query or _default_search_query()
         for p in sorted(region_set):
             if resolved_installed.get(p):
-                extra_cargs = ["-q", default_q]
+                extra_cargs = ["-q", translate_query_for_portal(default_q, p)]
                 if p == "linkedin-search":
                     extra_cargs = _normalize_linkedin_location(extra_cargs, region)
                     if not REGION_LINKEDIN_LOCATION.get(region):
                         extra_cargs.extend(["-l", "Remote"])
+                elif p in ("hh-search", "habrcareer-search") and region in ("remote", "global"):
+                    extra_cargs.append("--remote")
                 filtered.append((1, p, extra_cargs))
 
     normalized_calls = []
     seen_sigs = set()
     for prio, portal, cargs in filtered:
         new_cargs = _normalize_linkedin_location(cargs, region) if portal == "linkedin-search" else list(cargs)
+        if portal in ("hh-search", "habrcareer-search") and region in ("remote", "global") and "--remote" not in new_cargs:
+            new_cargs.append("--remote")
         sig = (portal, tuple(new_cargs))
         if sig not in seen_sigs:
             seen_sigs.add(sig)
@@ -1234,7 +1351,7 @@ def main(argv=None) -> int:
         target_portals = set()
         for p in raw_portals:
             target_portals.add(p)
-            if not p.endswith("-search") and p not in ("europa", "eures", "google"):
+            if not p.endswith("-search"):
                 target_portals.add(f"{p}-search")
 
         filtered_calls = [c for c in calls if c[1] in target_portals]

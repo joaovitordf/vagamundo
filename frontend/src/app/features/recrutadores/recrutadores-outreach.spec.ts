@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { computed, signal } from '@angular/core';
 import { of } from 'rxjs';
-import { ApiService, LinkedInWorkerStatus } from '../../core/services/api.service';
+import { ApiService } from '../../core/services/api.service';
 import { AutoModeService } from '../../core/services/auto-mode.service';
 import { RecruiterPost } from '../../core/models/vaga.model';
 import {
@@ -10,6 +11,7 @@ import {
   filterAndSortRelevantHistoryPosts,
 } from '../../core/services/recruiter-state.service';
 import { RecrutadoresComponent, removePostAndFlagEmail, summarizeRecruiterSync } from './recrutadores.component';
+import { LinkedinSearchBarComponent } from './components/linkedin-search-bar/linkedin-search-bar.component';
 import {
   filterApplicationsList,
   isDirectEmailApplication,
@@ -225,34 +227,22 @@ describe('Recruiter outreach history helpers', () => {
   });
 });
 
-describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
-  const baseWorkerStatus = (overrides: Partial<LinkedInWorkerStatus> = {}): LinkedInWorkerStatus => ({
-    ok: true,
-    status: 'not_connected',
-    browser_available: true,
-    browser_name: 'chrome',
-    profile_initialized: false,
-    enabled: true,
-    headless: false,
-    cooldown_minutes: 20,
-    max_daily_searches: 15,
-    max_scrolls: 3,
-    daily_date: '2026-11-13',
-    daily_count: 0,
-    cooldown_remaining_seconds: 0,
-    last_run_at: null,
-    last_error: '',
-    last_query: '',
-    last_imported: 0,
-    ...overrides,
+describe('RecrutadoresComponent Barra Formatada LinkedIn e Fluxo Manual', () => {
+  beforeEach(() => {
+    localStorage.removeItem(RECRUITER_STATE_STORAGE_KEY);
   });
 
-  it('renders minimal LinkedIn bar without extra clutter buttons and starts Auto Mode without window.open', () => {
+  afterEach(() => {
+    localStorage.removeItem(RECRUITER_STATE_STORAGE_KEY);
+  });
+
+  it('renders formatted LinkedIn search bar with presets, reactive filters, custom override reset and clipboard copy without window.open on Auto Mode', () => {
     const startSpy = jasmine.createSpy('startRecruiters').and.returnValue(of({ ok: true }));
     const openSpy = spyOn(window, 'open');
-    const connectSpy = jasmine
-      .createSpy('connectLinkedInWorker')
-      .and.returnValue(of(baseWorkerStatus({ status: 'connected', profile_initialized: true })));
+    const writeTextSpy = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+    if (navigator?.clipboard) {
+      spyOnProperty(navigator, 'clipboard', 'get').and.returnValue({ writeText: writeTextSpy } as unknown as Clipboard);
+    }
 
     TestBed.configureTestingModule({
       imports: [RecrutadoresComponent],
@@ -264,10 +254,6 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
             getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
             saveRecruiterAutoConfig: () => of({ ok: true }),
             getRecruiterPosts: () => of({ posts: [] }),
-            getLinkedInWorkerStatus: () => of(baseWorkerStatus()),
-            connectLinkedInWorker: connectSpy,
-            verifyLinkedInWorker: () => of(baseWorkerStatus({ status: 'connected' })),
-            disconnectLinkedInWorker: () => of(baseWorkerStatus({ status: 'not_connected' })),
           },
         },
         {
@@ -289,36 +275,102 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
 
     expect(comp.availablePortals()).toContain('linkedin_post');
     const el: HTMLElement = fixture.nativeElement;
-    expect(el.textContent).toContain('LinkedIn Automático');
-    expect(el.textContent).toContain('Conectar LinkedIn (1ª vez)');
-    expect(el.textContent).not.toContain('Rebuscar LinkedIn');
-    expect(el.textContent).not.toContain('Incluir LinkedIn');
-    expect(el.textContent).not.toContain('Colar post avulso');
-    expect(el.textContent).not.toContain('Capturar LinkedIn');
-    expect(el.textContent).not.toContain('Copiar código');
-    expect(el.textContent).not.toContain('+ Aba LinkedIn');
+    expect(el.textContent).toContain('Barra de Pesquisa LinkedIn');
+    expect(el.textContent).toContain('Google X-Ray');
+    expect(el.textContent).not.toContain('LinkedIn Automático');
+    expect(el.textContent).not.toContain('Conectar LinkedIn');
 
-    comp.connectLinkedIn();
-    expect(connectSpy).toHaveBeenCalled();
-    expect(comp.linkedInStatus()?.status).toBe('connected');
+    // Altera filtros e valida query booleana enxuta + URL do LinkedIn em tempo real
+    const linkedInBar = fixture.debugElement.query(By.directive(LinkedinSearchBarComponent))
+      .componentInstance as LinkedinSearchBarComponent;
+    comp.filterText = 'Visão Computacional';
+    comp.workModelFilter = 'remote';
+    comp.regionFilter = 'brasil';
+    comp.jobAgeFilter = '7';
     fixture.detectChanges();
-    expect(el.textContent).toContain('Desconectar');
-    expect(el.textContent).not.toContain('Rebuscar LinkedIn');
-    expect(el.textContent).not.toContain('Descanso:');
 
-    comp.filterText = 'Angular';
+    expect(linkedInBar.activeLinkedInQuery()).toBe(
+      '("Visão Computacional" OR "Computer Vision") AND (vaga OR contratando OR hiring)'
+    );
+    const openLink = el.querySelector('.linkedin-search-actions a.linkedin-btn') as HTMLAnchorElement;
+    expect(openLink).not.toBeNull();
+    expect(openLink.getAttribute('href')).toContain('https://www.linkedin.com/search/results/content/?keywords=');
+    expect(openLink.getAttribute('href')).toContain('datePosted=%22past-week%22');
+    expect(openLink.getAttribute('target')).toBe('_blank');
+
+    // Alternar preset e idioma
+    linkedInBar.setLinkedInPreset('jobs_email');
+    linkedInBar.setLinkedInLanguageMode('en');
+    fixture.detectChanges();
+    expect(linkedInBar.activeLinkedInQuery()).toBe(
+      '"Computer Vision" AND (email OR cv OR resume)'
+    );
+
+    // Edição manual + restauração
+    linkedInBar.onLinkedInQueryInput('Python AND hiring AND "remote"');
+    fixture.detectChanges();
+    expect(linkedInBar.linkedInCustomQuery()).toBe('Python AND hiring AND "remote"');
+    expect(linkedInBar.activeLinkedInUrl()).toContain(encodeURIComponent('Python AND hiring AND "remote"'));
+    linkedInBar.resetLinkedInQuery();
+    fixture.detectChanges();
+    expect(linkedInBar.linkedInCustomQuery()).toBeNull();
+
+    linkedInBar.copyLinkedInQuery();
+    if (navigator?.clipboard) {
+      expect(writeTextSpy).toHaveBeenCalledTimes(1);
+    }
+
     comp.triggerAutoMode();
-
     expect(openSpy).not.toHaveBeenCalled();
     expect(startSpy).toHaveBeenCalled();
     fixture.destroy();
   });
 
-  it('auto-verifies once when awaiting_login window closes cleanly', () => {
-    let statusStep = 0;
-    const verifySpy = jasmine
-      .createSpy('verifyLinkedInWorker')
-      .and.returnValue(of(baseWorkerStatus({ status: 'connected', profile_initialized: true, login_window_open: false })));
+  it('imports single and batch LinkedIn posts via manual paste panel into Atuais encontrados', () => {
+    const importedSingle: RecruiterPost = {
+      id: 701,
+      portal: 'linkedin_post',
+      company: 'TechRecruiter',
+      title: 'Dev Python Remoto',
+      description: 'Vaga Python remoto! CV para jobs@techrecruiter.dev',
+      emails: ['jobs@techrecruiter.dev'],
+      matched_keywords: ['Python'],
+      match_score: 80,
+      url: 'https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000701/',
+      created_at: new Date().toISOString(),
+    };
+    const importedBatch: RecruiterPost = {
+      id: 702,
+      portal: 'linkedin_post',
+      company: 'CloudTwo',
+      title: 'Backend Go',
+      description: 'Vaga Go! CV para talent@cloudtwo.dev',
+      emails: ['talent@cloudtwo.dev'],
+      matched_keywords: ['Go'],
+      match_score: 75,
+      created_at: new Date().toISOString(),
+    };
+
+    let dbPosts: RecruiterPost[] = [];
+    const pasteSpy = jasmine.createSpy('pasteRecruiterPost').and.callFake(() => {
+      dbPosts = [importedSingle, ...dbPosts.filter(p => p.id !== importedSingle.id)];
+      return of({
+        ok: true,
+        post: importedSingle,
+        auto_mode_woken: false,
+      });
+    });
+    const batchSpy = jasmine.createSpy('pasteRecruiterPostsBatch').and.callFake(() => {
+      dbPosts = [importedBatch, ...dbPosts.filter(p => p.id !== importedBatch.id)];
+      return of({
+        ok: true,
+        imported: 1,
+        updated: 0,
+        skipped: 0,
+        invalid: 0,
+        posts: [importedBatch],
+      });
+    });
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -330,18 +382,9 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
             getCvAreas: () => of({ areas: [] }),
             getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
             saveRecruiterAutoConfig: () => of({ ok: true }),
-            getRecruiterPosts: () => of({ posts: [] }),
-            getLinkedInWorkerStatus: () => {
-              statusStep++;
-              return of(baseWorkerStatus({
-                status: 'awaiting_login',
-                login_window_open: statusStep === 1,
-              }));
-            },
-            connectLinkedInWorker: () => of(baseWorkerStatus({ status: 'awaiting_login', login_window_open: true })),
-            verifyLinkedInWorker: verifySpy,
-            updateLinkedInWorkerConfig: () => of(baseWorkerStatus()),
-            disconnectLinkedInWorker: () => of(baseWorkerStatus({ status: 'not_connected' })),
+            getRecruiterPosts: () => of({ posts: dbPosts }),
+            pasteRecruiterPost: pasteSpy,
+            pasteRecruiterPostsBatch: batchSpy,
           },
         },
         {
@@ -360,19 +403,42 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     const fixture = TestBed.createComponent(RecrutadoresComponent);
     const comp = fixture.componentInstance;
     fixture.detectChanges();
+    const linkedInBar = fixture.debugElement.query(By.directive(LinkedinSearchBarComponent))
+      .componentInstance as LinkedinSearchBarComponent;
 
-    expect(comp.linkedInStatus()?.status).toBe('awaiting_login');
-    expect(fixture.nativeElement.textContent).toContain('Esqueci a senha');
-    expect(verifySpy).not.toHaveBeenCalled();
+    linkedInBar.togglePastePanel();
+    expect(linkedInBar.showPastePanel()).toBeTrue();
 
-    // Segunda checagem simula o usuário tendo fechado a janela do navegador (login_window_open: false)
-    comp.loadLinkedInStatus();
-    expect(verifySpy).toHaveBeenCalledTimes(1);
-    expect(comp.linkedInStatus()?.status).toBe('connected');
+    linkedInBar.pasteText.set('Vaga Python remoto! CV para jobs@techrecruiter.dev');
+    linkedInBar.pasteUrl.set('https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000701/');
+    linkedInBar.submitManualPaste();
+    fixture.detectChanges();
+
+    expect(pasteSpy).toHaveBeenCalledWith({
+      raw_text: 'Vaga Python remoto! CV para jobs@techrecruiter.dev',
+      url: 'https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000701/',
+      allow_without_email: true,
+    });
+    expect(linkedInBar.showPastePanel()).toBeTrue();
+    expect(linkedInBar.pastedReviews().map(r => r.post.id)).toContain(701);
+    expect(comp.filteredPosts().map(p => p.id)).toContain(701);
+
+    // Colagem em lote separada por '---' (painel continua aberto)
+    linkedInBar.pasteText.set('Post 1\n---\nVaga Go! CV para talent@cloudtwo.dev');
+    linkedInBar.submitManualPaste();
+    fixture.detectChanges();
+
+    expect(batchSpy).toHaveBeenCalledWith({
+      raw_batch_text: 'Post 1\n---\nVaga Go! CV para talent@cloudtwo.dev',
+      allow_without_email: true,
+    });
+    expect(linkedInBar.pastedReviews().map(r => r.post.id)).toContain(702);
+    expect(comp.filteredPosts().map(p => p.id)).toContain(702);
+
     fixture.destroy();
   });
 
-  it('triggers manual AI triage, force LinkedIn re-search, and renders LinkedIn portal badge + diagnostics', () => {
+  it('triggers manual AI triage and renders LinkedIn portal badge + diagnostics', () => {
     let triagedDone = false;
     const postBefore: RecruiterPost = {
       id: 101,
@@ -399,8 +465,7 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
       scanned: 1,
       posts_with_email: 1,
       synced: 1,
-      linkedin_synced: 1,
-      linkedin_cards_total: 5,
+      portal_synced: 1,
       matched_post_ids: [101],
       collected_post_ids: [101],
     }));
@@ -430,17 +495,6 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
             getRecruiterPosts: () => of({ posts: [triagedDone ? postTriaged : postBefore] }),
             syncRecruiterPosts: syncSpy,
             triageRecruiterPosts: triageSpy,
-            getLinkedInWorkerStatus: () => of(baseWorkerStatus({
-              status: 'connected',
-              profile_initialized: true,
-              last_query: 'Java',
-              last_imported: 1,
-              last_cards_total: 5,
-            })),
-            connectLinkedInWorker: () => of(baseWorkerStatus({ status: 'connected' })),
-            verifyLinkedInWorker: () => of(baseWorkerStatus({ status: 'connected' })),
-            updateLinkedInWorkerConfig: () => of(baseWorkerStatus({ status: 'connected' })),
-            disconnectLinkedInWorker: () => of(baseWorkerStatus({ status: 'not_connected' })),
           },
         },
         {
@@ -459,17 +513,16 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     const fixture = TestBed.createComponent(RecrutadoresComponent);
     const comp = fixture.componentInstance;
     comp.resetSecondaryFilters();
-    expect(comp.jobAgeFilter).toBe('1');
+    expect(comp.jobAgeFilter).toBe('');
     comp.filterText = 'Java';
     comp.onSearch();
-    expect(syncSpy).toHaveBeenCalledWith('Java', { days: 1 });
+    expect(syncSpy).toHaveBeenCalledWith('Java');
 
     comp.state.jobAgeFilter.set('');
     comp.state.hasSearched.set(true);
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('Última: "Java" · 5 cards · 1 c/ e-mail');
     expect(el.textContent).not.toContain('Rebuscar LinkedIn');
     const liBadge = el.querySelector('app-portal-badge [data-portal="linkedin_post"]') as HTMLElement;
     expect(liBadge).not.toBeNull();
@@ -487,15 +540,14 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     fixture.detectChanges();
     expect(el.textContent).toContain('89/100');
 
-    const cooldownDiag = summarizeRecruiterSync({
+    const partialDiag = summarizeRecruiterSync({
       ok: true,
       scanned: 0,
       posts_with_email: 0,
       synced: 0,
-      linkedin_skipped_reason: 'cooldown',
-      linkedin_cooldown_remaining_seconds: 900,
+      warnings: ['github-vagas: HTTP 403'],
     });
-    expect(cooldownDiag.warning).toContain('15 min');
+    expect(partialDiag.warning).toContain('github-vagas: HTTP 403');
 
     comp.filterText = 'Angular';
     comp.state.currentRoundPostIds.set(null);
@@ -638,13 +690,6 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
             getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
             saveRecruiterAutoConfig: () => of({ ok: true }),
             getRecruiterPosts: getPostsSpy,
-            getLinkedInWorkerStatus: () => of(baseWorkerStatus({
-              status: 'connected',
-              profile_initialized: true,
-              last_query: 'Ruby',
-              last_imported: 1,
-              last_cards_total: 4,
-            })),
           },
         },
         {
@@ -663,7 +708,7 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     const fixture = TestBed.createComponent(RecrutadoresComponent);
     const comp = fixture.componentInstance;
     comp.resetSecondaryFilters();
-    expect(comp.jobAgeFilter).toBe('1');
+    expect(comp.jobAgeFilter).toBe('');
     comp.autoMinScore = 60;
     comp.onOnlyCvMatchChange(true);
     fixture.detectChanges();
@@ -682,7 +727,7 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     fixture.detectChanges();
     expect(startAutoSpy).toHaveBeenCalled();
     expect(comp.onlyCvMatch()).toBeTrue();
-    expect(comp.jobAgeFilter).toBe('1');
+    expect(comp.jobAgeFilter).toBe('');
     expect(comp.filteredPosts()).toEqual([]);
 
     // Rodada 1 conclui coleta multiplataforma (LinkedIn + FreeHire)
@@ -727,6 +772,16 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
 
   it('renders two columns without card title envelope icon and supports batch Descartadas cleanup in history', () => {
     localStorage.removeItem(RECRUITER_STATE_STORAGE_KEY);
+    const localIsoOffset = (deltaDays: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + deltaDays);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+    const today = localIsoOffset(0);
+    const fourDaysAgo = localIsoOffset(-4);
 
     const postHighAngular: RecruiterPost = {
       id: 401,
@@ -740,9 +795,9 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
       ai_classification: 'vaga_ativa',
       ai_score: 84,
       ai_verdict: 'Forte aderência',
-      ai_evaluated_at: '2026-11-14T09:00:00Z',
-      published_date: '2026-11-14',
-      created_at: '2026-11-14T09:00:00Z',
+      ai_evaluated_at: `${today}T09:00:00Z`,
+      published_date: today,
+      created_at: `${today}T09:00:00Z`,
     };
     const postLowScorePython: RecruiterPost = {
       id: 402,
@@ -756,9 +811,9 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
       ai_classification: 'vaga_ativa',
       ai_score: 32,
       ai_verdict: 'Baixa compatibilidade',
-      ai_evaluated_at: '2026-11-14T09:10:00Z',
-      published_date: '2026-11-14',
-      created_at: '2026-11-14T09:10:00Z',
+      ai_evaluated_at: `${today}T09:10:00Z`,
+      published_date: today,
+      created_at: `${today}T09:10:00Z`,
     };
     const postMidReact: RecruiterPost = {
       id: 403,
@@ -772,9 +827,9 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
       ai_classification: 'vaga_ativa',
       ai_score: 52,
       ai_verdict: 'Moderada',
-      ai_evaluated_at: '2026-11-10T15:00:00Z',
-      published_date: '2026-11-10',
-      created_at: '2026-11-10T15:00:00Z',
+      ai_evaluated_at: `${fourDaysAgo}T15:00:00Z`,
+      published_date: fourDaysAgo,
+      created_at: `${fourDaysAgo}T15:00:00Z`,
     };
     const postNonJob: RecruiterPost = {
       id: 404,
@@ -787,9 +842,9 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
       match_score: 20,
       ai_classification: 'nao_e_vaga',
       ai_score: 10,
-      ai_evaluated_at: '2026-11-14T08:00:00Z',
-      published_date: '2026-11-14',
-      created_at: '2026-11-14T08:00:00Z',
+      ai_evaluated_at: `${today}T08:00:00Z`,
+      published_date: today,
+      created_at: `${today}T08:00:00Z`,
     };
     const postUntriaged: RecruiterPost = {
       id: 405,
@@ -800,8 +855,8 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
       emails: ['dev@pendente.dev'],
       matched_keywords: ['Angular'],
       match_score: 80,
-      published_date: '2026-11-14',
-      created_at: '2026-11-14T09:20:00Z',
+      published_date: today,
+      created_at: `${today}T09:20:00Z`,
     };
 
     const dismissBatchSpy = jasmine
@@ -828,7 +883,6 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
                 total: 5,
                 posts: [postHighAngular, postLowScorePython, postMidReact, postNonJob, postUntriaged],
               }),
-            getLinkedInWorkerStatus: () => of(baseWorkerStatus({ status: 'connected', profile_initialized: true })),
             dismissRecruiterPostsBatch: dismissBatchSpy,
             markRecruiterPostInterested: interestedSpy,
           },
@@ -959,7 +1013,6 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
             getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
             saveRecruiterAutoConfig: () => of({ ok: true }),
             getRecruiterPosts: () => of({ total: posts.length, posts }),
-            getLinkedInWorkerStatus: () => of(baseWorkerStatus({ status: 'connected', profile_initialized: true })),
             dismissRecruiterPostsBatch: dismissBatchSpy,
           },
         },
@@ -1140,7 +1193,6 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
             getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
             saveRecruiterAutoConfig: () => of({ ok: true }),
             getRecruiterPosts: () => of({ total: posts.length, posts }),
-            getLinkedInWorkerStatus: () => of(baseWorkerStatus({ status: 'connected', profile_initialized: true })),
             markRecruiterPostInterested: interestedSpy,
           },
         },
@@ -1220,5 +1272,229 @@ describe('RecrutadoresComponent LinkedIn Automático worker UI', () => {
     expect(updatedSap?.ai_summary).toBe('Senioridade acima do alvo.');
 
     fixture.destroy();
+  });
+
+  it('retains promoted external portals across sections, passes explicit jobAge days, and renders multiplatform breakdown pills in manual and Auto Mode', () => {
+    localStorage.removeItem(RECRUITER_STATE_STORAGE_KEY);
+    const localIsoOffset = (deltaDays: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + deltaDays);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const today = localIsoOffset(0);
+    const fiveDaysAgo = localIsoOffset(-5);
+    const twelveDaysAgo = localIsoOffset(-12);
+
+    const posts: RecruiterPost[] = [
+      {
+        id: 3001,
+        portal: 'linkedin_post',
+        company: 'LinkedToday',
+        title: 'Python Engineer',
+        description: 'Python role today. CV para li@today.dev',
+        emails: ['li@today.dev'],
+        matched_keywords: ['Python'],
+        match_score: 85,
+        ai_classification: 'vaga_ativa',
+        ai_score: 84,
+        ai_verdict: 'Strong Fit',
+        ai_evaluated_at: `${today}T10:00:00Z`,
+        published_date: today,
+        created_at: `${today}T09:50:00Z`,
+        url: 'https://www.linkedin.com/feed/update/urn:li:activity:7990000000000003001/',
+      },
+      {
+        id: 3002,
+        portal: 'freehire-search',
+        company: 'FreeHireFiveDays',
+        title: 'Python Platform Engineer',
+        description: 'Python & FastAPI. Email fh@five.dev',
+        emails: ['fh@five.dev'],
+        matched_keywords: ['Python'],
+        match_score: 80,
+        ai_classification: 'vaga_ativa',
+        ai_score: 88,
+        ai_verdict: 'Strong Fit',
+        ai_evaluated_at: `${fiveDaysAgo}T10:00:00Z`,
+        published_date: fiveDaysAgo,
+        created_at: `${fiveDaysAgo}T09:50:00Z`,
+        job_status: 'interested',
+        auto_promoted: 1,
+        url: 'https://freehire.me/jobs/py-3002',
+      },
+      {
+        id: 3003,
+        portal: 'solides-search',
+        company: 'SolidesTwelveDays',
+        title: 'Dev Python Sênior',
+        description: 'Python e Docker. Envie CV para rh@solides3003.dev',
+        emails: ['rh@solides3003.dev'],
+        matched_keywords: ['Python'],
+        match_score: 75,
+        ai_classification: 'vaga_ativa',
+        ai_score: 79,
+        ai_verdict: 'Good Fit',
+        ai_evaluated_at: `${twelveDaysAgo}T10:00:00Z`,
+        published_date: twelveDaysAgo,
+        created_at: `${twelveDaysAgo}T09:50:00Z`,
+        job_status: 'interested',
+        auto_promoted: 1,
+        url: 'https://vagas.solides.com.br/vaga/3003',
+      },
+      {
+        id: 3004,
+        portal: 'hn-search',
+        company: 'HNOld',
+        title: 'Backend Python',
+        description: 'Python distributed. Email jobs@hn3004.dev',
+        emails: ['jobs@hn3004.dev'],
+        matched_keywords: ['Python'],
+        match_score: 70,
+        ai_classification: 'vaga_ativa',
+        ai_score: 76,
+        ai_verdict: 'Good Fit',
+        ai_evaluated_at: `${twelveDaysAgo}T08:00:00Z`,
+        published_date: twelveDaysAgo,
+        created_at: `${twelveDaysAgo}T07:50:00Z`,
+        job_status: 'interested',
+        auto_promoted: 1,
+        url: 'https://news.ycombinator.com/item?id=3004',
+      },
+    ];
+
+    const manualBreakdown = {
+      linkedin_post: { fetched: 3, matched: 1, errors: 0, last_error: null },
+      'freehire-search': { fetched: 15, matched: 1, errors: 0, last_error: null },
+      'solides-search': { fetched: 8, matched: 1, errors: 0, last_error: null },
+      'hn-search': { fetched: 5, matched: 1, errors: 0, last_error: null },
+    };
+
+    const syncSpy = jasmine.createSpy('syncRecruiterPosts').and.callFake(() =>
+      of({
+        scanned: 31,
+        posts_with_email: 4,
+        synced: 4,
+        matched_post_ids: [3001, 3002, 3003, 3004],
+        collected_post_ids: [3001, 3002, 3003, 3004],
+        portal_breakdown: manualBreakdown,
+        warnings: [],
+      })
+    );
+
+    const autoStatusSig = signal<any>({
+      running: false,
+      mode: 'recruiters',
+      keywords: [],
+      round_post_ids: [],
+      round_portal_breakdown: null,
+      round_warnings: [],
+    });
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [RecrutadoresComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            getCvAreas: () => of({ areas: [] }),
+            getRecruiterAutoConfig: () => of({ ok: true, config: { min_score: 60, continuous: true, cooldown_seconds: 30 } }),
+            saveRecruiterAutoConfig: () => of({ ok: true }),
+            getRecruiterPosts: () => of({ total: posts.length, posts }),
+            syncRecruiterPosts: syncSpy,
+          },
+        },
+        {
+          provide: AutoModeService,
+          useValue: {
+            status: autoStatusSig,
+            isRunning: computed(() => !!autoStatusSig()?.running),
+            resultsRefreshTick: signal(0),
+            startRecruiters: () => of({ ok: true }),
+            cancel: () => {},
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(RecrutadoresComponent);
+    const comp = fixture.componentInstance;
+    fixture.detectChanges();
+
+    // Default jobAgeFilter is '' -> calls sync without { days } and shows promoted external portals in História
+    expect(comp.jobAgeFilter).toBe('');
+    expect(comp.relevantHistoryPosts().map(p => p.id).sort()).toEqual([3001, 3002, 3003, 3004]);
+
+    comp.filterText = 'Python';
+    comp.onSearch();
+    fixture.detectChanges();
+
+    expect(syncSpy).toHaveBeenCalledWith('Python');
+    expect(comp.filteredPosts().map(p => p.id).sort()).toEqual([3001, 3002, 3003, 3004]);
+
+    const el = fixture.nativeElement as HTMLElement;
+    const manualPills = Array.from(el.querySelectorAll('.multiplatform-radar-bar .multiplatform-pill'));
+    expect(manualPills.length).toBeGreaterThanOrEqual(4);
+    expect(el.querySelector('.multiplatform-radar-bar')?.textContent).toContain('FreeHire');
+    expect(el.querySelector('.multiplatform-radar-bar')?.textContent).toContain('Sólides');
+
+    // Quick portal filter via pill toggle isolates solides-search in Atuais encontrados while preserving full Histórico
+    comp.togglePortalQuickFilter('solides-search');
+    fixture.detectChanges();
+    expect(comp.portalFilter).toBe('solides-search');
+    expect(comp.filteredPosts().map(p => p.id)).toEqual([3003]);
+    expect(comp.relevantHistoryPosts().map(p => p.id).sort()).toEqual([3001, 3002, 3003, 3004]);
+
+    comp.togglePortalQuickFilter('solides-search');
+    fixture.detectChanges();
+    expect(comp.portalFilter).toBe('');
+    expect(comp.filteredPosts().length).toBe(4);
+
+    // Explicit jobAgeFilter '1' and '7' pass { days: 1 } / { days: 7 } and narrow filteredPosts
+    comp.jobAgeFilter = '1';
+    comp.onSearch();
+    fixture.detectChanges();
+    expect(syncSpy).toHaveBeenCalledWith('Python', { days: 1 });
+    expect(comp.filteredPosts().map(p => p.id)).toEqual([3001]);
+
+    comp.jobAgeFilter = '7';
+    comp.onSearch();
+    fixture.detectChanges();
+    expect(syncSpy).toHaveBeenCalledWith('Python', { days: 7 });
+    expect(comp.filteredPosts().map(p => p.id).sort()).toEqual([3001, 3002]);
+
+    comp.jobAgeFilter = '';
+    fixture.detectChanges();
+    expect(comp.filteredPosts().length).toBe(4);
+
+    // Auto Mode telemetry updates .multiplatform-radar-bar dynamically
+    autoStatusSig.set({
+      running: true,
+      mode: 'recruiters',
+      run_id: 'auto-mp-1',
+      round: 2,
+      keywords: ['Python'],
+      phase: 'screening',
+      round_post_ids: [3002, 3003],
+      round_portal_breakdown: {
+        'freehire-search': { fetched: 12, matched: 1, errors: 0, last_error: null },
+        'solides-search': { fetched: 9, matched: 1, errors: 0, last_error: null },
+        'github-vagas': { fetched: 0, matched: 0, errors: 1, last_error: 'timeout' },
+      },
+      round_warnings: ['github-vagas: timeout'],
+    });
+    fixture.detectChanges();
+
+    expect(comp.activePortalBreakdown()?.['solides-search']?.matched).toBe(1);
+    const autoPills = Array.from(el.querySelectorAll('.multiplatform-radar-bar .multiplatform-pill'));
+    expect(autoPills.length).toBe(5);
+    expect(el.querySelector('.multiplatform-radar-bar')?.textContent).toContain('GitHub');
+
+    fixture.destroy();
+    localStorage.removeItem(RECRUITER_STATE_STORAGE_KEY);
   });
 });

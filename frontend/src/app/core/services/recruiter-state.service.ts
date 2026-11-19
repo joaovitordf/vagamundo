@@ -27,6 +27,7 @@ interface PersistedRecruiterState {
   regionFilter?: string;
   jobAgeFilter?: string;
   jobAgeDefault24hApplied?: boolean;
+  jobAgeDefaultAllApplied?: boolean;
   hideUndated?: boolean;
   scoreFilter?: string;
   sortBy?: RecruiterSortMode;
@@ -217,8 +218,7 @@ export function filterAndSortRelevantHistoryPosts(
   return [...posts]
     .filter(
       p =>
-        Array.isArray(p.emails) &&
-        p.emails.length > 0 &&
+        ((Array.isArray(p.emails) && p.emails.length > 0) || p.source === 'linkedin_paste') &&
         Boolean(p.ai_evaluated_at) &&
         p.ai_classification === 'vaga_ativa' &&
         typeof p.ai_score === 'number' &&
@@ -249,7 +249,7 @@ export class RecruiterStateService {
   readonly portalFilter = signal<string>('');
   readonly workModelFilter = signal<string>('');
   readonly regionFilter = signal<string>('');
-  readonly jobAgeFilter = signal<string>('1');
+  readonly jobAgeFilter = signal<string>('');
   readonly hideUndated = signal<boolean>(false);
   readonly scoreFilter = signal<string>('');
   readonly sortBy = signal<RecruiterSortMode>('relevance');
@@ -309,7 +309,7 @@ export class RecruiterStateService {
       this.portalFilter() ||
       this.workModelFilter() ||
       this.regionFilter() ||
-      (this.jobAgeFilter() && this.jobAgeFilter() !== '1') ||
+      this.jobAgeFilter() ||
       this.hideUndated() ||
       this.scoreFilter() ||
       this.onlyCvMatch() ||
@@ -333,7 +333,7 @@ export class RecruiterStateService {
     this.portalFilter.set('');
     this.workModelFilter.set('');
     this.regionFilter.set('');
-    this.jobAgeFilter.set('1');
+    this.jobAgeFilter.set('');
     this.hideUndated.set(false);
     this.scoreFilter.set('');
     this.onlyCvMatch.set(false);
@@ -352,7 +352,7 @@ export class RecruiterStateService {
         workModelFilter: this.workModelFilter(),
         regionFilter: this.regionFilter(),
         jobAgeFilter: this.jobAgeFilter(),
-        jobAgeDefault24hApplied: true,
+        jobAgeDefaultAllApplied: true,
         hideUndated: this.hideUndated(),
         scoreFilter: this.scoreFilter(),
         sortBy: this.sortBy(),
@@ -384,14 +384,10 @@ export class RecruiterStateService {
       if (typeof parsed.portalFilter === 'string') this.portalFilter.set(parsed.portalFilter);
       if (typeof parsed.workModelFilter === 'string') this.workModelFilter.set(parsed.workModelFilter);
       if (typeof parsed.regionFilter === 'string') this.regionFilter.set(parsed.regionFilter);
-      if (parsed.jobAgeDefault24hApplied !== true) {
-        if (typeof parsed.jobAgeFilter === 'string' && parsed.jobAgeFilter) {
-          this.jobAgeFilter.set(parsed.jobAgeFilter);
-        } else {
-          this.jobAgeFilter.set('1');
-        }
-      } else if (typeof parsed.jobAgeFilter === 'string') {
+      if (parsed.jobAgeDefaultAllApplied === true && typeof parsed.jobAgeFilter === 'string') {
         this.jobAgeFilter.set(parsed.jobAgeFilter);
+      } else {
+        this.jobAgeFilter.set('');
       }
       if (typeof parsed.hideUndated === 'boolean') this.hideUndated.set(parsed.hideUndated);
       if (

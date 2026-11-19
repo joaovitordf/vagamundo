@@ -402,4 +402,29 @@ describe('MeInteressamComponent', () => {
     expect(component.portalFilter()).toBe('all');
     expect(component.filteredJobs().length).toBe(5);
   });
+
+  it('checks liveness of visible HTTP URLs via /api/jobs/liveness and renders status chips', () => {
+    fixture.detectChanges();
+    flushBootstrapRequests();
+    fixture.detectChanges();
+
+    component.checkVisibleLinks();
+    const liveReq = httpMock.expectOne('/api/jobs/liveness');
+    expect(liveReq.request.method).toBe('POST');
+    expect(liveReq.request.body).toEqual({
+      urls: ['https://example.com/java-1', 'https://example.com/frontend-3'],
+    });
+    liveReq.flush({
+      total: 2,
+      results: [
+        { url: 'https://example.com/java-1', alive: true, reason: 'OK', checked_at: '2026-11-18T17:00:00Z' },
+        { url: 'https://example.com/frontend-3', alive: false, reason: 'HTTP 404', checked_at: '2026-11-18T17:00:00Z' },
+      ],
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('Link ativo');
+    expect(el.textContent).toContain('Vaga encerrada (HTTP 404)');
+  });
 });

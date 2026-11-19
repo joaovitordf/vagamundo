@@ -397,7 +397,7 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   checkInitialStatus(): void {
     this.api.getSearchStatus().subscribe({
       next: (st) => {
-        const searchJob = st?.search;
+        const searchJob = st?.search || st;
         if (searchJob?.error) {
           this.searchError.set('A busca não terminou: ' + searchJob.error);
         }
@@ -440,6 +440,7 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   private _resolvePortalsSelection(): { selectedList: string[]; isAllPortals: boolean } | null {
     const selectedList = Array.from(this.selectedPortalIds());
     if (selectedList.length === 0) {
+      this.toast.warning('Selecione pelo menos uma fonte de busca (portal) no dropdown.');
       this.showToast('⚠️ Selecione pelo menos uma fonte de busca (portal) no dropdown.');
       return null;
     }
@@ -487,6 +488,11 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   }
 
   triggerPortalSearch(): void {
+    const sel = this._resolvePortalsSelection();
+    if (!sel) {
+      return;
+    }
+
     this.searching.set(true);
     this.showProgressPanel.set(true);
     this.progressExpanded.set(true);
@@ -510,13 +516,6 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
       this.showTriagePanel.set(false);
     }
 
-    const sel = this._resolvePortalsSelection();
-    if (!sel) {
-      this.searching.set(false);
-      this.searchStatus.set('');
-      return;
-    }
-
     const payload = {
       all: true,
       jobage: Number(this.filterJobAge) || 14,
@@ -535,7 +534,7 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.searching.set(false);
         this.searchStatus.set('');
-        this.searchError.set('Erro ao iniciar busca: ' + (err?.error?.error || err?.message || 'Falha na comunicação'));
+        this.searchError.set('Erro ao iniciar busca: ' + (err?.error?.detail || err?.error?.error || err?.message || 'Erro ao iniciar a busca.'));
       }
     });
   }
@@ -857,10 +856,22 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
     return this.filteredVagas();
   }
 
+  isBestScoreFilterActive(): boolean {
+    return this.filterSort === 'score-desc' && (this.filterScore === 'high' || this.filterScore === 'triadas');
+  }
+
   filterByBestScore(): void {
     if (!this.hasTriagedJobs()) return;
-    this.filterScore = 'triadas';
-    this.filterSort = 'score-desc';
+    if (this.isBestScoreFilterActive()) {
+      this.filterScore = '';
+      this.filterSort = 'date';
+    } else {
+      this.filterScore = this.highFitCount() > 0 ? 'high' : 'triadas';
+      this.filterSort = 'score-desc';
+      if (this.activeSubtab() === 'mapa') {
+        this.switchSubtab('lista');
+      }
+    }
     this.onFilterChange();
   }
 
@@ -887,16 +898,29 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
 
   leaderPoleName(): string {
     const counts: Record<string, number> = {};
+    const codeLabels: Record<string, string> = {
+      REMOTO_BR: 'Remoto Brasil',
+      BR_NACIONAL: 'Brasil (Nacional)',
+      GLOBAL_REMOTE: 'Remoto Global',
+      EU_REMOTE: 'Remoto Europa',
+      LATAM_REMOTE: 'Remoto LATAM',
+      US_REMOTE: 'Remoto EUA',
+    };
     this.filteredVagas().forEach(r => {
       const g = this.resolveGeo(r);
-      if (g.code) counts[g.code] = (counts[g.code] || 0) + 1;
+      if (g.code && g.code !== 'UNKNOWN') {
+        counts[g.code] = (counts[g.code] || 0) + 1;
+        if (g.label && !codeLabels[g.code]) {
+          codeLabels[g.code] = g.label;
+        }
+      }
     });
     let max = 0;
     let leader = 'Diversos Polos';
     Object.entries(counts).forEach(([k, v]) => {
       if (v > max) {
         max = v;
-        leader = k;
+        leader = codeLabels[k] || k;
       }
     });
     return leader;
@@ -909,6 +933,7 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
     score: number;
     key: string;
     searchTerm: string;
+    geoFilter: ActiveGeoFilter | null;
     companiesSample: string;
     sampleTitles: string;
     scoreText: string;
@@ -920,6 +945,7 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
       score: number;
       key: string;
       searchTerm: string;
+      geo: GeoResolution;
       companies: Set<string>;
       titles: Set<string>;
     }> = {};
@@ -936,6 +962,7 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
           score: -1,
           key: k,
           searchTerm: cleanTerm,
+          geo,
           companies: new Set<string>(),
           titles: new Set<string>(),
         };
@@ -953,21 +980,47 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
     return Object.values(hubs)
       .sort((a, b) => b.count - a.count)
       .slice(0, 4)
-      .map(h => ({
-        label: h.label,
-        count: h.count,
-        score: h.score,
-        key: h.key,
-        searchTerm: h.searchTerm,
-        companiesSample: h.companies.size > 0 ? Array.from(h.companies).join(', ') : 'Diversas empresas',
-        sampleTitles: h.titles.size > 0 ? Array.from(h.titles).join(', ') : 'diversos perfis',
-        scoreText: h.score >= 0 ? `Melhor nota ${h.score}/100` : 'Aguardando triagem',
-      }));
+      .map(h => {
+        let geoFilter: ActiveGeoFilter | null = null;
+        if (h.geo.isRemote && (h.geo.remoteBucket || h.geo.code.endsWith('_REMOTE') || h.geo.code === 'REMOTO_BR')) {
+          geoFilter = { type: 'remote', code: h.geo.remoteBucket || h.geo.code, name: h.label, count: h.count };
+        } else if (h.geo.countryCode === 'BR' && h.geo.code && h.geo.code.length === 2) {
+          geoFilter = { type: 'uf', code: h.geo.code, name: h.label, count: h.count };
+        } else if (h.geo.countryCode) {
+          geoFilter = { type: 'country', code: h.geo.countryCode, name: h.label, count: h.count };
+        }
+        return {
+          label: h.label,
+          count: h.count,
+          score: h.score,
+          key: h.key,
+          searchTerm: h.searchTerm,
+          geoFilter,
+          companiesSample: h.companies.size > 0 ? Array.from(h.companies).join(', ') : 'Diversas empresas',
+          sampleTitles: h.titles.size > 0 ? Array.from(h.titles).join(', ') : 'diversos perfis',
+          scoreText: h.score >= 0 ? `Melhor nota ${h.score}/100` : 'Aguardando triagem',
+        };
+      });
   }
 
   onAffinityClick(hub: any): void {
     if (!hub || (!hub.searchTerm && !hub.key)) return;
-    this.filterText = hub.searchTerm || hub.key;
+    const term = String(hub.searchTerm || hub.key).trim();
+    const currentText = this.filterText.trim();
+    if (!currentText) {
+      this.filterText = term;
+    } else if (currentText === term) {
+      this.filterText = '';
+      this.activeGeoFilter = null;
+    } else if (hub.geoFilter) {
+      if (this.activeGeoFilter?.code === hub.geoFilter.code && this.activeGeoFilter?.type === hub.geoFilter.type) {
+        this.activeGeoFilter = null;
+      } else {
+        this.activeGeoFilter = hub.geoFilter;
+      }
+    } else {
+      this.filterText = term;
+    }
     this.onFilterChange();
   }
 
@@ -1194,10 +1247,10 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   }
 
   clearPendingJobs(): void {
-    if (!confirm('Deseja descartar as vagas pendentes não salvas?')) return;
+    if (!confirm('Deseja limpar as vagas pendentes da busca atual? Elas serão removidas desta lista temporária (não vão para Descartadas).')) return;
     this.api.clearPending().subscribe({
       next: (res) => {
-        this.showToast(`${res.cleared ?? 0} vagas pendentes foram descartadas.`);
+        this.showToast(`${res.cleared ?? 0} vagas pendentes da busca atual removidas da lista.`);
         this.loadResults();
       },
       error: (err) => this.toast.error('Erro ao limpar vagas: ' + (err?.error?.detail || err.message))

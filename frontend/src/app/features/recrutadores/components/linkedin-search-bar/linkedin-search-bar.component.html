@@ -1,0 +1,315 @@
+<div class="linkedin-search-bar" aria-label="Gerador de pesquisa manual para o LinkedIn">
+  <div class="linkedin-search-top">
+    <div class="linkedin-search-identity">
+      <span class="linkedin-strip-title">
+        <i class="bi bi-linkedin"></i> Barra de Pesquisa LinkedIn
+      </span>
+      <span class="linkedin-health-pill"
+            [class.linkedin-health-pill--optimal]="activeQueryHealth().level === 'optimal'"
+            [class.linkedin-health-pill--moderate]="activeQueryHealth().level === 'moderate'"
+            [class.linkedin-health-pill--heavy]="activeQueryHealth().level === 'heavy'"
+            [title]="activeQueryHealth().warning || 'Busca enxuta compatível com os limites da aba Publicações do LinkedIn'">
+        {{ activeQueryHealth().label }}
+      </span>
+      @if (expandingWithAi()) {
+        <span class="linkedin-bilingual-pill" title="Buscando equivalente bilíngue com a IA configurada">
+          <span class="vc-spinner"></span> PT ↔ EN...
+        </span>
+      } @else if (addedVariantBadge()) {
+        <span class="linkedin-bilingual-pill" title="Equivalente bilíngue incluído automaticamente">
+          {{ addedVariantBadge() }}
+        </span>
+      }
+      <span class="linkedin-meta-pill">
+        {{ linkedInPostsCount }} {{ linkedInPostsCount === 1 ? 'post no radar' : 'posts no radar' }}
+      </span>
+    </div>
+
+    <button type="button"
+            class="btn-action secondary compact-btn"
+            (click)="togglePastePanel()"
+            title="Cole 1 publicação do LinkedIn (ou várias separadas por ---) e o link opcional para a IA avaliar compatibilidade com seu currículo">
+      <i class="bi" [class.bi-clipboard-plus]="!showPastePanel()" [class.bi-chevron-up]="showPastePanel()"></i>
+      {{ showPastePanel() ? 'Fechar colagem' : 'Colar post(s)' }}
+    </button>
+  </div>
+
+  <div class="linkedin-controls-row">
+    <div class="linkedin-presets-group" role="group" aria-label="Formato da pesquisa booleana">
+      @for (preset of linkedInPresets; track preset.id) {
+        <button type="button"
+                class="linkedin-preset-pill"
+                [class.linkedin-preset-pill--active]="linkedInPreset() === preset.id"
+                [title]="preset.description"
+                (click)="setLinkedInPreset(preset.id)">
+          {{ preset.label }}
+        </button>
+      }
+    </div>
+
+    <div class="linkedin-options-cluster">
+      <select class="vc-select linkedin-compact-select"
+              aria-label="Idioma da pesquisa no LinkedIn"
+              [ngModel]="linkedInLanguageMode()"
+              (ngModelChange)="setLinkedInLanguageMode($event)"
+              title="Pesquisar em Português + Inglês, somente Inglês ou somente Português">
+        <option value="both">PT + EN</option>
+        <option value="en">Só EN</option>
+        <option value="pt">Só PT</option>
+      </select>
+
+      <select class="vc-select linkedin-date-select"
+              aria-label="Período da pesquisa no LinkedIn"
+              [ngModel]="linkedInDateOverride()"
+              (ngModelChange)="setLinkedInDateOverride($event)">
+        <option value="auto">
+          Período ({{ generatedLinkedInSearch().datePosted === 'past-24h' ? '24h' : generatedLinkedInSearch().datePosted === 'past-week' ? '7 dias' : generatedLinkedInSearch().datePosted === 'past-month' ? '30 dias' : 'Todas' }})
+        </option>
+        <option value="past-24h">Últimas 24h</option>
+        <option value="past-week">Última semana</option>
+        <option value="past-month">Último mês</option>
+        <option value="all">Qualquer data</option>
+      </select>
+
+      <a [href]="activeGoogleXRayUrl()"
+         target="_blank"
+         rel="noopener noreferrer"
+         class="linkedin-xray-link"
+         title="Alternativa quando o LinkedIn limitar resultados: busca posts públicos do LinkedIn direto no Google">
+        Google X-Ray <i class="bi bi-box-arrow-up-right"></i>
+      </a>
+    </div>
+  </div>
+
+  <div class="linkedin-query-row">
+    <div class="linkedin-query-input-wrap">
+      <input type="text"
+             class="linkedin-query-input"
+             aria-label="Pesquisa booleana formatada para o LinkedIn"
+             [ngModel]="activeLinkedInQuery()"
+             (ngModelChange)="onLinkedInQueryInput($event)"
+             placeholder="Pesquisa formatada do LinkedIn...">
+      @if (linkedInCustomQuery() !== null) {
+        <button type="button"
+                class="linkedin-reset-query-btn"
+                (click)="resetLinkedInQuery()"
+                title="Restaurar pesquisa gerada automaticamente pelos filtros">
+          <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+      }
+    </div>
+
+    <div class="linkedin-search-actions">
+      <button type="button"
+              class="btn-action secondary compact-btn"
+              (click)="copyLinkedInQuery()"
+              title="Copia a string formatada para colar na barra de busca do LinkedIn">
+        <i class="bi bi-clipboard"></i> Copiar busca
+      </button>
+
+      <a [href]="activeLinkedInUrl()"
+         target="_blank"
+         rel="noopener noreferrer"
+         class="btn-action linkedin-btn compact-btn"
+         title="Abre esta pesquisa diretamente na aba Publicações do LinkedIn (nova aba)">
+        <i class="bi bi-box-arrow-up-right"></i> Abrir no LinkedIn
+      </a>
+    </div>
+  </div>
+
+  @if (activeQueryHealth().warning) {
+    <p class="linkedin-health-warning">
+      <i class="bi bi-exclamation-triangle"></i>
+      {{ activeQueryHealth().warning }}
+    </p>
+  }
+
+  @if (showPastePanel()) {
+    <div class="linkedin-paste-panel">
+      <p class="linkedin-paste-hint">
+        Cole o texto da publicação do LinkedIn (com ou sem e-mail, ou várias separadas por <code>---</code>) e o link opcional para a IA avaliar a compatibilidade com seu currículo logo abaixo:
+      </p>
+      <textarea class="linkedin-paste-textarea"
+                aria-label="Texto da publicação do LinkedIn para importar"
+                [ngModel]="pasteText()"
+                (ngModelChange)="pasteText.set($event)"
+                placeholder="Cole aqui o texto da publicação (ex: Estamos contratando Analista de Dados, Engenheiro de Software, Gestor de Projetos... CV para rh@empresa.com ou link nos comentários)"></textarea>
+      <div class="linkedin-paste-footer">
+        <input type="url"
+               class="vc-input linkedin-paste-url"
+               aria-label="Link opcional da publicação do LinkedIn"
+               [ngModel]="pasteUrl()"
+               (ngModelChange)="pasteUrl.set($event)"
+               placeholder="Link do post (opcional): https://www.linkedin.com/feed/update/...">
+        <button type="button"
+                class="btn-action primary compact-btn"
+                [disabled]="submittingPaste() || !pasteText().trim()"
+                (click)="submitManualPaste()">
+          @if (submittingPaste()) {
+            <span class="vc-spinner"></span> Importando...
+          } @else {
+            <i class="bi bi-stars"></i> Importar e avaliar com IA
+          }
+        </button>
+      </div>
+
+      @if (pastedReviews().length > 0) {
+        <div class="pasted-reviews-list" aria-label="Avaliação da IA para publicações coladas">
+          @for (item of pastedReviews(); track item.post.id) {
+            <article class="pasted-review-card"
+                     [class.pasted-review-card--interested]="item.decision === 'interested'">
+              <div class="pasted-review-header">
+                <div class="pasted-review-title-block">
+                  <h4 class="pasted-review-title">{{ item.post.title }}</h4>
+                  <div class="pasted-review-meta">
+                    <span><i class="bi bi-building"></i> {{ item.post.company }}</span>
+                    @if (item.post.location) {
+                      <span><i class="bi bi-geo-alt"></i> {{ item.post.location }}</span>
+                    }
+                    @if (isExternalPostUrl(item.post.url)) {
+                      <a [href]="item.post.url"
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         class="pasted-review-link">
+                        Ver post <i class="bi bi-box-arrow-up-right"></i>
+                      </a>
+                    }
+                  </div>
+                </div>
+
+                <div class="pasted-review-badges">
+                  @if (item.evaluating) {
+                    <span class="review-status-pill review-status-pill--loading">
+                      <span class="vc-spinner"></span> Avaliando com IA...
+                    </span>
+                  } @else if (item.post.ai_evaluated_at) {
+                    @if (item.post.ai_score !== null && item.post.ai_score !== undefined) {
+                      <span class="review-score-pill"
+                            [class.review-score-pill--high]="item.post.ai_score >= 75"
+                            [class.review-score-pill--med]="item.post.ai_score >= 60 && item.post.ai_score < 75"
+                            [class.review-score-pill--low]="item.post.ai_score < 60">
+                        <i class="bi bi-robot"></i>
+                        {{ item.post.ai_score }}/100 &bull; {{ item.post.ai_verdict || getClassificationLabel(item.post.ai_classification) }}
+                      </span>
+                    }
+                    @if (item.post.ai_classification && item.post.ai_classification !== 'vaga_ativa') {
+                      <span class="review-status-pill review-status-pill--warn">
+                        {{ getClassificationLabel(item.post.ai_classification) }}
+                      </span>
+                    }
+                    @if (item.post.ai_model) {
+                      <span class="review-model-pill">{{ item.post.ai_model }}</span>
+                    }
+                  }
+                  @if (item.decision === 'interested') {
+                    <button type="button"
+                            class="pasted-review-close"
+                            (click)="closeReviewCard(item.post.id)"
+                            title="Ocultar este cartão da área de colagem">
+                      <i class="bi bi-x-lg"></i>
+                    </button>
+                  }
+                </div>
+              </div>
+
+              @if (item.post.emails && item.post.emails.length > 0) {
+                <div class="pasted-review-emails">
+                  <span class="pasted-review-emails-label"><i class="bi bi-envelope-check"></i> E-mail:</span>
+                  @for (em of item.post.emails; track em) {
+                    <button type="button"
+                            class="pasted-email-chip"
+                            (click)="copyEmail(em)"
+                            title="Clique para copiar o e-mail">
+                      {{ em }} <i class="bi bi-clipboard"></i>
+                    </button>
+                  }
+                </div>
+              }
+
+              @if (item.evalError) {
+                <div class="pasted-review-error">
+                  <span><i class="bi bi-exclamation-triangle"></i> {{ item.evalError }}</span>
+                  <button type="button"
+                          class="btn-retry-eval"
+                          [disabled]="item.evaluating"
+                          (click)="retryEvaluateReview(item.post.id)">
+                    Tentar avaliar novamente
+                  </button>
+                </div>
+              } @else if (item.post.ai_summary) {
+                <p class="pasted-review-summary">
+                  <i class="bi bi-chat-square-text"></i> {{ item.post.ai_summary }}
+                </p>
+              }
+
+              @if (item.post.ai_details?.subscores; as sub) {
+                <div class="pasted-review-subscores">
+                  @if (sub.technical !== undefined) {
+                    <span class="subscore-chip">Técnico: <strong>{{ sub.technical }}</strong></span>
+                  }
+                  @if (sub.experience !== undefined) {
+                    <span class="subscore-chip">Experiência: <strong>{{ sub.experience }}</strong></span>
+                  }
+                  @if (sub.behavioral !== undefined) {
+                    <span class="subscore-chip">Comport.: <strong>{{ sub.behavioral }}</strong></span>
+                  }
+                  @if (sub.career !== undefined) {
+                    <span class="subscore-chip">Carreira: <strong>{{ sub.career }}</strong></span>
+                  }
+                  @if (item.post.ai_details?.language_note) {
+                    <span class="subscore-chip subscore-chip--note">Idioma: {{ item.post.ai_details?.language_note }}</span>
+                  }
+                </div>
+              }
+
+              @if ((item.post.ai_details?.strengths?.length || 0) > 0 || (item.post.ai_details?.gaps?.length || 0) > 0) {
+                <div class="pasted-review-points">
+                  @if ((item.post.ai_details?.strengths?.length || 0) > 0) {
+                    <div class="review-points-col review-points-col--strengths">
+                      <span class="review-points-title"><i class="bi bi-check-circle"></i> Pontos fortes</span>
+                      <ul>
+                        @for (s of item.post.ai_details!.strengths!; track s) {
+                          <li>{{ s }}</li>
+                        }
+                      </ul>
+                    </div>
+                  }
+                  @if ((item.post.ai_details?.gaps?.length || 0) > 0) {
+                    <div class="review-points-col review-points-col--gaps">
+                      <span class="review-points-title"><i class="bi bi-exclamation-circle"></i> Pontos de atenção</span>
+                      <ul>
+                        @for (g of item.post.ai_details!.gaps!; track g) {
+                          <li>{{ g }}</li>
+                        }
+                      </ul>
+                    </div>
+                  }
+                </div>
+              }
+
+              <div class="pasted-review-actions">
+                <button type="button"
+                        class="btn-review-interested"
+                        [class.btn-review-interested--saved]="item.decision === 'interested'"
+                        [disabled]="item.busy || item.decision === 'interested'"
+                        (click)="saveReviewAsInterested(item)">
+                  <i class="bi"
+                     [class.bi-star-fill]="item.decision === 'interested'"
+                     [class.bi-bookmark-plus]="item.decision !== 'interested'"></i>
+                  {{ item.decision === 'interested' ? 'Em Me Interessam' : 'Me interessa' }}
+                </button>
+
+                <button type="button"
+                        class="btn-review-discard"
+                        [disabled]="item.busy"
+                        (click)="discardReview(item)">
+                  <i class="bi bi-trash3"></i> Descartar
+                </button>
+              </div>
+            </article>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

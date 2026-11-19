@@ -378,4 +378,32 @@ describe('State persistence services', () => {
     expect(restored.historySortBy()).toBe('score-desc');
     expect(restored.historyScoreFilter()).toBe('75+');
   });
+
+  it('defaults jobAgeFilter to all dates, migrates legacy 24h flag to empty string, and preserves post-migration choices', () => {
+    const fresh = new RecruiterStateService();
+    expect(fresh.jobAgeFilter()).toBe('');
+    expect(fresh.hasSecondaryFilters()).toBeFalse();
+
+    localStorage.setItem(
+      RECRUITER_STATE_STORAGE_KEY,
+      JSON.stringify({ jobAgeFilter: '1', jobAgeDefault24hApplied: true })
+    );
+    const migrated = new RecruiterStateService();
+    expect(migrated.jobAgeFilter()).toBe('');
+    migrated.persist();
+    const savedRaw = JSON.parse(localStorage.getItem(RECRUITER_STATE_STORAGE_KEY) || '{}');
+    expect(savedRaw.jobAgeDefaultAllApplied).toBeTrue();
+
+    localStorage.setItem(
+      RECRUITER_STATE_STORAGE_KEY,
+      JSON.stringify({ jobAgeFilter: '7', jobAgeDefaultAllApplied: true })
+    );
+    const explicitChoice = new RecruiterStateService();
+    expect(explicitChoice.jobAgeFilter()).toBe('7');
+    expect(explicitChoice.hasSecondaryFilters()).toBeTrue();
+
+    explicitChoice.resetSecondaryFilters();
+    expect(explicitChoice.jobAgeFilter()).toBe('');
+    expect(explicitChoice.hasSecondaryFilters()).toBeFalse();
+  });
 });

@@ -141,11 +141,22 @@ class ProfileService:
     def save_evolution(self, data: Dict[str, Any]) -> None:
         painel.save_evolution(data)
 
+    def get_cv_areas(self) -> Dict[str, Any]:
+        """Return candidate CV specialization areas and keywords."""
+        return painel_perfil.get_cv_areas_payload()
+
     def get_geo(self) -> Dict[str, Any]:
-        if GEO_PATH.exists():
+        candidates = (
+            ROOT / "backend" / "core" / "assets" / "geo_data.json",
+            GEO_PATH,
+            ROOT / "frontend" / "dist" / "frontend" / "browser" / "assets" / "geo_data.json",
+        )
+        for path in candidates:
+            if not path.exists():
+                continue
             try:
-                return json.loads(GEO_PATH.read_text(encoding="utf-8"))
+                return json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                logger.warning("Failed to load geo data from %s: %s", GEO_PATH, exc)
+                logger.warning("Failed to load geo data from %s: %s", path, exc)
         return {}
 

@@ -48,8 +48,9 @@ export class AppComponent implements OnInit {
       filter(event => event instanceof NavigationEnd),
       takeUntilDestroyed(this.destroyRef)
     ).subscribe((event: any) => {
-      const url = event.urlAfterRedirects || event.url;
-      const meta = ROUTE_META[url] || { title: 'Vagamundo', icon: 'bi-compass' };
+      const rawUrl = String(event.urlAfterRedirects || event.url || '');
+      const cleanUrl = rawUrl.split('?')[0].split('#')[0] || '/dashboard';
+      const meta = ROUTE_META[cleanUrl] || { title: 'Vagamundo', icon: 'bi-compass' };
       this.pageTitle = meta.title;
       this.pageIcon = meta.icon;
       this.mobileOpen = false;

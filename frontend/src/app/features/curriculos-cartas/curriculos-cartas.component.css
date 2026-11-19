@@ -16,12 +16,6 @@
   font-size: 1.25rem;
 }
 
-.panel-desc {
-  margin: 0;
-  color: var(--vc-muted);
-  font-size: 0.9rem;
-}
-
 .panel-desc code {
   background: var(--vc-bg-2);
   padding: 2px 6px;
@@ -36,14 +30,9 @@
 
 .vc-select {
   width: 100%;
-  background: var(--vc-bg-2);
-  border: 1px solid var(--vc-border);
-  color: var(--vc-text);
   padding: 0.6rem 0.85rem;
   border-radius: 8px;
   font-size: 0.9rem;
-  outline: none;
-  cursor: pointer;
 }
 
 .docs-grid {
@@ -235,27 +224,6 @@
 }
 
 
-.loading-state {
-  padding: 2.5rem;
-  text-align: center;
-  color: var(--vc-muted);
-}
-
-.empty-state {
-  padding: 3rem 1.5rem;
-  text-align: center;
-  color: var(--vc-muted);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.empty-icon {
-  font-size: 2.5rem;
-  color: var(--vc-muted);
-}
-
 .icon-cv {
   color: #38bdf8 !important;
 }
@@ -273,13 +241,6 @@
   font-size: 0.75rem;
   border-left: 1px solid var(--vc-border);
   padding-left: 6px;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
 }
 
 .btn-clear-docs {

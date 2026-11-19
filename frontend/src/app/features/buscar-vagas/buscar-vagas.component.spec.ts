@@ -32,6 +32,7 @@ describe('BuscarVagasComponent', () => {
     fixture = TestBed.createComponent(BuscarVagasComponent);
     component = fixture.componentInstance;
     httpMock = TestBed.inject(HttpTestingController);
+    component.state.resetFilters();
     component.filterText = '';
     component.filterModel = '';
     component.filterScore = '';
@@ -39,6 +40,7 @@ describe('BuscarVagasComponent', () => {
   });
 
   afterEach(() => {
+    component.state.resetFilters();
     component.filterText = '';
     component.filterModel = '';
     component.filterScore = '';
@@ -130,5 +132,49 @@ describe('BuscarVagasComponent', () => {
     component.onFilterChange();
 
     expect(component.filteredVagas().map((v) => v.url)).toEqual(['https://example.com/r1']);
+  });
+
+  it('formats Principal Polo region codes, toggles Filtrar por Maior Nota, and guards 0-portal search', () => {
+    fixture.detectChanges();
+    httpMock.match(() => true).forEach((req) => req.flush({}));
+
+    component.allVagas.set([
+      makeVaga({
+        url: 'https://example.com/br-rem-1',
+        location: 'Remoto - Brasil',
+        portal: 'remotar-search',
+        workplace_type: 'remote',
+        screening: { score: 88, verdict: 'Strong Fit' },
+      }),
+      makeVaga({
+        url: 'https://example.com/br-rem-2',
+        location: 'Brasil (Remoto)',
+        portal: 'remotar-search',
+        workplace_type: 'remote',
+        screening: { score: 62, verdict: 'Good Fit' },
+      }),
+    ]);
+    component.onFilterChange();
+
+    expect(component.leaderPoleName()).toBe('Remoto Brasil');
+
+    component.switchSubtab('mapa');
+    component.filterByBestScore();
+    expect(component.activeSubtab()).toBe('lista');
+    expect(component.filterSort).toBe('score-desc');
+    expect(component.isBestScoreFilterActive()).toBeTrue();
+
+    // Toggling again resets to default
+    component.filterByBestScore();
+    expect(component.filterSort).toBe('date');
+    expect(component.filterScore).toBe('');
+    expect(component.isBestScoreFilterActive()).toBeFalse();
+
+    // 0 portals selected -> returns before opening progress panel
+    component.showProgressPanel.set(false);
+    component.state.selectedPortalIds.set(new Set());
+    component.triggerPortalSearch();
+    expect(component.searching()).toBeFalse();
+    expect(component.showProgressPanel()).toBeFalse();
   });
 });

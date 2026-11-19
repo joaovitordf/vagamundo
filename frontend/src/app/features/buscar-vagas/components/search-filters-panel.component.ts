@@ -133,6 +133,17 @@ export class SearchFiltersPanelComponent {
     this.state.persist();
   }
 
+  onAutoMinScoreChange(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    const raw = Number(input?.value);
+    const clamped = Number.isNaN(raw) || !raw ? 60 : Math.max(45, Math.min(95, Math.round(raw)));
+    this.autoMinScore = clamped;
+    if (input) {
+      input.value = String(clamped);
+    }
+    this.autoConfigChange.emit();
+  }
+
   get autoContinuous(): boolean { return this.state.autoContinuous(); }
   set autoContinuous(v: boolean) {
     this.state.autoContinuous.set(Boolean(v));

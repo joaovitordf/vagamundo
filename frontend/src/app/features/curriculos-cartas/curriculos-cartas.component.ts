@@ -46,6 +46,10 @@ export class CurriculosCartasComponent implements OnInit {
     return this.allDocs().filter(d => d.kind === this.kindFilter);
   }
 
+  hasNonCvDocs(): boolean {
+    return this.allDocs().some(d => d.kind !== 'cv');
+  }
+
   getDocTitle(doc: GeneratedDoc): string {
     if (doc.company && doc.role) {
       return `${doc.company} — ${doc.role}`;
@@ -86,7 +90,11 @@ export class CurriculosCartasComponent implements OnInit {
     if (!confirm(msg)) return;
 
     this.api.deleteDocument(doc.path).subscribe({
-      next: () => {
+      next: (res: any) => {
+        if (res?.deleted === false) {
+          this.toast.error(res?.detail || res?.error || 'Não foi possível excluir o documento.');
+          return;
+        }
         this.toast.success(`Documento "${doc.name}" excluído.`);
         this.loadDocs();
       },

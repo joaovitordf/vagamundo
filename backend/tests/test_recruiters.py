@@ -1358,30 +1358,40 @@ class TestRecruitersApi(unittest.TestCase):
         self.assertEqual(applied_job["status"], "applied")
 
     def test_api_sync_runs_all_platforms_simultaneously_and_tracks_round_matched_post_ids(self):
-        from types import SimpleNamespace
-
         unrelated = self.service.add_pasted_post(
             raw_text="Vaga PHP antiga em cache. Envie CV para php@old.dev",
             title="PHP Sênior",
             company="OldPHP",
             url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000501/",
         )
-        dismissed_li = self.service.add_pasted_post(
-            raw_text="Vaga descartada anteriormente Angular. CV para trash@li.dev",
-            title="Angular Descartada",
-            company="TrashCo",
-            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000502/",
-        )
-        self.service.dismiss_post(dismissed_li["id"])
+        dismissed_job = {
+            "id": "job-ang-dismissed",
+            "title": "Angular Descartada",
+            "company": "TrashCo",
+            "url": "https://remotar.com.br/job/ang-trash",
+            "portal": "remotar-search",
+            "description": "Vaga descartada anteriormente Angular. CV para trash@li.dev",
+            "status": "new",
+        }
+        evaluated_job = {
+            "id": "job-ang-evaluated",
+            "title": "Angular Já Avaliada",
+            "company": "EvalCo",
+            "url": "https://remotar.com.br/job/ang-evaluated",
+            "portal": "remotar-search",
+            "description": "Vaga Angular já avaliada! Envie CV para evaluated@li.dev",
+            "status": "new",
+        }
+        self.repo.upsert_job(dismissed_job)
+        self.repo.upsert_job(evaluated_job)
+        self.service.sync_from_jobs(query="Angular")
+        by_url_initial = {p.get("url"): p for p in self.service.list_posts()}
+        dismissed_post = by_url_initial[dismissed_job["url"]]
+        evaluated_post = by_url_initial[evaluated_job["url"]]
+        self.service.dismiss_post(dismissed_post["id"])
 
-        evaluated_li = self.service.add_pasted_post(
-            raw_text="Vaga Angular já avaliada! Envie CV para evaluated@li.dev",
-            title="Angular Já Avaliada",
-            company="EvalCo",
-            url="https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000503/",
-        )
         self.repo.update_recruiter_post_ai(
-            evaluated_li["id"],
+            evaluated_post["id"],
             "vaga_ativa",
             85,
             "Strong Fit",
@@ -1389,32 +1399,20 @@ class TestRecruitersApi(unittest.TestCase):
             "evaluated@li.dev",
         )
 
-        self.service.linkedin_worker = SimpleNamespace(
-            search_content_posts=lambda q, force=False, should_stop=None, days=None: {
-                "ok": True,
-                "cards_total": 3,
-                "posts": [
-                    {
-                        "raw_text": "Vaga Angular já avaliada! Envie CV para evaluated@li.dev",
-                        "company": "EvalCo",
-                        "title": "Angular Já Avaliada",
-                        "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000503/",
-                    },
-                    {
-                        "raw_text": "Vaga descartada anteriormente Angular. CV para trash@li.dev",
-                        "company": "TrashCo",
-                        "title": "Angular Descartada",
-                        "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000502/",
-                    },
-                    {
-                        "raw_text": "Vaga Angular Pleno nova no LinkedIn! CV para novo@li.dev",
-                        "company": "NewLICo",
-                        "title": "Angular Pleno",
-                        "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000504/",
-                    },
-                ],
-            }
+        # Post manual do LinkedIn importado via /paste continua disponível e aparece na lista
+        headers = {"X-Painel-Token": self.token}
+        paste_resp = self.client.post(
+            "/api/recruiters/paste",
+            json={
+                "raw_text": "Vaga Angular Pleno no LinkedIn! CV para novo@li.dev",
+                "company": "NewLICo",
+                "title": "Angular Pleno",
+                "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000504/",
+            },
+            headers=headers,
         )
+        self.assertEqual(paste_resp.status_code, 200)
+        new_li_id = paste_resp.json()["post"]["id"]
 
         fake_remotar = ([
             {
@@ -1433,7 +1431,6 @@ class TestRecruitersApi(unittest.TestCase):
             },
         ], None)
 
-        headers = {"X-Painel-Token": self.token}
         with patch.object(self.service, "sync_from_hn", return_value=0) as hn_mock, \
              patch.object(self.service, "sync_from_github_repos", return_value=0) as gh_mock, \
              patch.object(self.service, "sync_from_remotive", return_value=0) as rem_mock, \
@@ -1449,19 +1446,18 @@ class TestRecruitersApi(unittest.TestCase):
         self.assertTrue(rem_mock.called)
 
         listed_by_url = {p.get("url"): p for p in self.service.list_posts()}
-        new_li = listed_by_url["https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000504/"]
         rem_ang = listed_by_url["https://remotar.com.br/job/ang-sync-1"]
         rem_java = listed_by_url["https://remotar.com.br/job/java-other"]
+        self.assertIn("https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000504/", listed_by_url)
+        self.assertEqual(listed_by_url["https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000504/"]["id"], new_li_id)
 
         matched_ids = set(data["matched_post_ids"])
-        self.assertIn(evaluated_li["id"], matched_ids)  # Reencontrada ativa sem re-triar
-        self.assertIn(new_li["id"], matched_ids)
+        self.assertIn(evaluated_post["id"], matched_ids)  # Reencontrada ativa sem re-triar
         self.assertIn(rem_ang["id"], matched_ids)
-        self.assertNotIn(dismissed_li["id"], matched_ids)  # Descartada/oculta nunca vaza
-        self.assertNotIn(unrelated["id"], matched_ids)     # Post antigo PHP fora da busca
-        self.assertNotIn(rem_java["id"], matched_ids)      # Java do Remotar não casa 'Angular'
-        # collected_post_ids continua restrito a novos/atualizados sem re-triar evaluated_li
-        self.assertNotIn(evaluated_li["id"], data["collected_post_ids"])
+        self.assertNotIn(dismissed_post["id"], matched_ids)  # Descartada/oculta nunca vaza
+        self.assertNotIn(unrelated["id"], matched_ids)       # Post antigo PHP fora da busca
+        self.assertNotIn(rem_java["id"], matched_ids)        # Java do Remotar não casa 'Angular'
+        self.assertNotIn(evaluated_post["id"], data["collected_post_ids"])
 
     def test_move_between_interested_and_discarded_preserves_triage_metadata_and_subscores(self):
         from tempfile import TemporaryDirectory
@@ -1559,6 +1555,474 @@ class TestRecruitersApi(unittest.TestCase):
             self.assertEqual(restored_rows[0]["screening"]["score"], 82)
             self.assertEqual(restored_rows[0]["screening"]["subscores"]["technical"], 88)
             self.assertEqual(restored_rows[0]["recruiter_emails"], ["rh@preserve-triage.dev"])
+
+    def test_non_linkedin_promoted_and_talent_pool_posts_stay_visible_and_in_matched_ids(self):
+        from backend.core.recruiter_service import RecruiterService
+
+        svc = RecruiterService(self.repo, enable_live_feeds=False)
+        seed_jobs = [
+            {
+                "id": "ext-fh-1",
+                "title": "Dev Python Backend",
+                "company": "FreeHireCo",
+                "url": "https://freehire.me/jobs/py-ext-1",
+                "portal": "freehire-search",
+                "description": "Vaga Python remota. Enviar CV para rh@freehireco.dev",
+                "status": "new",
+            },
+            {
+                "id": "ext-hn-1",
+                "title": "Python Distributed Systems",
+                "company": "HNStartup",
+                "url": "https://news.ycombinator.com/item?id=88001122",
+                "portal": "hn-search",
+                "description": "Python and SQL backend role. Email hiring@hnstartup.dev",
+                "status": "new",
+            },
+            {
+                "id": "ext-solides-1",
+                "title": "Engenheiro Python",
+                "company": "SolidesTech",
+                "url": "https://vagas.solides.com.br/vaga/8801",
+                "portal": "solides-search",
+                "description": "Vaga Python Brasil. CV para vagas@solidestech.com.br",
+                "status": "new",
+            },
+            {
+                "id": "ext-solides-pool",
+                "title": "Banco de Talentos Python",
+                "company": "SolidesPool",
+                "url": "https://vagas.solides.com.br/vaga/8802",
+                "portal": "solides-search",
+                "description": "Banco de talentos Python contínuo. CV para talentos@solidespool.com.br",
+                "status": "new",
+            },
+        ]
+        for job in seed_jobs:
+            self.repo.upsert_job(job)
+
+        svc.sync_from_jobs(query="Python")
+        by_url = {p["url"]: p for p in svc.list_posts()}
+        fh_id = by_url["https://freehire.me/jobs/py-ext-1"]["id"]
+        hn_id = by_url["https://news.ycombinator.com/item?id=88001122"]["id"]
+        sol_id = by_url["https://vagas.solides.com.br/vaga/8801"]["id"]
+        pool_id = by_url["https://vagas.solides.com.br/vaga/8802"]["id"]
+
+        def fake_triar(post):
+            if post["id"] == pool_id:
+                return {
+                    "classification": "banco_talentos",
+                    "best_email": "talentos@solidespool.com.br",
+                    "score": 0,
+                    "verdict": "Poor Fit",
+                    "summary": "Banco de talentos contínuo.",
+                    "ai_model": "gemini-test",
+                }
+            return {
+                "classification": "vaga_ativa",
+                "best_email": post["emails"][0],
+                "score": 87,
+                "verdict": "Strong Fit",
+                "summary": "Compatível com Python.",
+                "ai_model": "gemini-test",
+            }
+
+        headers = {"X-Painel-Token": self.token}
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir, \
+             patch("backend.tools.painel_ia.PAINEL_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel.CLAUDE_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel_ia.save_job_cache"), \
+             patch("backend.tools.painel.saved", return_value=[]), \
+             patch("backend.tools.painel.discarded", return_value=[]), \
+             patch("backend.tools.painel.discard_job", return_value={"discarded": True}), \
+             patch("backend.tools.painel.restore_job"), \
+             patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={"AI_CONSENT": "1"}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=True), \
+             patch("backend.tools.painel_ia.is_available", return_value=True), \
+             patch("backend.tools.painel_ia.get_active_model_name", return_value="gemini-test"), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", side_effect=fake_triar):
+            triage_res = svc.triage_posts(post_ids=[fh_id, hn_id, sol_id, pool_id])
+            self.assertEqual(triage_res["triaged"], 4)
+            self.assertEqual(triage_res["active_jobs"], 3)
+            self.assertEqual(triage_res["talent_pools_discarded"], 1)
+            pool_item = next(p for p in triage_res["posts"] if p["id"] == pool_id)
+            self.assertFalse(pool_item.get("auto_dismissed", False))
+            self.assertEqual(pool_item["dismissed"], 0)
+            self.assertEqual(self.repo.get_recruiter_post(pool_id)["dismissed"], 0)
+
+            # Promote/save non-LinkedIn active jobs (auto_promoted + manual interested)
+            fh_row = self.repo.get_recruiter_post(fh_id)
+            hn_row = self.repo.get_recruiter_post(hn_id)
+            svc.promote_post_to_interested(
+                fh_row, "auto-run-1", 87, "Strong Fit", "Compatível.", "rh@freehireco.dev", ai_model="gemini-test"
+            )
+            svc.promote_post_to_interested(
+                hn_row, "auto-run-1", 87, "Strong Fit", "Compatível.", "hiring@hnstartup.dev", ai_model="gemini-test"
+            )
+            res_sol = self.client.post(f"/api/recruiters/{sol_id}/interested", headers=headers)
+            self.assertEqual(res_sol.status_code, 200)
+
+            visible = self.client.get("/api/recruiters").json()["posts"]
+            vis_by_id = {p["id"]: p for p in visible}
+            for pid in (fh_id, hn_id, sol_id, pool_id):
+                self.assertIn(pid, vis_by_id)
+            self.assertEqual(vis_by_id[fh_id]["auto_promoted"], 1)
+            self.assertEqual(vis_by_id[hn_id]["auto_promoted"], 1)
+            self.assertEqual(vis_by_id[fh_id]["job_status"], "interested")
+            self.assertEqual(vis_by_id[hn_id]["job_status"], "interested")
+            self.assertEqual(vis_by_id[sol_id]["job_status"], "interested")
+
+            with patch.object(svc, "sync_from_live_portals", return_value=0), \
+                 patch.object(svc, "sync_from_recent_scrapes", return_value=0):
+                sync_res = svc.sync_all(query="Python")
+            for pid in (fh_id, hn_id, sol_id, pool_id):
+                self.assertIn(pid, sync_res["matched_post_ids"])
+
+            # Manual dismiss removes explicitly dismissed external post without affecting others
+            self.assertTrue(svc.dismiss_post(fh_id))
+            after_dismiss_ids = [p["id"] for p in svc.list_posts()]
+            self.assertNotIn(fh_id, after_dismiss_ids)
+            self.assertIn(hn_id, after_dismiss_ids)
+            self.assertIn(sol_id, after_dismiss_ids)
+            self.assertIn(pool_id, after_dismiss_ids)
+
+    def test_expanded_live_portals_calls_dedup_and_sync_all_portal_breakdown(self):
+        from backend.core.recruiter_service import RECRUITER_LIVE_PORTALS, RecruiterService
+
+        self.assertEqual(
+            RECRUITER_LIVE_PORTALS,
+            (
+                "remotar-search",
+                "freehire-search",
+                "remoteok-search",
+                "solides-search",
+                "gupy-search",
+                "greenhouse-search",
+                "ashby-search",
+                "jobicy-search",
+                "empregos-search",
+            ),
+        )
+
+        fh_calls = RecruiterService._build_live_portal_calls("freehire-search", "Python", "brazil")
+        self.assertEqual(len(fh_calls), 3)
+        self.assertIn(["-q", "Python", "--limit", "50", "--format", "json"], fh_calls)
+        gh_calls = RecruiterService._build_live_portal_calls("greenhouse-search", "Python", "brazil")
+        self.assertEqual(gh_calls, [["-q", "Python", "--with-description", "--format", "json"]])
+        emp_calls = RecruiterService._build_live_portal_calls("empregos-search", "Python", "brazil")
+        self.assertEqual(emp_calls, [["-q", "Python", "--with-description", "--format", "json"]])
+
+        # Pre-existing job + recent scrape file verify _status_out aggregation in sync_all
+        self.repo.upsert_job({
+            "id": "local-hn-1",
+            "title": "Backend Python",
+            "company": "HNLocal",
+            "url": "https://news.ycombinator.com/item?id=77001",
+            "portal": "hn-search",
+            "description": "Python FastAPI role. Email dev@hnlocal.dev",
+            "status": "new",
+        })
+
+        seen_cli_calls = []
+
+        def fake_run_cli(cli_portal, args, timeout=120):
+            seen_cli_calls.append((cli_portal, list(args)))
+            if cli_portal == "freehire-search":
+                # Overlapping identical URL returned across --country, --remote, and --limit 50
+                return [{
+                    "url": "https://freehire.me/jobs/shared-dup-1",
+                    "title": "Python Cloud Dev",
+                    "company": "FreeDupCo",
+                    "description": "Python cloud role. Contact jobs@freedup.dev",
+                    "location": "Remote",
+                }], None
+            if cli_portal == "solides-search":
+                return [{
+                    "url": "https://vagas.solides.com.br/vaga/55123",
+                    "title": "Dev Python Solides",
+                    "company": "SolidesCo",
+                    "description": "Python e Postgres. Envie CV para rh@solidesco.com.br",
+                    "location": "São Paulo, SP",
+                }], None
+            if cli_portal == "greenhouse-search":
+                self.assertIn("--with-description", args)
+                return [{
+                    "url": "https://boards.greenhouse.io/ghco/jobs/991",
+                    "title": "Software Engineer Python",
+                    "company": "GHCo",
+                    "description": "Python services. Contact talent@ghco.io",
+                    "location": "São Paulo, BR",
+                }], None
+            if cli_portal == "ashby-search":
+                return None, "ashby temporary failure"
+            return [], None
+
+        installed_map = {p: True for p in RECRUITER_LIVE_PORTALS}
+        with TemporaryDirectory(ignore_cleanup_errors=True) as tmp_scrape_dir:
+            svc = RecruiterService(self.repo, enable_live_feeds=True, cache_dir=Path(tmp_scrape_dir))
+            scan_file = Path(tmp_scrape_dir) / "painel_busca_2026-11-15.json"
+            scan_file.write_text(json.dumps({
+                "new": [{
+                    "portal": "gupy-search",
+                    "title": "Analista Python",
+                    "company": "GupyScanCo",
+                    "url": "https://gupyscan.gupy.io/jobs/777",
+                    "description": "Python e dados. CV para rh@gupyscan.com.br",
+                }]
+            }), encoding="utf-8")
+
+            with patch("tempfile.gettempdir", return_value=tmp_scrape_dir), \
+                 patch("backend.tools.scrape_run.installed_portals", return_value=installed_map), \
+                 patch("backend.tools.scrape_run.run_cli", side_effect=fake_run_cli), \
+                 patch.object(svc, "sync_from_hn", return_value=0), \
+                 patch.object(svc, "sync_from_github_repos", return_value=0), \
+                 patch.object(svc, "sync_from_remotive", return_value=0):
+                res = svc.sync_all(query="Python")
+
+        breakdown = res["portal_breakdown"]
+        # (portal, url) dedup counts overlapping freehire-search URL only once
+        self.assertEqual(breakdown["freehire-search"]["fetched"], 1)
+        self.assertEqual(breakdown["freehire-search"]["matched"], 1)
+        self.assertEqual(breakdown["solides-search"]["fetched"], 1)
+        self.assertEqual(breakdown["solides-search"]["matched"], 1)
+        self.assertEqual(breakdown["greenhouse-search"]["fetched"], 1)
+        self.assertEqual(breakdown["greenhouse-search"]["matched"], 1)
+        self.assertGreaterEqual(breakdown["ashby-search"]["errors"], 1)
+        # Local jobs & recent scrapes also report breakdown telemetry
+        self.assertEqual(breakdown["hn-search"]["fetched"], 1)
+        self.assertEqual(breakdown["hn-search"]["matched"], 1)
+        self.assertEqual(breakdown["gupy-search"]["matched"], 1)
+
+        all_posts = svc.list_posts()
+        fh_rows = [p for p in all_posts if p["portal"] == "freehire-search"]
+        self.assertEqual(len(fh_rows), 1)
+        self.assertTrue(any("--limit" in args for portal, args in seen_cli_calls if portal == "freehire-search"))
+
+    def test_linkedin_worker_routes_removed_and_sync_all_parallel_public_sources(self):
+        import threading
+        from backend.core.recruiter_service import RecruiterService
+
+        headers = {"X-Painel-Token": self.token}
+        self.assertIn(self.client.get("/api/recruiters/linkedin/status").status_code, (404, 405))
+        for path in (
+            "/api/recruiters/linkedin/connect",
+            "/api/recruiters/linkedin/verify",
+            "/api/recruiters/linkedin/config",
+            "/api/recruiters/linkedin/disconnect",
+        ):
+            self.assertIn(self.client.post(path, json={}, headers=headers).status_code, (404, 405))
+
+        # enable_live_feeds=False não dispara fontes externas
+        offline_svc = RecruiterService(self.repo, enable_live_feeds=False)
+        with patch.object(offline_svc, "sync_from_hn", side_effect=AssertionError("enable_live_feeds=False não deve chamar HN")):
+            offline_res = offline_svc.sync_all(query="React")
+        self.assertEqual(offline_res["errors"], 0)
+
+        # add_pasted_posts_batch continua rejeitando lote sem e-mail válido
+        with self.assertRaises(ValueError):
+            offline_svc.add_pasted_posts_batch([
+                {
+                    "raw_text": "Estamos contratando Dev Angular Pleno sem email na colagem manual.",
+                    "company": "ManualCo",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7400000000000000012/",
+                }
+            ])
+
+        # enable_live_feeds=True executa fontes públicas em threads paralelas
+        barrier = threading.Barrier(2, timeout=2.0)
+        seen_threads: list[str] = []
+
+        def fake_hn(_term, _collected_urls=None, _status_out=None):
+            seen_threads.append(f"hn:{threading.get_ident()}")
+            barrier.wait()
+            return 0
+
+        def fake_gh(*_a, **_kw):
+            seen_threads.append(f"gh:{threading.get_ident()}")
+            barrier.wait()
+            return 0
+
+        online_svc = RecruiterService(self.repo, enable_live_feeds=True)
+        with patch.object(online_svc, "sync_from_hn", side_effect=fake_hn), \
+             patch.object(online_svc, "sync_from_github_repos", side_effect=fake_gh), \
+             patch.object(online_svc, "sync_from_remotive", return_value=0), \
+             patch.object(online_svc, "sync_from_live_portals", return_value=0), \
+             patch.object(online_svc, "sync_from_recent_scrapes", return_value=0):
+            online_res = online_svc.sync_all(query="Python")
+
+        self.assertEqual(online_res["errors"], 0)
+        self.assertEqual(len(seen_threads), 2)
+        self.assertNotEqual(seen_threads[0].split(":")[1], seen_threads[1].split(":")[1])
+
+    def test_expand_search_term_ai_cache_consent_and_sanitization(self):
+        from backend.core.recruiters.search_terms import clear_search_term_cache
+
+        clear_search_term_cache()
+        headers = {"X-Painel-Token": self.token}
+
+        class FakeProvider:
+            def __init__(self, payload: str):
+                self.payload = payload
+                self.calls = 0
+
+            def is_available(self) -> bool:
+                return True
+
+            def generate(self, *_args, **_kwargs) -> str:
+                self.calls += 1
+                return self.payload
+
+        # 1) Sem consentimento -> degrada silenciosamente sem chamar IA
+        provider_no_consent = FakeProvider('{"en": "Tax Law", "pt": "Direito Tributário"}')
+        with patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=False), \
+             patch("backend.core.recruiter_service.ai_providers.get_ai_provider", return_value=provider_no_consent):
+            res_nc = self.client.post(
+                "/api/recruiters/expand-search-term",
+                json={"term": "Direito Tributário"},
+                headers=headers,
+            )
+        self.assertEqual(res_nc.status_code, 200)
+        self.assertEqual(res_nc.json()["source"], "none")
+        self.assertIsNone(res_nc.json()["en"])
+        self.assertEqual(provider_no_consent.calls, 0)
+
+        # 2) Com consentimento -> chama IA uma vez e cacheia variações sem acento
+        provider_ok = FakeProvider('```json\n{"en": "Tax Law", "pt": "Direito Tributário"}\n```')
+        with patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={"AI_DATA_CONSENT": "yes"}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=True), \
+             patch("backend.core.recruiter_service.ai_providers.get_ai_provider", return_value=provider_ok):
+            res_ai = self.client.post(
+                "/api/recruiters/expand-search-term",
+                json={"term": "Direito Tributário"},
+                headers=headers,
+            )
+            res_cached = self.client.post(
+                "/api/recruiters/expand-search-term",
+                json={"term": "direito tributario"},
+                headers=headers,
+            )
+        self.assertEqual(res_ai.status_code, 200)
+        self.assertEqual(res_ai.json()["en"], "Tax Law")
+        self.assertIsNone(res_ai.json()["pt"])  # Igual ao termo original -> omitido
+        self.assertEqual(res_ai.json()["source"], "ai")
+        self.assertEqual(res_cached.json()["source"], "cache")
+        self.assertEqual(res_cached.json()["en"], "Tax Law")
+        self.assertEqual(provider_ok.calls, 1)
+
+        # 3) Sanitização rejeita operadores booleanos na resposta e ignora query booleana na entrada
+        provider_dirty = FakeProvider('{"en": "Agronomy OR Farming", "pt": "Agronomia"}')
+        with patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={"AI_DATA_CONSENT": "yes"}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=True), \
+             patch("backend.core.recruiter_service.ai_providers.get_ai_provider", return_value=provider_dirty):
+            res_dirty = self.client.post(
+                "/api/recruiters/expand-search-term",
+                json={"term": "Engenharia Agronômica"},
+                headers=headers,
+            )
+            res_bool = self.client.post(
+                "/api/recruiters/expand-search-term",
+                json={"term": "(Python OR Go)"},
+                headers=headers,
+            )
+        self.assertEqual(res_dirty.status_code, 200)
+        self.assertIsNone(res_dirty.json()["en"])
+        self.assertEqual(res_dirty.json()["pt"], "Agronomia")
+        self.assertEqual(res_bool.json()["source"], "none")
+        self.assertEqual(provider_dirty.calls, 1)
+        clear_search_term_cache()
+
+    def test_paste_without_email_inline_triage_details_and_interested_or_discard(self):
+        from tempfile import TemporaryDirectory
+        from backend.core.tracker import TrackerService
+        from backend.tools import painel
+
+        headers = {"X-Painel-Token": self.token}
+        res_paste = self.client.post(
+            "/api/recruiters/paste",
+            json={
+                "raw_text": "Estamos contratando Engenheiro de Visão Computacional / Computer Vision remoto com Python e OpenCV! Link nos comentários.",
+                "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000881/",
+                "allow_without_email": True,
+            },
+            headers=headers,
+        )
+        self.assertEqual(res_paste.status_code, 200)
+        pasted = res_paste.json()["post"]
+        self.assertEqual(pasted["emails"], [])
+        post_id = pasted["id"]
+
+        fake_triage = {
+            "classification": "vaga_ativa",
+            "best_email": "",
+            "score": 84,
+            "verdict": "Strong Fit",
+            "summary": "Forte aderência com Python, OpenCV e projetos de Visão Computacional.",
+            "ai_model": "gemini-test",
+            "subscores": {"technical": 88, "experience": 82, "behavioral": 80, "career": 84},
+            "strengths": ["Experiência em Visão Computacional", "Python e OpenCV"],
+            "gaps": ["Confirmar stack de deploy em edge"],
+            "location_verdict": "PASS",
+            "language_gate": "PASS",
+            "language_note": "",
+            "guard_alert": "",
+        }
+        with patch("backend.core.recruiter_service.ai_providers.load_env_file", return_value={"AI_DATA_CONSENT": "yes"}), \
+             patch("backend.core.recruiter_service.ai_providers.has_consent", return_value=True), \
+             patch("backend.tools.painel_ia.is_available", return_value=True), \
+             patch("backend.tools.painel_ia.triar_post_recrutador", return_value=fake_triage):
+            res_triage = self.client.post(
+                "/api/recruiters/triage",
+                json={"post_ids": [post_id], "limit": 5},
+                headers=headers,
+            )
+
+        self.assertEqual(res_triage.status_code, 200)
+        triaged_data = res_triage.json()
+        self.assertEqual(triaged_data["triaged"], 1)
+        self.assertEqual(triaged_data["active_jobs"], 1)
+        triaged_post = triaged_data["posts"][0]
+        self.assertEqual(triaged_post["id"], post_id)
+        self.assertEqual(triaged_post["ai_score"], 84)
+        self.assertEqual(triaged_post["ai_details"]["subscores"]["technical"], 88)
+        self.assertEqual(triaged_post["ai_details"]["strengths"], ["Experiência em Visão Computacional", "Python e OpenCV"])
+        self.assertEqual(triaged_post["ai_details"]["gaps"], ["Confirmar stack de deploy em edge"])
+
+        # Enviar para Me Interessam preserva subscores, strengths e gaps em evaluations
+        with TemporaryDirectory() as tmpdir, \
+             patch("backend.tools.painel_ia.PAINEL_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel.CLAUDE_DIR", Path(tmpdir)), \
+             patch("backend.tools.painel_ia.save_job_cache"), \
+             patch("backend.tools.painel.saved", return_value=[]), \
+             patch("backend.tools.painel.discarded", return_value=[]):
+            res_int = self.client.post(f"/api/recruiters/{post_id}/interested", headers=headers)
+            self.assertEqual(res_int.status_code, 200)
+
+            tracker = TrackerService(self.repo)
+            saved_rows = tracker.list_enriched_saved_jobs()
+            self.assertEqual(len(saved_rows), 1)
+            self.assertEqual(saved_rows[0]["screening"]["score"], 84)
+            self.assertEqual(saved_rows[0]["screening"]["subscores"]["technical"], 88)
+            self.assertEqual(saved_rows[0]["screening"]["strengths"], ["Experiência em Visão Computacional", "Python e OpenCV"])
+            self.assertEqual(saved_rows[0]["screening"]["gaps"], ["Confirmar stack de deploy em edge"])
+
+            # Segundo post colado sem e-mail descartado diretamente
+            res_paste2 = self.client.post(
+                "/api/recruiters/paste",
+                json={
+                    "raw_text": "Vaga presencial em outro país sem remoto para diretor de vendas corporativas.",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000882/",
+                    "allow_without_email": True,
+                },
+                headers=headers,
+            )
+            self.assertEqual(res_paste2.status_code, 200)
+            post2_id = res_paste2.json()["post"]["id"]
+            res_del = self.client.delete(f"/api/recruiters/{post2_id}", headers=headers)
+            self.assertEqual(res_del.status_code, 200)
+            disc_rows = tracker.list_enriched_discarded_jobs()
+            self.assertEqual(len(disc_rows), 1)
+            self.assertEqual(disc_rows[0]["url"], "https://www.linkedin.com/feed/update/urn:li:activity:7600000000000000882/")
 
 
 if __name__ == "__main__":

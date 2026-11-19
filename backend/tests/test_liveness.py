@@ -52,6 +52,21 @@ class TestLivenessService(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(res["alive"])
         self.assertEqual(res["reason"], "posting_closed_text")
 
+    async def test_probe_200_head_inspects_get_body_for_closed_patterns(self):
+        client = AsyncMock()
+        head_resp = MagicMock()
+        head_resp.status_code = 200
+        head_resp.text = ""
+        get_resp = MagicMock()
+        get_resp.status_code = 200
+        get_resp.text = "<html><body>Inscrições encerradas para este processo.</body></html>"
+        client.head.return_value = head_resp
+        client.get.return_value = get_resp
+
+        res = await self.liveness.probe_url(client, "https://gupy.io/jobs/789")
+        self.assertFalse(res["alive"])
+        self.assertEqual(res["reason"], "posting_closed_text")
+
     async def test_probe_blocks_ssrf_and_non_http_urls(self):
         client = AsyncMock()
         for bad_url in (

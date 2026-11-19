@@ -181,4 +181,15 @@ describe('MeuPerfilComponent', () => {
 
     expect(component.formValues['cargos']).toBe('Desenvolvedora Python');
   });
+
+  it('enables Montar meu perfil com a IA when form fields are filled even without uploaded PDFs', () => {
+    fixture.detectChanges();
+    flushBootstrap();
+    httpMock.expectOne('/api/profile').flush(emptyProfile);
+    fixture.detectChanges();
+
+    expect(component.isAiDisabled()).toBeTrue();
+    component.formValues['cargos'] = 'Analista de Dados';
+    expect(component.isAiDisabled()).toBeFalse();
+  });
 });

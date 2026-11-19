@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -20,6 +19,7 @@ from backend.api.models import (
 from backend.api.security import verify_csrf_token
 from backend.core.profile import ProfileService
 from backend.core.tracker import TrackerService
+from backend.db import RepositoryError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Applications"])
@@ -174,7 +174,7 @@ def add_application_event(
 
     try:
         profile_svc.update_evolution()
-    except (OSError, sqlite3.Error, ValueError) as exc:
+    except (OSError, RepositoryError, ValueError) as exc:
         logger.warning("Failed to update evolution after adding event %s: %s", event_id, exc)
 
     return {"ok": True, "event_id": event_id}
@@ -191,6 +191,6 @@ def delete_application_event(
     deleted = tracker.delete_application_event(event_id=event_id)
     try:
         profile_svc.update_evolution()
-    except (OSError, sqlite3.Error, ValueError) as exc:
+    except (OSError, RepositoryError, ValueError) as exc:
         logger.warning("Failed to update evolution after deleting event %s: %s", event_id, exc)
     return {"ok": True, "deleted": deleted > 0}

@@ -3,15 +3,16 @@
 from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api.deps import shutdown_services
 from backend.api.routes import applications, auto_mode, dashboard, documents, jobs, profile, recruiters, search, settings
 from backend.api.security import HostCheckMiddleware, get_token
 from backend.core.constants import ROOT, get_allowed_origins
+from backend.db import RepositoryError
 
 ANGULAR_DIST = ROOT / "frontend" / "dist" / "frontend" / "browser"
 
@@ -28,6 +29,15 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RepositoryError)
+async def handle_repository_error(_request: Request, _exc: RepositoryError) -> JSONResponse:
+    """Translate internal persistence errors to clean HTTP 500 JSON responses."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno ao acessar o banco de dados."},
+    )
 
 # Security and CORS middlewares
 app.add_middleware(HostCheckMiddleware)
@@ -59,9 +69,9 @@ if ANGULAR_DIST.is_dir():
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        # Allow API routes to 404 naturally
+        # Allow API routes to 404 naturally as JSON
         if full_path.startswith("api/"):
-            return HTMLResponse(status_code=404, content='{"error": "Endpoint não encontrado"}')
+            return JSONResponse(status_code=404, content={"detail": "Endpoint não encontrado", "error": "Endpoint não encontrado"})
 
         dist_root = ANGULAR_DIST.resolve()
         file_path = (dist_root / full_path).resolve()

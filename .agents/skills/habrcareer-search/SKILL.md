@@ -2,7 +2,7 @@
 name: habrcareer-search
 version: 1.0.0
 description: >
-  Busca vagas de tecnologia no Habr Career (career.habr.ru), a plataforma de
+  Busca vagas de tecnologia no Habr Career (career.habr.com), a plataforma de
   recrutamento especializada da maior comunidade técnica da Rússia (Habr).
   Focada em desenvolvedores de software, engenharia de dados, inteligência artificial,
   arquitetura e DevOps, com suporte a filtros de trabalho remoto e contratação internacional.
@@ -14,13 +14,13 @@ enabled: true
 allowed-tools: Bash(bun run .agents/skills/habrcareer-search/cli/src/cli.ts *)
 ---
 
-# Busca no Habr Career (career.habr.ru)
+# Busca no Habr Career (career.habr.com)
 
-Busca vagas de tecnologia no **[Habr Career](https://career.habr.ru)**.
+Busca vagas de tecnologia no **[Habr Career](https://career.habr.com)**.
 
 ## Como usar
 ```bash
 bun run .agents/skills/habrcareer-search/cli/src/cli.ts search -q "Python" --remote
-bun run .agents/skills/habrcareer-search/cli/src/cli.ts detail "https://career.habr.ru/vacancies/1000168375"
+bun run .agents/skills/habrcareer-search/cli/src/cli.ts detail "https://career.habr.com/vacancies/1000168375"
 ```
 

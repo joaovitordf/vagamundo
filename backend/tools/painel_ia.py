@@ -101,6 +101,7 @@ PORTAL_HOST_MAP = {
     "news.ycombinator.com": "hn-search",
     "hh.ru": "hh-search",
     "habr.com": "habrcareer-search",
+    "career.habr.com": "habrcareer-search",
     "career.habr.ru": "habrcareer-search",
 }
 

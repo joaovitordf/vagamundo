@@ -142,12 +142,21 @@ def _load_candidate_triage_rules() -> dict[str, Any]:
     ]
     if not accept_seniority:
         claude_sec = _extract_claude_profile_section().lower()
+        positive_lines = [
+            ln
+            for ln in claude_sec.splitlines()
+            if not any(
+                neg in ln
+                for neg in ("não aceit", "nao aceit", "exclu", "descart", "evit", "exceto", "deal-breaker", "deal breaker")
+            )
+        ]
+        pos_text = "\n".join(positive_lines)
         found = [
             lvl
             for lvl in posting_signals.LEVELS
-            if lvl in claude_sec
+            if re.search(rf"\b{re.escape(lvl)}\b", pos_text)
         ]
-        accept_seniority = found or ["junior", "pleno"]
+        accept_seniority = found
 
     locais = str(answers.get("locais") or "").strip()
     if not locais:

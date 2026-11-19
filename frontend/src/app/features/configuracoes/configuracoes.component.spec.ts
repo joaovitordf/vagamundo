@@ -120,4 +120,24 @@ describe('ConfiguracoesComponent', () => {
     expect(postReq.request.body.providers['openai'].clear_key).toBeTrue();
     postReq.flush(mockSettings);
   });
+
+  it('renders error state with retry button when GET /api/settings fails', () => {
+    fixture.detectChanges();
+    flushBootstrap();
+
+    const failedReq = httpMock.expectOne('/api/settings');
+    failedReq.flush({ detail: 'Servidor indisponível' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    const retryBtn = fixture.nativeElement.querySelector('.btn-retry-settings') as HTMLButtonElement;
+    expect(retryBtn).toBeTruthy();
+    expect(fixture.nativeElement.textContent).toContain('Servidor indisponível');
+
+    retryBtn.click();
+    const retryReq = httpMock.expectOne('/api/settings');
+    retryReq.flush(mockSettings);
+    fixture.detectChanges();
+
+    expect(component.settingsData()).toEqual(mockSettings);
+  });
 });

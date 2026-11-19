@@ -3,6 +3,8 @@
    Design tokens e classes de layout do ecossistema Vagamundo
    ========================================================================== */
 
+@import './styles/primitives.css';
+
 :root,
 [data-theme="dark"] {
   color-scheme: dark;

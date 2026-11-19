@@ -6,7 +6,19 @@
     arquivo <code>.env</code> deste computador, que o git não envia, e a chave nunca volta para esta página.
   </p>
 
-  @if (settingsData()) {
+  @if (loading() && !settingsData()) {
+    <div class="loading-state" aria-live="polite">
+      <span class="vc-spinner"></span>
+      <span>Carregando configurações de IA…</span>
+    </div>
+  } @else if (loadError() && !settingsData()) {
+    <div class="error-state" role="alert">
+      <p><i class="bi bi-exclamation-triangle"></i> {{ loadError() }}</p>
+      <button type="button" class="btn-primary btn-retry-settings" (click)="loadSettings()">
+        <i class="bi bi-arrow-repeat"></i> Tentar novamente
+      </button>
+    </div>
+  } @else if (settingsData()) {
     <div class="active-provider-summary">
       <i class="bi bi-cpu-fill summary-icon"></i>
       <div>

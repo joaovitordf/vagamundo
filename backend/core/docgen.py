@@ -3,6 +3,7 @@
 from __future__ import annotations
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.core.constants import PROTECTED_DOC_STEMS, resolve_safe_document_path
@@ -69,6 +70,10 @@ class DocGenService:
     def list_documents(self) -> List[Dict[str, Any]]:
         """List all generated PDFs (CV, cover letter, prep)."""
         return painel.list_generated_documents()
+
+    def resolve_document_file(self, rel_path: str) -> Optional[Path]:
+        """Resolve a user-supplied relative document path within permitted document roots."""
+        return resolve_safe_document_path(rel_path, base_root=painel.ROOT, include_all_documents=True)
 
     def delete_document(self, rel_path: str) -> Dict[str, Any]:
         """Safely delete a single generated document and its LaTeX/Markdown build artifacts."""

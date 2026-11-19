@@ -156,6 +156,7 @@
         <label for="f-score">Nota de Aderência ({{ triagedCount }} triadas)</label>
         <select id="f-score" class="vc-select" [(ngModel)]="filterScore" (ngModelChange)="filterChange.emit()">
           <option value="">Todas as notas</option>
+          <option value="interested">★ Movidas p/ Me Interessam</option>
           <option value="high">Alta afinidade (75+)</option>
           <option value="med_plus">Notas médias ou maiores (60+)</option>
           <option value="med">Apenas média (60 a 74)</option>

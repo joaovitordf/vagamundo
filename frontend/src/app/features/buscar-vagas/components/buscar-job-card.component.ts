@@ -49,4 +49,8 @@ export class BuscarJobCardComponent {
     const raw = vaga.posted_date || vaga.date || (vaga as any).found_date || '';
     return formatDisplayDate(raw);
   }
+
+  isInterested(vaga: Vaga): boolean {
+    return vaga?.status === 'interested' || vaga?.interested === true;
+  }
 }

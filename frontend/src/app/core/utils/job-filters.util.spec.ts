@@ -176,4 +176,22 @@ describe('job-filters.util', () => {
     expect(formatSalaryBRL('US$ 5,000.00')).toBe(formatSalaryBRL('US$ 5,000'));
     expect(PORTAL_CATEGORIES.find(c => c.id === 'global')?.label).toBe('Internacional & Remoto Global');
   });
+
+  it('resolves international cities, Cyrillic locations, US state codes, and EMEA regions onto the World Map', () => {
+    expect(resolveGeo({ location: 'Москва, Rússia', portal: 'hh-search', workplace_type: 'on_site' }).countryCode).toBe('RU');
+    expect(resolveGeo({ location: 'Новосибирск, Rússia', portal: 'habrcareer-search', workplace_type: 'on_site' }).countryCode).toBe('RU');
+    expect(resolveGeo({ location: 'Сербия, Rússia', portal: 'habrcareer-search', workplace_type: 'on_site' }).countryCode).toBe('RS');
+    expect(resolveGeo({ location: 'San Francisco, CA', portal: 'ashby-search', workplace_type: 'on_site' }).countryCode).toBe('US');
+    expect(resolveGeo({ location: 'Bengaluru, Karnataka', portal: 'freehire-search', workplace_type: 'on_site' }).countryCode).toBe('IN');
+    expect(resolveGeo({ location: 'Dhaka, Bangladesh', portal: 'freehire-search', workplace_type: 'on_site' }).countryCode).toBe('BD');
+    expect(resolveGeo({ location: 'Guadalahara', portal: 'freehire-search', workplace_type: 'on_site' }).countryCode).toBe('MX');
+    expect(resolveGeo({ location: 'Geneva, Switzerland', portal: 'hn-search', workplace_type: 'on_site' }).countryCode).toBe('CH');
+
+    const emeaRemote = resolveGeo({ location: 'Home based - EMEA', portal: 'freehire-search', workplace_type: 'remote' });
+    expect(emeaRemote.remoteBucket).toBe('EU_REMOTE');
+    expect(emeaRemote.scope).toBe('europa');
+
+    expect(matchesScoreFilter(80, 'interested', true, true)).toBeTrue();
+    expect(matchesScoreFilter(80, 'interested', true, false)).toBeFalse();
+  });
 });

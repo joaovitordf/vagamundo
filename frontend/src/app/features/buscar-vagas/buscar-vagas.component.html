@@ -559,8 +559,51 @@
               <app-buscar-job-card
                 [vaga]="vaga"
                 [selectable]="false"
-                [showSummary]="false"
-                [showExtendedChips]="false"
+                [showSummary]="true"
+                [showExtendedChips]="true"
+                externalLinkLabel="Ver anúncio no portal"
+                (interesse)="markInteresse($event)"
+                (applied)="markApplied($event)"
+                (descartar)="markDescartar($event)">
+              </app-buscar-job-card>
+            }
+
+          </div>
+
+        </div>
+
+      } @else if (mapHighlightedVagas().length > 0) {
+
+        <div class="vc-panel local-jobs-panel">
+
+          <div class="local-jobs-header">
+
+            <h3>
+              <i class="bi bi-stars"></i>
+              Vagas Movidas para Me Interessam &amp; Avaliadas pela IA ({{ mapHighlightedVagas().length }})
+              @if (interestedCount() > 0) {
+                <span class="progress-count-pill" style="margin-left: 8px; background: rgba(16, 185, 129, 0.16); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.38);">
+                  ★ {{ interestedCount() }} em Me Interessam
+                </span>
+              }
+            </h3>
+
+            <button type="button" class="btn-secondary" (click)="switchSubtab('lista')">
+
+              Abrir na aba de Lista Completa ({{ filteredVagas().length }})
+
+            </button>
+
+          </div>
+
+          <div class="cards-grid">
+
+            @for (vaga of mapHighlightedVagas(); track vaga.url) {
+              <app-buscar-job-card
+                [vaga]="vaga"
+                [selectable]="false"
+                [showSummary]="true"
+                [showExtendedChips]="true"
                 externalLinkLabel="Ver anúncio no portal"
                 (interesse)="markInteresse($event)"
                 (applied)="markApplied($event)"

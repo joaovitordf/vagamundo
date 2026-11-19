@@ -21,6 +21,8 @@ interface GeoMapAggregates {
   worldCounts: Record<string, number>;
   brScores: Record<string, number>;
   worldScores: Record<string, number>;
+  brInterested: Record<string, number>;
+  worldInterested: Record<string, number>;
 }
 
 @Component({
@@ -50,6 +52,8 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
   @Output() triageModeToggle = new EventEmitter<void>();
 
   remoteCounts: Record<string, number> = { REMOTO_BR: 0, EU_REMOTE: 0, GLOBAL_REMOTE: 0 };
+  remoteInterestedCounts: Record<string, number> = { REMOTO_BR: 0, EU_REMOTE: 0, GLOBAL_REMOTE: 0 };
+  remoteMaxScores: Record<string, number> = { REMOTO_BR: -1, EU_REMOTE: -1, GLOBAL_REMOTE: -1 };
 
   private viewInitialized = false;
   private lastAggregates: GeoMapAggregates = {
@@ -57,6 +61,8 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
     worldCounts: {},
     brScores: {},
     worldScores: {},
+    brInterested: {},
+    worldInterested: {},
   };
 
   ngOnChanges(): void {
@@ -85,31 +91,53 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
     const worldCounts: Record<string, number> = {};
     const brScores: Record<string, number> = {};
     const worldScores: Record<string, number> = {};
+    const brInterested: Record<string, number> = {};
+    const worldInterested: Record<string, number> = {};
     const nextRemoteCounts: Record<string, number> = { REMOTO_BR: 0, EU_REMOTE: 0, GLOBAL_REMOTE: 0 };
+    const nextRemoteInterested: Record<string, number> = { REMOTO_BR: 0, EU_REMOTE: 0, GLOBAL_REMOTE: 0 };
+    const nextRemoteScores: Record<string, number> = { REMOTO_BR: -1, EU_REMOTE: -1, GLOBAL_REMOTE: -1 };
 
     for (const r of this.baseVagas || []) {
       const geo = resolveGeo(r);
       const score = r.screening && typeof r.screening.score === 'number' ? r.screening.score : -1;
+      const isInterested = r.status === 'interested' || r.interested === true;
 
       if (geo.remoteBucket) {
         nextRemoteCounts[geo.remoteBucket] = (nextRemoteCounts[geo.remoteBucket] || 0) + 1;
+        if (isInterested) {
+          nextRemoteInterested[geo.remoteBucket] = (nextRemoteInterested[geo.remoteBucket] || 0) + 1;
+        }
+        if (score > (nextRemoteScores[geo.remoteBucket] ?? -1)) {
+          nextRemoteScores[geo.remoteBucket] = score;
+        }
       }
 
       if (geo.countryCode === 'BR') {
         worldCounts['BR'] = (worldCounts['BR'] || 0) + 1;
+        if (isInterested) {
+          worldInterested['BR'] = (worldInterested['BR'] || 0) + 1;
+        }
         if (score > (worldScores['BR'] || -1)) worldScores['BR'] = score;
         if (geo.code && geo.code !== 'REMOTO_BR') {
           brCounts[geo.code] = (brCounts[geo.code] || 0) + 1;
+          if (isInterested) {
+            brInterested[geo.code] = (brInterested[geo.code] || 0) + 1;
+          }
           if (score > (brScores[geo.code] || -1)) brScores[geo.code] = score;
         }
       } else if (geo.countryCode && geo.countryCode !== 'GLOBAL_REMOTE' && geo.countryCode !== 'EU_REMOTE') {
         worldCounts[geo.countryCode] = (worldCounts[geo.countryCode] || 0) + 1;
+        if (isInterested) {
+          worldInterested[geo.countryCode] = (worldInterested[geo.countryCode] || 0) + 1;
+        }
         if (score > (worldScores[geo.countryCode] || -1)) worldScores[geo.countryCode] = score;
       }
     }
 
     this.remoteCounts = nextRemoteCounts;
-    this.lastAggregates = { brCounts, worldCounts, brScores, worldScores };
+    this.remoteInterestedCounts = nextRemoteInterested;
+    this.remoteMaxScores = nextRemoteScores;
+    this.lastAggregates = { brCounts, worldCounts, brScores, worldScores, brInterested, worldInterested };
   }
 
   private renderMaps(): void {
@@ -119,14 +147,16 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
       this.renderWorldMapSvg(
         this.geoData.world || {},
         this.lastAggregates.worldCounts,
-        this.lastAggregates.worldScores
+        this.lastAggregates.worldScores,
+        this.lastAggregates.worldInterested
       );
     }
     if (this.mapBrasilContainer?.nativeElement) {
       this.renderBrasilMapSvg(
         this.geoData.brasil || {},
         this.lastAggregates.brCounts,
-        this.lastAggregates.brScores
+        this.lastAggregates.brScores,
+        this.lastAggregates.brInterested
       );
     }
   }
@@ -157,15 +187,18 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
     cy: number,
     cnt: number,
     maxScore: number,
-    isHighFit: boolean
+    isHighFit: boolean,
+    interestedCnt = 0
   ): SVGElement {
     const gBadge = this.createSvgEl('g', { style: 'cursor: pointer;' });
-    const hasScore = this.isTriageMode && maxScore >= 0;
-    const rectW = hasScore ? 62 : 46;
+    const hasScore = (this.isTriageMode || this.hasTriagedJobs) && maxScore >= 0;
+    const starText = interestedCnt > 0 ? ` ★${interestedCnt}` : '';
+    const subLabel = hasScore ? `${cnt} (${maxScore}p)${starText}` : `${cnt} vaga(s)${starText}`;
+    const rectW = Math.max(48, subLabel.length * 5.8 + 10);
 
     gBadge.appendChild(
       this.createSvgEl('rect', {
-        class: `geo-badge-bg ${isHighFit ? 'fit-high' : ''}`.trim(),
+        class: `geo-badge-bg ${isHighFit || interestedCnt > 0 ? 'fit-high' : ''}`.trim(),
         x: cx - rectW / 2,
         y: cy - 12,
         width: rectW,
@@ -178,11 +211,11 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
         'text',
         {
           class: 'geo-badge-sub',
-          style: `fill: ${isHighFit ? '#34d399' : '#38bdf8'}; font-size: 8.5px;`,
+          style: `fill: ${isHighFit || interestedCnt > 0 ? '#34d399' : '#38bdf8'}; font-size: 8.5px;`,
           x: cx,
           y: cy + 9,
         },
-        hasScore ? `${cnt} (${maxScore}p)` : `${cnt} vaga(s)`
+        subLabel
       )
     );
     return gBadge;
@@ -191,7 +224,8 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
   private renderWorldMapSvg(
     world: Record<string, any>,
     counts: Record<string, number>,
-    scores: Record<string, number>
+    scores: Record<string, number>,
+    interestedCounts: Record<string, number> = {}
   ): void {
     const el = this.mapWorldContainer.nativeElement;
     el.replaceChildren();
@@ -233,9 +267,10 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
       if (code === 'AQ') continue;
       const cnt = counts[code] || 0;
       const maxScore = scores[code] || -1;
-      const isHighFit = this.isTriageMode && maxScore >= 75;
+      const intCnt = interestedCounts[code] || 0;
+      const isHighFit = ((this.isTriageMode || this.hasTriagedJobs) && maxScore >= 75) || intCnt > 0;
       const isActive = this.activeGeoFilter?.type === 'country' && this.activeGeoFilter.code === code;
-      const fill = this.getGeoColor(cnt, maxScore, isActive);
+      const fill = this.getGeoColor(cnt, maxScore, isActive, intCnt);
 
       const path = this.createSvgEl('path', {
         class: `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`.trim(),
@@ -260,7 +295,7 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
       gPaths.appendChild(path);
 
       if (cnt > 0 && info.cx > 0 && info.cy > 0) {
-        const gBadge = this.createMapBadge(code, info.cx, info.cy, cnt, maxScore, isHighFit);
+        const gBadge = this.createMapBadge(code, info.cx, info.cy, cnt, maxScore, isHighFit, intCnt);
         gBadge.addEventListener('click', selectCountry);
         gBadges.appendChild(gBadge);
       }
@@ -274,7 +309,8 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
   private renderBrasilMapSvg(
     states: Record<string, any>,
     counts: Record<string, number>,
-    scores: Record<string, number>
+    scores: Record<string, number>,
+    interestedCounts: Record<string, number> = {}
   ): void {
     const el = this.mapBrasilContainer.nativeElement;
     el.replaceChildren();
@@ -301,9 +337,10 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
     for (const [uf, info] of Object.entries(states)) {
       const cnt = counts[uf] || 0;
       const maxScore = scores[uf] || -1;
-      const isHighFit = this.isTriageMode && maxScore >= 75;
+      const intCnt = interestedCounts[uf] || 0;
+      const isHighFit = ((this.isTriageMode || this.hasTriagedJobs) && maxScore >= 75) || intCnt > 0;
       const isActive = this.activeGeoFilter?.type === 'uf' && this.activeGeoFilter.code === uf;
-      const fill = this.getGeoColor(cnt, maxScore, isActive);
+      const fill = this.getGeoColor(cnt, maxScore, isActive, intCnt);
 
       const path = this.createSvgEl('path', {
         class: `geo-state ${isActive ? 'active' : ''} ${isHighFit ? 'fit-high' : ''}`.trim(),
@@ -326,7 +363,7 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
       gPaths.appendChild(path);
 
       if (cnt > 0) {
-        const gBadge = this.createMapBadge(uf, info.cx, info.cy, cnt, maxScore, isHighFit);
+        const gBadge = this.createMapBadge(uf, info.cx, info.cy, cnt, maxScore, isHighFit, intCnt);
         gBadge.addEventListener('click', selectUf);
         gBadges.appendChild(gBadge);
       } else {
@@ -350,13 +387,13 @@ export class GeoMapComponent implements AfterViewInit, OnChanges {
     el.appendChild(svg);
   }
 
-  private getGeoColor(cnt: number, maxScore: number, isActive: boolean): string {
+  private getGeoColor(cnt: number, maxScore: number, isActive: boolean, interestedCnt = 0): string {
     if (isActive) return '#38bdf8';
     if (!cnt || cnt <= 0) return '#131b2b';
-    if (this.isTriageMode) {
-      if (maxScore >= 75) return '#10b981';
+    if (this.isTriageMode || this.hasTriagedJobs || interestedCnt > 0) {
+      if (maxScore >= 75 || interestedCnt > 0) return '#10b981';
       if (maxScore >= 60) return '#0ea5e9';
-      return '#64748b';
+      if (maxScore >= 0) return '#64748b';
     }
     if (cnt >= 10) return '#f59e0b';
     if (cnt >= 5) return '#0284c7';

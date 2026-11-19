@@ -151,7 +151,7 @@ class ScannerService:
                 effective_focus = ",".join(valid_p)
             elif "all" in portals:
                 effective_focus = "all"
-        if effective_focus and effective_focus != "all":
+        if effective_focus:
             cmd.extend(["--portal", effective_focus])
 
         if region and region != "all":
@@ -278,7 +278,7 @@ class ScannerService:
         return self.repo.get_job_by_company_title(company or "", title or "")
 
     def load_results(self) -> Dict[str, Any]:
-        """Load currently available results, filtering already-seen jobs."""
+        """Load currently available results, keeping 'interested' jobs enriched with AI score and status."""
         if not self.out.exists():
             return {"meta": None, "new": []}
         try:
@@ -287,11 +287,15 @@ class ScannerService:
             logger.warning("Failed to read scanner results %s: %s", self.out, exc)
             return {"meta": None, "new": []}
 
-        # Filter against SQLite jobs marked as discarded or interested
         all_new = data.get("new", [])
         applied_urls, applied_pairs = self._load_applied_index()
-        filtered = []
+
+        resolved_rows: list[tuple[dict, dict | None]] = []
+        matched_ids: list[str] = []
+        interested_ids: list[str] = []
         for j in all_new:
+            if not isinstance(j, dict):
+                continue
             url = j.get("url")
             company = j.get("company")
             title = j.get("title")
@@ -300,19 +304,64 @@ class ScannerService:
             ):
                 continue
             row = self._lookup_job_by_url_or_pair(url, company, title)
-            if row and row["status"] in ("interested", *EXCLUDED_RADAR_JOB_STATUSES):
+            if row and row["status"] in EXCLUDED_RADAR_JOB_STATUSES:
                 continue
+            if row and row.get("id"):
+                matched_ids.append(row["id"])
+                if row.get("status") == "interested":
+                    interested_ids.append(row["id"])
+            resolved_rows.append((j, row))
+
+        provider_map: dict[str, str] = {}
+        details_map: dict[str, dict[str, Any]] = {}
+        auto_meta_map: dict[str, dict[str, Any]] = {}
+        if matched_ids:
+            try:
+                provider_map = self.repo.get_latest_evaluation_providers(matched_ids)
+                details_map = self.repo.get_latest_evaluation_details(matched_ids)
+            except (RepositoryError, sqlite3.Error) as exc:
+                logger.debug("Could not load evaluation details for scanner results: %s", exc)
+        if interested_ids:
+            try:
+                _, auto_meta_map = self.repo.get_interested_status_metadata(interested_ids)
+            except (RepositoryError, sqlite3.Error) as exc:
+                logger.debug("Could not load interested metadata for scanner results: %s", exc)
+
+        from backend.core.tracker import TrackerService
+
+        filtered = []
+        for j, row in resolved_rows:
+            url = j.get("url")
+            cached_scr = None
             if url:
                 try:
-                    scr = painel.get_cached_score(url)
+                    cached_scr = painel.get_cached_score(url)
                 except (OSError, json.JSONDecodeError, ValueError) as exc:
                     logger.debug("Could not load cached score for %s: %s", url, exc)
-                    scr = None
-                if scr:
-                    if isinstance(scr, dict) and scr.get("score") is not None and scr["score"] < LOW_SCORE_AUTO_DISCARD_THRESHOLD:
-                        continue
-                    j = {**j, "screening": scr}
-            filtered.append(j)
+                    cached_scr = None
+
+            scr = (
+                TrackerService.build_screening(row, cached_scr, provider_map, details_map)
+                if row
+                else (cached_scr if isinstance(cached_scr, dict) else j.get("screening"))
+            )
+            if isinstance(scr, dict) and scr.get("score") is not None and scr["score"] < LOW_SCORE_AUTO_DISCARD_THRESHOLD:
+                if not (row and row.get("status") == "interested"):
+                    continue
+
+            enriched = dict(j)
+            if scr:
+                enriched["screening"] = scr
+            if row:
+                st = row.get("status") or "new"
+                enriched["status"] = st
+                enriched["interested"] = st == "interested"
+                if st == "interested":
+                    auto_meta = auto_meta_map.get(row.get("id"), {})
+                    enriched["auto_promoted"] = bool(auto_meta.get("auto_promoted", False))
+                    if auto_meta.get("auto_run_id"):
+                        enriched["auto_run_id"] = auto_meta.get("auto_run_id")
+            filtered.append(enriched)
 
         return {**data, "new": filtered}
 

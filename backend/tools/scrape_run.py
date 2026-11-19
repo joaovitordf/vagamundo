@@ -188,9 +188,17 @@ REGION_PORTALS = {
 
 ENGLISH_ONLY_PORTALS = {
     "hh-search", "habrcareer-search", "remoteok-search", "jobicy-search", "hn-search", "ashby-search",
+    "greenhouse-search", "freehire-search",
 }
 
 _PT_TO_EN_SEARCH_TERMS = {
+    "desenvolvedor full stack": "Full Stack Developer",
+    "desenvolvedor front-end": "Frontend Developer",
+    "desenvolvedor frontend": "Frontend Developer",
+    "desenvolvedor back-end": "Backend Developer",
+    "desenvolvedor backend": "Backend Developer",
+    "desenvolvedor front-end angular": "Angular",
+    "desenvolvedor": "Developer",
     "visao computacional": "Computer Vision",
     "visao por computador": "Computer Vision",
     "inteligencia artificial": "Artificial Intelligence",
@@ -1343,21 +1351,24 @@ def main(argv=None) -> int:
 
         return 2
 
-    has_explicit_portal = bool(
-        getattr(args, "portal", None) and args.portal.strip() and args.portal.strip() != "all"
-    )
-    if has_explicit_portal:
-        raw_portals = [p.strip() for p in args.portal.split(",") if p.strip()]
-        target_portals = set()
-        for p in raw_portals:
-            target_portals.add(p)
-            if not p.endswith("-search"):
-                target_portals.add(f"{p}-search")
+    raw_portal_arg = (getattr(args, "portal", None) or "").strip()
+    is_all_portals_explicit = raw_portal_arg == "all"
+    has_explicit_portal = bool(raw_portal_arg and raw_portal_arg != "all")
+    if has_explicit_portal or is_all_portals_explicit:
+        installed = installed_portals()
+        if is_all_portals_explicit:
+            target_portals = {p for p, enabled in installed.items() if enabled}
+        else:
+            raw_portals = [p.strip() for p in raw_portal_arg.split(",") if p.strip()]
+            target_portals = set()
+            for p in raw_portals:
+                target_portals.add(p)
+                if not p.endswith("-search"):
+                    target_portals.add(f"{p}-search")
 
         filtered_calls = [c for c in calls if c[1] in target_portals]
 
         # Portais selecionados sem queries prontas ganham chamada default
-        installed = installed_portals()
         default_q = None
         raw_queries = parse_queries(queries_file.read_text(encoding="utf-8"))
         for _, _, cargs in raw_queries:
@@ -1370,10 +1381,22 @@ def main(argv=None) -> int:
         if not default_q:
             default_q = _default_search_query()
 
-        for tp in target_portals:
+        region_arg = getattr(args, "region", None)
+        for tp in sorted(target_portals):
             if not any(c[1] == tp for c in filtered_calls):
-                if tp in installed:
-                    filtered_calls.append(_make_portal_call(tp, default_q, getattr(args, "region", None)))
+                if installed.get(tp):
+                    filtered_calls.append(_make_portal_call(tp, default_q, region_arg))
+
+        # Se freehire-search tinha apenas chamadas restritas a --country BR em search-queries.md
+        # e a região permite vagas globais/internacionais, adiciona chamada global sem --country BR
+        if (
+            "freehire-search" in target_portals
+            and installed.get("freehire-search")
+            and region_arg in (None, "all", "global", "remote", "estados-unidos", "europa")
+        ):
+            fh_calls = [c for c in filtered_calls if c[1] == "freehire-search"]
+            if fh_calls and all("--country" in c[2] for c in fh_calls):
+                filtered_calls.append(_make_portal_call("freehire-search", default_q, region_arg))
 
         calls = filtered_calls
 

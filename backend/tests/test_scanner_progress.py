@@ -61,6 +61,57 @@ class ScannerAppliedFilterTests(unittest.TestCase):
             urls = [j["url"] for j in scanner.load_results()["new"]]
         self.assertEqual(urls, ["https://portal.example/vaga/3"])
 
+    def test_load_results_keeps_interested_jobs_enriched_with_ai_screening(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from backend.db.repository import Repository
+
+        repo = Repository(":memory:")
+        self.addCleanup(repo.close)
+        jid = repo.upsert_job({
+            "id": "job-int",
+            "company": "Acme Global",
+            "title": "Computer Vision Engineer",
+            "url": "https://portal.example/vaga/cv-1",
+            "status": "new",
+            "rank_score": 88,
+            "rank_verdict": "Strong Fit",
+        })
+        repo.mark_jobs([jid], decision="interested", source="auto_triage", note="[auto:run99] Auto-interesse 88/100")
+        repo.insert_evaluation({
+            "job_id": jid,
+            "score_technical": 90,
+            "score_experience": 85,
+            "score_behavioral": 88,
+            "score_career": 88,
+            "score_global": 88,
+            "verdict": "Strong Fit",
+            "strengths": ["OpenCV e PyTorch"],
+            "gaps": ["Edge deploy"],
+            "report_md": "Excelente encaixe técnico.",
+            "ai_provider": "gemini-2.5-flash",
+        })
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "res.json"
+            out.write_text(json.dumps({"new": [
+                {"url": "https://portal.example/vaga/cv-1", "company": "Acme Global", "title": "Computer Vision Engineer", "location": "Berlin, Germany"},
+            ]}), encoding="utf-8")
+            scanner = ScannerService(out_path=out, repo=repo)
+            loaded = scanner.load_results()["new"]
+
+        self.assertEqual(len(loaded), 1)
+        item = loaded[0]
+        self.assertEqual(item["status"], "interested")
+        self.assertTrue(item["interested"])
+        self.assertTrue(item["auto_promoted"])
+        self.assertEqual(item["auto_run_id"], "run99")
+        self.assertEqual(item["screening"]["score"], 88)
+        self.assertEqual(item["screening"]["verdict"], "Strong Fit")
+        self.assertEqual(item["screening"]["subscores"]["technical"], 90)
+        self.assertEqual(item["screening"]["strengths"], ["OpenCV e PyTorch"])
+
 
 if __name__ == "__main__":
     unittest.main()

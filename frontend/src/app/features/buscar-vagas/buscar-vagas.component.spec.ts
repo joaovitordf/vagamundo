@@ -160,7 +160,8 @@ describe('BuscarVagasComponent', () => {
 
     component.switchSubtab('mapa');
     component.filterByBestScore();
-    expect(component.activeSubtab()).toBe('lista');
+    expect(component.activeSubtab()).toBe('mapa');
+    expect(component.isTriageMode).toBeTrue();
     expect(component.filterSort).toBe('score-desc');
     expect(component.isBestScoreFilterActive()).toBeTrue();
 
@@ -176,5 +177,38 @@ describe('BuscarVagasComponent', () => {
     component.triggerPortalSearch();
     expect(component.searching()).toBeFalse();
     expect(component.showProgressPanel()).toBeFalse();
+  });
+
+  it('keeps jobs moved to Me Interessam visible on the map and list with their AI score', () => {
+    component.switchSubtab('lista');
+    component.currentMapMode = 'brasil';
+    fixture.detectChanges();
+    httpMock.match(() => true).forEach((req) => req.flush({}));
+
+    // Entering Buscar e Vagas always opens on the World Map
+    expect(component.activeSubtab()).toBe('mapa');
+    expect(component.currentMapMode).toBe('world');
+
+    const job1 = makeVaga({
+      url: 'https://example.com/int-1',
+      title: 'Java Developer Remote',
+      location: 'San Francisco, CA',
+      portal: 'ashby-search',
+      screening: { score: 85, verdict: 'Strong Fit', summary: 'Excelente aderência Java' },
+    });
+    component.allVagas.set([job1]);
+    component.onFilterChange();
+
+    component.markInteresse(job1);
+    const decideReq = httpMock.expectOne('/api/mark');
+    decideReq.flush({ ok: true });
+    httpMock.match(() => true).forEach((req) => req.flush({}));
+
+    expect(component.allVagas().length).toBe(1);
+    expect(component.allVagas()[0].interested).toBeTrue();
+    expect(component.allVagas()[0].status).toBe('interested');
+    expect(component.interestedCount()).toBe(1);
+    expect(component.mapHighlightedVagas().length).toBe(1);
+    expect(component.mapHighlightedVagas()[0].screening?.score).toBe(85);
   });
 });

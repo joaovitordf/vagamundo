@@ -640,7 +640,7 @@ class AutoModeService:
             if not url or url in fresh_urls:
                 continue
             row = self.repo.get_job_by_url(url)
-            if row and row.get("status") in ("interested", *EXCLUDED_RADAR_JOB_STATUSES):
+            if row and row.get("status") in EXCLUDED_RADAR_JOB_STATUSES:
                 continue
             if row and row.get("rank_score") is not None and row["rank_score"] < LOW_SCORE_AUTO_DISCARD_THRESHOLD:
                 continue
@@ -862,6 +862,8 @@ class AutoModeService:
             for j in raw_new:
                 if not isinstance(j, dict):
                     continue
+                if j.get("status") == "interested" or j.get("interested"):
+                    continue
                 u = str(j.get("url") or "")
                 if not u.startswith("http") or u in session_evaluated_urls:
                     continue
@@ -869,7 +871,7 @@ class AutoModeService:
                     continue
                 if round_num > 1:
                     db_row = self.repo.get_job_by_url(u)
-                    if db_row and db_row.get("rank_score") is not None:
+                    if db_row and (db_row.get("rank_score") is not None or db_row.get("status") == "interested"):
                         continue
                 eligible.append(j)
 

@@ -47,8 +47,11 @@ export interface Vaga {
   first_seen?: string;
   created_at?: string;
   updated_at?: string;
+  status?: string;
+  interested?: boolean;
   auto_promoted?: boolean | number;
   auto_origin?: string;
+  auto_run_id?: string;
   recruiter_emails?: string[];
   claude?: {
     avaliar?: any;

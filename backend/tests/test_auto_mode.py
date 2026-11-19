@@ -206,11 +206,20 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
             self.assertTrue(saved_by_url["https://ex.com/v1"]["auto_promoted"])
             self.assertEqual(saved_by_url["https://ex.com/v1"]["auto_run_id"], run_id)
 
-            # Vagas promovidas saem de load_results() em Buscar Vagas
-            pending_urls = [j["url"] for j in self.scanner.load_results()["new"]]
-            self.assertNotIn("https://ex.com/v1", pending_urls)
-            self.assertNotIn("https://ex.com/v2", pending_urls)
-            self.assertIn("https://ex.com/v3", pending_urls)
+            # Vagas promovidas permanecem em load_results() em Buscar Vagas com status 'interested', auto_promoted=True e nota da IA
+            loaded_new = {j["url"]: j for j in self.scanner.load_results()["new"]}
+            self.assertIn("https://ex.com/v1", loaded_new)
+            self.assertIn("https://ex.com/v2", loaded_new)
+            self.assertIn("https://ex.com/v3", loaded_new)
+            self.assertEqual(loaded_new["https://ex.com/v1"]["status"], "interested")
+            self.assertTrue(loaded_new["https://ex.com/v1"]["interested"])
+            self.assertTrue(loaded_new["https://ex.com/v1"]["auto_promoted"])
+            self.assertEqual(loaded_new["https://ex.com/v1"]["screening"]["score"], 78)
+            self.assertEqual(loaded_new["https://ex.com/v2"]["status"], "interested")
+            self.assertTrue(loaded_new["https://ex.com/v2"]["interested"])
+            self.assertEqual(loaded_new["https://ex.com/v2"]["screening"]["score"], 64)
+            self.assertEqual(loaded_new["https://ex.com/v3"]["status"], "new")
+            self.assertFalse(loaded_new["https://ex.com/v3"]["interested"])
 
             # Desfazer vaga individual (v1) -> volta para Buscar Vagas mantendo nota 78
             undo_one = client.post(
@@ -713,12 +722,15 @@ class AutoModeOrchestrationAndUndoTests(unittest.TestCase):
                 time.sleep(0.03)
 
             self.assertEqual(st2["counts"]["promoted"], 2)
-            # j_mid não foi re-avaliada na rodada 2 e continua visível na lista de pendentes
+            # j_mid não foi re-avaliada na rodada 2 e continua visível junto das promovidas (j1 e j2 com status='interested')
             self.assertEqual(evaluated_calls, ["https://ex.com/j1", "https://ex.com/j_mid", "https://ex.com/j2"])
-            pending_urls = [j["url"] for j in self.scanner.load_results()["new"]]
-            self.assertIn("https://ex.com/j_mid", pending_urls)
-            self.assertNotIn("https://ex.com/j1", pending_urls)
-            self.assertNotIn("https://ex.com/j2", pending_urls)
+            loaded_by_url = {j["url"]: j for j in self.scanner.load_results()["new"]}
+            self.assertIn("https://ex.com/j_mid", loaded_by_url)
+            self.assertFalse(loaded_by_url["https://ex.com/j_mid"]["interested"])
+            self.assertIn("https://ex.com/j1", loaded_by_url)
+            self.assertTrue(loaded_by_url["https://ex.com/j1"]["interested"])
+            self.assertIn("https://ex.com/j2", loaded_by_url)
+            self.assertTrue(loaded_by_url["https://ex.com/j2"]["interested"])
 
     def test_sortear_palavras_chave_rotates_on_duplicate_ai_reply(self):
         fake_areas = [

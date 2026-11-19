@@ -165,40 +165,71 @@ interface WorldPattern {
 }
 
 const WORLD_PATTERNS: WorldPattern[] = [
-  { code: 'DE', name: 'Alemanha', scope: 'europa', countries: ['germany', 'deutschland', 'alemanha'], cities: ['berlin', 'munich', 'münchen', 'frankfurt', 'hamburg', 'stuttgart', 'kiel'] },
-  { code: 'NL', name: 'Holanda', scope: 'europa', countries: ['netherlands', 'holanda', 'países baixos'], cities: ['amsterdam', 'rotterdam', 'eindhoven', 'utrecht'] },
-  { code: 'GB', name: 'Reino Unido', scope: 'europa', countries: ['united kingdom', 'reino unido', 'england', 'scotland', 'wales', 'uk'], cities: ['london', 'manchester', 'cambridge', 'oxford'] },
-  { code: 'ES', name: 'Espanha', scope: 'europa', countries: ['spain', 'espanha', 'españa'], cities: ['madrid', 'barcelona', 'valencia', 'seville', 'bilbao'] },
-  { code: 'FR', name: 'França', scope: 'europa', countries: ['france', 'frança'], cities: ['paris', 'lyon', 'toulouse', 'marseille', 'bordeaux'], ambiguousCities: ['nice'] },
-  { code: 'IT', name: 'Itália', scope: 'europa', countries: ['italy', 'itália', 'italia'], cities: ['milan', 'milano', 'rome', 'roma', 'turin'] },
-  { code: 'PL', name: 'Polônia', scope: 'europa', countries: ['poland', 'polônia', 'polska'], cities: ['warsaw', 'warszawa', 'mazowieckie', 'krakow', 'kraków', 'wroclaw', 'gdansk'] },
-  { code: 'CH', name: 'Suíça', scope: 'europa', countries: ['switzerland', 'suíça', 'suica', 'schweiz'], cities: ['zürich', 'zurich', 'geneva'] },
-  { code: 'SE', name: 'Suécia', scope: 'europa', countries: ['sweden', 'suécia', 'suecia'], cities: ['stockholm', 'gothenburg', 'göteborg'] },
-  { code: 'FI', name: 'Finlândia', scope: 'europa', countries: ['finland', 'finlândia', 'finlandia'], cities: ['helsinki', 'espoo'] },
-  { code: 'PT', name: 'Portugal', scope: 'europa', countries: ['portugal'], cities: ['lisbon', 'lisboa', 'coimbra'], ambiguousCities: ['porto', 'braga'] },
-  { code: 'IE', name: 'Irlanda', scope: 'europa', countries: ['ireland', 'irlanda'], cities: ['dublin', 'cork', 'galway'] },
-  { code: 'BE', name: 'Bélgica', scope: 'europa', countries: ['belgium', 'bélgica', 'belgica'], cities: ['brussels', 'bruxelles'] },
-  { code: 'AT', name: 'Áustria', scope: 'europa', countries: ['austria', 'áustria'], cities: ['vienna', 'wien'] },
-  { code: 'NO', name: 'Noruega', scope: 'europa', countries: ['norway', 'noruega'], cities: ['oslo', 'bergen'] },
-  { code: 'DK', name: 'Dinamarca', scope: 'europa', countries: ['denmark', 'dinamarca'], cities: ['copenhagen'] },
-  { code: 'CZ', name: 'República Tcheca', scope: 'europa', countries: ['czech', 'czechia'], cities: ['prague', 'praha'] },
-  { code: 'RO', name: 'Romênia', scope: 'europa', countries: ['romania', 'romênia'], cities: ['bucharest'] },
+  { code: 'DE', name: 'Alemanha', scope: 'europa', countries: ['germany', 'deutschland', 'alemanha'], cities: ['berlin', 'munich', 'münchen', 'frankfurt', 'hamburg', 'stuttgart', 'kiel', 'cologne', 'köln', 'düsseldorf', 'dusseldorf', 'leipzig'] },
+  { code: 'NL', name: 'Holanda', scope: 'europa', countries: ['netherlands', 'holanda', 'países baixos', 'paises baixos'], cities: ['amsterdam', 'rotterdam', 'eindhoven', 'utrecht', 'the hague', 'den haag'] },
+  { code: 'GB', name: 'Reino Unido', scope: 'europa', countries: ['united kingdom', 'reino unido', 'england', 'scotland', 'wales', 'uk', 'great britain'], cities: ['london', 'manchester', 'cambridge', 'oxford', 'edinburgh', 'bristol', 'birmingham', 'leeds', 'glasgow'] },
+  { code: 'ES', name: 'Espanha', scope: 'europa', countries: ['spain', 'espanha', 'españa'], cities: ['madrid', 'barcelona', 'valencia', 'seville', 'sevilla', 'bilbao', 'malaga', 'málaga'] },
+  { code: 'FR', name: 'França', scope: 'europa', countries: ['france', 'frança', 'franca'], cities: ['paris', 'lyon', 'toulouse', 'marseille', 'bordeaux', 'lille', 'nantes'], ambiguousCities: ['nice'] },
+  { code: 'IT', name: 'Itália', scope: 'europa', countries: ['italy', 'itália', 'italia'], cities: ['milan', 'milano', 'rome', 'roma', 'turin', 'torino', 'bologna', 'florence'] },
+  { code: 'PL', name: 'Polônia', scope: 'europa', countries: ['poland', 'polônia', 'polonia', 'polska'], cities: ['warsaw', 'warszawa', 'mazowieckie', 'krakow', 'kraków', 'wroclaw', 'wrocław', 'gdansk', 'gdańsk', 'poznan', 'poznań', 'katowice'] },
+  { code: 'CH', name: 'Suíça', scope: 'europa', countries: ['switzerland', 'suíça', 'suica', 'schweiz'], cities: ['zürich', 'zurich', 'geneva', 'genève', 'basel', 'bern', 'lausanne'] },
+  { code: 'SE', name: 'Suécia', scope: 'europa', countries: ['sweden', 'suécia', 'suecia'], cities: ['stockholm', 'gothenburg', 'göteborg', 'malmo', 'malmö'] },
+  { code: 'FI', name: 'Finlândia', scope: 'europa', countries: ['finland', 'finlândia', 'finlandia'], cities: ['helsinki', 'espoo', 'tampere'] },
+  { code: 'PT', name: 'Portugal', scope: 'europa', countries: ['portugal'], cities: ['lisbon', 'lisboa', 'coimbra', 'aveiro', 'faro'], ambiguousCities: ['porto', 'braga'] },
+  { code: 'IE', name: 'Irlanda', scope: 'europa', countries: ['ireland', 'irlanda'], cities: ['dublin', 'cork', 'galway', 'limerick'] },
+  { code: 'BE', name: 'Bélgica', scope: 'europa', countries: ['belgium', 'bélgica', 'belgica'], cities: ['brussels', 'bruxelles', 'antwerp', 'ghent'] },
+  { code: 'AT', name: 'Áustria', scope: 'europa', countries: ['austria', 'áustria'], cities: ['vienna', 'wien', 'graz', 'linz'] },
+  { code: 'NO', name: 'Noruega', scope: 'europa', countries: ['norway', 'noruega'], cities: ['oslo', 'bergen', 'trondheim'] },
+  { code: 'DK', name: 'Dinamarca', scope: 'europa', countries: ['denmark', 'dinamarca'], cities: ['copenhagen', 'aarhus'] },
+  { code: 'CZ', name: 'República Tcheca', scope: 'europa', countries: ['czech', 'czechia', 'república tcheca'], cities: ['prague', 'praha', 'brno'] },
+  { code: 'RO', name: 'Romênia', scope: 'europa', countries: ['romania', 'romênia', 'romenia'], cities: ['bucharest', 'cluj', 'cluj-napoca', 'timisoara'] },
   { code: 'HU', name: 'Hungria', scope: 'europa', countries: ['hungary', 'hungria'], cities: ['budapest'] },
-  { code: 'CA', name: 'Canadá', scope: 'global', countries: ['canada', 'canadá'], cities: ['toronto', 'ontario', 'vancouver', 'montreal'] },
-  { code: 'US', name: 'Estados Unidos', scope: 'global', countries: ['united states', 'estados unidos', 'usa', 'u.s.'], cities: ['washington', 'd.c.', 'san francisco', 'california', 'new york', 'seattle', 'austin', 'boston', 'chicago', 'texas', 'florida', 'los angeles', 'colorado', 'denver', 'mountain view', 'sunnyvale'] },
-  { code: 'RU', name: 'Rússia', scope: 'global', countries: ['russia', 'rússia', 'россия'], cities: ['moscow', 'москва', 'saint petersburg'] },
-  { code: 'JP', name: 'Japão', scope: 'global', countries: ['japan', 'japão'], cities: ['tokyo', 'osaka'] },
+  { code: 'GR', name: 'Grécia', scope: 'europa', countries: ['greece', 'grécia', 'grecia'], cities: ['athens', 'thessaloniki'] },
+  { code: 'BG', name: 'Bulgária', scope: 'europa', countries: ['bulgaria', 'bulgária'], cities: ['sofia', 'plovdiv'] },
+  { code: 'HR', name: 'Croácia', scope: 'europa', countries: ['croatia', 'croácia'], cities: ['zagreb', 'split'] },
+  { code: 'RS', name: 'Sérvia', scope: 'europa', countries: ['serbia', 'sérvia', 'servia', 'сербия'], cities: ['belgrade', 'белград', 'novi sad'] },
+  { code: 'UA', name: 'Ucrânia', scope: 'europa', countries: ['ukraine', 'ucrânia', 'ucrania', 'украина'], cities: ['kyiv', 'kiev', 'lviv'] },
+  { code: 'BY', name: 'Bielorrússia', scope: 'europa', countries: ['belarus', 'bielorrússia', 'беларусь'], cities: ['minsk', 'минск'] },
+  { code: 'EE', name: 'Estônia', scope: 'europa', countries: ['estonia', 'estônia'], cities: ['tallinn', 'tartu'] },
+  { code: 'LV', name: 'Letônia', scope: 'europa', countries: ['latvia', 'letônia'], cities: ['riga'] },
+  { code: 'LT', name: 'Lituânia', scope: 'europa', countries: ['lithuania', 'lituânia'], cities: ['vilnius', 'kaunas'] },
+  { code: 'LU', name: 'Luxemburgo', scope: 'europa', countries: ['luxembourg', 'luxemburgo'], cities: [] },
+  { code: 'SK', name: 'Eslováquia', scope: 'europa', countries: ['slovakia', 'eslováquia'], cities: ['bratislava'] },
+  { code: 'SI', name: 'Eslovênia', scope: 'europa', countries: ['slovenia', 'eslovênia'], cities: ['ljubljana'] },
+  { code: 'TR', name: 'Turquia', scope: 'europa', countries: ['turkey', 'türkiye', 'turquia'], cities: ['istanbul', 'ankara', 'izmir'] },
+  { code: 'CA', name: 'Canadá', scope: 'global', countries: ['canada', 'canadá'], cities: ['toronto', 'ontario', 'vancouver', 'montreal', 'ottawa', 'calgary', 'waterloo', 'quebec', 'british columbia'] },
+  { code: 'US', name: 'Estados Unidos', scope: 'global', countries: ['united states', 'estados unidos', 'usa', 'u.s.', 'u.s.a.'], cities: ['washington', 'd.c.', 'san francisco', 'california', 'new york', 'nyc', 'bay area', 'silicon valley', 'seattle', 'austin', 'boston', 'chicago', 'texas', 'florida', 'los angeles', 'colorado', 'denver', 'mountain view', 'sunnyvale', 'palo alto', 'menlo park', 'cupertino', 'redmond', 'atlanta', 'miami', 'dallas', 'houston', 'philadelphia', 'san diego', 'san jose', 'portland', 'phoenix', 'raleigh', 'pittsburgh', 'minneapolis', 'detroit', 'salt lake city'] },
+  { code: 'RU', name: 'Rússia', scope: 'global', countries: ['russia', 'rússia', 'россия', 'рф'], cities: ['moscow', 'москва', 'saint petersburg', 'st. petersburg', 'санкт-петербург', 'петербург', 'novosibirsk', 'новосибирск', 'yekaterinburg', 'екатеринбург', 'kazan', 'казань', 'nizhny novgorod', 'нижний новгород', 'samara', 'самара', 'rostov', 'ростов', 'krasnodar', 'краснодар', 'voronezh', 'воронеж', 'perm', 'пермь', 'ufa', 'уфа', 'chelyabinsk', 'челябинск', 'omsk', 'омск', 'tomsk', 'томск'] },
+  { code: 'KZ', name: 'Cazaquistão', scope: 'global', countries: ['kazakhstan', 'cazaquistão', 'казахстан'], cities: ['almaty', 'алматы', 'astana', 'астана'] },
+  { code: 'GE', name: 'Geórgia', scope: 'global', countries: ['georgia', 'грузия'], cities: ['tbilisi', 'тбилиси', 'batumi'] },
+  { code: 'AM', name: 'Armênia', scope: 'global', countries: ['armenia', 'armênia', 'армения'], cities: ['yerevan', 'ереван'] },
+  { code: 'JP', name: 'Japão', scope: 'global', countries: ['japan', 'japão', 'japao'], cities: ['tokyo', 'osaka', 'kyoto', 'yokohama'] },
   { code: 'SG', name: 'Singapura', scope: 'global', countries: ['singapore', 'singapura', 'cingapura'], cities: [] },
-  { code: 'AU', name: 'Austrália', scope: 'global', countries: ['australia', 'austrália'], cities: ['sydney', 'melbourne'] },
-  { code: 'IN', name: 'Índia', scope: 'global', countries: ['india', 'índia'], cities: ['bangalore', 'bengaluru', 'hyderabad'] },
-  { code: 'AR', name: 'Argentina', scope: 'global', countries: ['argentina'], cities: ['buenos aires', 'cordoba'] },
-  { code: 'CL', name: 'Chile', scope: 'global', countries: ['chile'], cities: ['santiago'] },
-  { code: 'CO', name: 'Colômbia', scope: 'global', countries: ['colombia', 'colômbia'], cities: ['bogota', 'bogotá', 'medellin'] },
-  { code: 'MX', name: 'México', scope: 'global', countries: ['mexico', 'méxico'], cities: ['mexico city', 'cdmx', 'guadalajara'] },
+  { code: 'AU', name: 'Austrália', scope: 'global', countries: ['australia', 'austrália'], cities: ['sydney', 'melbourne', 'brisbane', 'perth', 'adelaide'] },
+  { code: 'NZ', name: 'Nova Zelândia', scope: 'global', countries: ['new zealand', 'nova zelândia'], cities: ['auckland', 'wellington'] },
+  { code: 'IN', name: 'Índia', scope: 'global', countries: ['india', 'índia'], cities: ['bangalore', 'bengaluru', 'hyderabad', 'mumbai', 'pune', 'chennai', 'delhi', 'new delhi', 'noida', 'gurugram', 'gurgaon', 'kolkata', 'ahmedabad', 'karnataka'] },
+  { code: 'BD', name: 'Bangladesh', scope: 'global', countries: ['bangladesh'], cities: ['dhaka'] },
+  { code: 'PK', name: 'Paquistão', scope: 'global', countries: ['pakistan', 'paquistão'], cities: ['karachi', 'lahore', 'islamabad'] },
+  { code: 'PH', name: 'Filipinas', scope: 'global', countries: ['philippines', 'filipinas'], cities: ['manila', 'cebu'] },
+  { code: 'VN', name: 'Vietnã', scope: 'global', countries: ['vietnam', 'vietnã'], cities: ['ho chi minh', 'hanoi', 'da nang'] },
+  { code: 'ID', name: 'Indonésia', scope: 'global', countries: ['indonesia', 'indonésia'], cities: ['jakarta', 'bali'] },
+  { code: 'MY', name: 'Malásia', scope: 'global', countries: ['malaysia', 'malásia'], cities: ['kuala lumpur'] },
+  { code: 'TH', name: 'Tailândia', scope: 'global', countries: ['thailand', 'tailândia'], cities: ['bangkok'] },
+  { code: 'CN', name: 'China', scope: 'global', countries: ['china'], cities: ['beijing', 'shanghai', 'shenzhen', 'hangzhou', 'guangzhou', 'hong kong'] },
+  { code: 'CN-TW', name: 'Taiwan', scope: 'global', countries: ['taiwan'], cities: ['taipei'] },
+  { code: 'AR', name: 'Argentina', scope: 'global', countries: ['argentina'], cities: ['buenos aires', 'cordoba', 'córdoba', 'rosario', 'mendoza'] },
+  { code: 'CL', name: 'Chile', scope: 'global', countries: ['chile'], cities: ['santiago', 'valparaiso'] },
+  { code: 'CO', name: 'Colômbia', scope: 'global', countries: ['colombia', 'colômbia'], cities: ['bogota', 'bogotá', 'medellin', 'medellín', 'cali', 'barranquilla'] },
+  { code: 'MX', name: 'México', scope: 'global', countries: ['mexico', 'méxico'], cities: ['mexico city', 'cdmx', 'guadalajara', 'guadalahara', 'monterrey', 'queretaro'] },
+  { code: 'PE', name: 'Peru', scope: 'global', countries: ['peru'], cities: ['lima'] },
   { code: 'UY', name: 'Uruguai', scope: 'global', countries: ['uruguay', 'uruguai'], cities: ['montevideo'] },
-  { code: 'IL', name: 'Israel', scope: 'global', countries: ['israel'], cities: ['tel aviv'] },
+  { code: 'CR', name: 'Costa Rica', scope: 'global', countries: ['costa rica'], cities: ['san jose'] },
+  { code: 'IL', name: 'Israel', scope: 'global', countries: ['israel'], cities: ['tel aviv', 'jerusalem', 'haifa'] },
   { code: 'KR', name: 'Coreia do Sul', scope: 'global', countries: ['south korea', 'coreia do sul'], cities: ['seoul'], ambiguousCities: ['korea'] },
-  { code: 'AE', name: 'Emirados Árabes', scope: 'global', countries: ['uae', 'emirates'], cities: ['dubai', 'abu dhabi'] },
+  { code: 'AE', name: 'Emirados Árabes', scope: 'global', countries: ['uae', 'emirates', 'united arab emirates'], cities: ['dubai', 'abu dhabi'] },
+  { code: 'ZA', name: 'África do Sul', scope: 'global', countries: ['south africa', 'áfrica do sul'], cities: ['cape town', 'johannesburg'] },
+  { code: 'NG', name: 'Nigéria', scope: 'global', countries: ['nigeria', 'nigéria'], cities: ['lagos', 'abuja'] },
+  { code: 'EG', name: 'Egito', scope: 'global', countries: ['egypt', 'egito'], cities: ['cairo', 'alexandria'] },
 ];
 
 function escapeRegex(s: string): string {
@@ -459,7 +490,10 @@ export function resolveGeo(item: {
 
   // 1. Países explícitos estrangeiros (quando "Brasil" não está citado explicitamente)
   if (!hasExplicitBrasil) {
-    if (/(?:,|\/|-|\(|\bopen\s+to|\bremote\s+)\s*us\b|^us\b/i.test(rawLoc)) {
+    if (
+      /(?:,|\/|-|\(|\bopen\s+to|\bremote\s+)\s*us\b|^us\b/i.test(rawLoc) ||
+      /,\s*(?:CA|NY|TX|WA|MA|IL|GA|CO|FL|VA|NC|NJ|PA|OH|MI|AZ|OR|UT|MN|MD|CT|TN|IN|MO|WI)\b/.test(rawLoc)
+    ) {
       return {
         scope: 'global',
         countryCode: 'US',
@@ -481,6 +515,17 @@ export function resolveGeo(item: {
       if (country.cities.some(w => hasTokenMatch(loc, w))) {
         return toGeoResult(country, isRemote);
       }
+    }
+
+    if (/\b(emea|europe|europa|european\s+union|eu\s+remote|remote\s+eu)\b/i.test(loc)) {
+      return {
+        scope: 'europa',
+        countryCode: 'EU_REMOTE',
+        code: 'EU_REMOTE',
+        label: 'Remoto Europa',
+        isRemote: true,
+        remoteBucket: 'EU_REMOTE',
+      };
     }
   }
 
@@ -640,9 +685,11 @@ export function matchesTextFilter(
 export function matchesScoreFilter(
   score: number | null | undefined,
   filterScore: string,
-  evaluated = true
+  evaluated = true,
+  isInterested = false
 ): boolean {
   if (!filterScore) return true;
+  if (filterScore === 'interested') return isInterested;
   const hasScore = score !== null && score !== undefined && !Number.isNaN(Number(score));
   const numScore = hasScore ? Number(score) : null;
 

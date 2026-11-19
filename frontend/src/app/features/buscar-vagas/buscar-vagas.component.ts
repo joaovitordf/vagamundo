@@ -67,8 +67,11 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
         const kwStr = st.keywords.join(', ');
         if (kwStr !== this.lastAutoKeywords) {
           this.lastAutoKeywords = kwStr;
+          this.state.filterText.set('');
+          this.state.isTriageMode.set(true);
           this.state.cvAreaBadge.set(`Sorteado pela IA: ${kwStr}`);
           this.state.markSearchExecuted();
+          this.state.persist();
           this.onFilterChange();
         }
       }
@@ -240,6 +243,8 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.activeSubtab.set('mapa');
+    this.currentMapMode = 'world';
     this.loadCvAreas();
     this.loadAutoConfig();
     this.api.getSettings().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -371,8 +376,11 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   loadResults(): void {
     this.api.getResults().subscribe({
       next: (res) => {
-        const newVagas = res.new || [];
+        const newVagas: Vaga[] = res.new || [];
         this.allVagas.set(newVagas);
+        if (newVagas.some((v: Vaga) => (v.screening && typeof v.screening.score === 'number') || v.status === 'interested' || v.interested)) {
+          this.isTriageMode = true;
+        }
         // Deseleciona quaisquer vagas que tenham saído da lista (ex: auto-descartadas)
         if (this.selectedUrls.size > 0) {
           const currentUrls = new Set(newVagas.map((v: any) => v.url));
@@ -460,6 +468,8 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
     this.autoMinScore = minScore;
     this.autoCooldownMinutes = cooldownMins;
     this.filterJobAge = String(effectiveJobAge);
+    this.filterText = '';
+    this.filterHideUndated = false;
     this.activeGeoFilter = null;
     this.searchError.set('');
     this.batchStatus.set('');
@@ -742,7 +752,7 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
         }
       }
 
-      if (score && !matchesScoreFilter(r.screening?.score, score, Boolean(r.screening))) {
+      if (score && !matchesScoreFilter(r.screening?.score, score, Boolean(r.screening), Boolean(r.status === 'interested' || r.interested))) {
         return false;
       }
 
@@ -868,19 +878,35 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
     } else {
       this.filterScore = this.highFitCount() > 0 ? 'high' : 'triadas';
       this.filterSort = 'score-desc';
-      if (this.activeSubtab() === 'mapa') {
-        this.switchSubtab('lista');
-      }
+      this.isTriageMode = true;
     }
     this.onFilterChange();
   }
 
   hasTriagedJobs(): boolean {
-    return this.allVagas().some(r => r.screening && typeof r.screening.score === 'number');
+    return this.allVagas().some(r => (r.screening && typeof r.screening.score === 'number') || r.status === 'interested' || r.interested);
   }
 
   triagedCount(): number {
     return this.allVagas().filter(r => r.screening && typeof r.screening.score === 'number').length;
+  }
+
+  interestedCount(): number {
+    return this.allVagas().filter(r => r.status === 'interested' || r.interested === true).length;
+  }
+
+  mapHighlightedVagas(): Vaga[] {
+    return this.filteredVagas()
+      .filter(r => (r.status === 'interested' || r.interested === true) || (r.screening && typeof r.screening.score === 'number'))
+      .sort((a, b) => {
+        const ia = (a.status === 'interested' || a.interested === true) ? 1 : 0;
+        const ib = (b.status === 'interested' || b.interested === true) ? 1 : 0;
+        if (ia !== ib) return ib - ia;
+        const sa = (a.screening && typeof a.screening.score === 'number') ? a.screening.score : -1;
+        const sb = (b.screening && typeof b.screening.score === 'number') ? b.screening.score : -1;
+        return sb - sa;
+      })
+      .slice(0, 12);
   }
 
   highFitCount(): number {
@@ -1082,11 +1108,15 @@ export class BuscarVagasComponent implements OnInit, OnDestroy {
   markInteresse(vaga: Vaga): void {
     this.api.markDecision([vaga.url], 'interesse', vaga).subscribe({
       next: () => {
-        this.allVagas.set(this.allVagas().filter(v => v.url !== vaga.url));
+        this.allVagas.set(
+          this.allVagas().map(v => v.url === vaga.url ? { ...v, status: 'interested', interested: true } : v)
+        );
         this.removeUrlFromSelection(vaga.url);
         this.api.sessionVagas.set(this.allVagas());
+        this.isTriageMode = true;
         this.onFilterChange();
-        this.showToast(`⭐ Vaga salva! "${vaga.title}" foi movida com segurança para a aba "Me Interessam".`);
+        this.api.refreshCounts();
+        this.showToast(`⭐ Vaga salva! "${vaga.title}" foi adicionada em "Me Interessam" e destacada no mapa e na lista.`);
       },
       error: (err) => this.toast.error('Não consegui salvar: ' + (err?.error?.detail || err.message))
     });

@@ -31,18 +31,36 @@
         [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'REMOTO_BR'"
         (click)="selectRemoteChip('REMOTO_BR', 'Remoto Brasil')">
         Remoto Brasil: {{ remoteCounts['REMOTO_BR'] || 0 }} vaga(s)
+        @if (remoteMaxScores['REMOTO_BR'] >= 0) {
+          <span class="remote-chip-score">· {{ remoteMaxScores['REMOTO_BR'] }}p</span>
+        }
+        @if ((remoteInterestedCounts['REMOTO_BR'] || 0) > 0) {
+          <span class="remote-chip-star">· ★ {{ remoteInterestedCounts['REMOTO_BR'] }} em Me Interessam</span>
+        }
       </button>
       <button type="button"
         class="remote-chip"
         [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'EU_REMOTE'"
         (click)="selectRemoteChip('EU_REMOTE', 'Remoto Europa')">
         Remoto Europa: {{ remoteCounts['EU_REMOTE'] || 0 }} vaga(s)
+        @if (remoteMaxScores['EU_REMOTE'] >= 0) {
+          <span class="remote-chip-score">· {{ remoteMaxScores['EU_REMOTE'] }}p</span>
+        }
+        @if ((remoteInterestedCounts['EU_REMOTE'] || 0) > 0) {
+          <span class="remote-chip-star">· ★ {{ remoteInterestedCounts['EU_REMOTE'] }} em Me Interessam</span>
+        }
       </button>
       <button type="button"
         class="remote-chip"
         [class.active]="activeGeoFilter?.type === 'remote' && activeGeoFilter?.code === 'GLOBAL_REMOTE'"
         (click)="selectRemoteChip('GLOBAL_REMOTE', 'Remoto Global / EUA')">
         Remoto Global / EUA: {{ remoteCounts['GLOBAL_REMOTE'] || 0 }} vaga(s)
+        @if (remoteMaxScores['GLOBAL_REMOTE'] >= 0) {
+          <span class="remote-chip-score">· {{ remoteMaxScores['GLOBAL_REMOTE'] }}p</span>
+        }
+        @if ((remoteInterestedCounts['GLOBAL_REMOTE'] || 0) > 0) {
+          <span class="remote-chip-star">· ★ {{ remoteInterestedCounts['GLOBAL_REMOTE'] }} em Me Interessam</span>
+        }
       </button>
     </div>
   </div>
